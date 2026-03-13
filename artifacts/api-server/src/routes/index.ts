@@ -1,8 +1,28 @@
-import { Router, type IRouter } from "express";
-import healthRouter from "./health";
+import { Router } from "express";
+import healthRouter from "./health.js";
+import authRouter from "./auth.js";
+import usersRouter from "./users.js";
+import purchaseRequestsRouter from "./purchase-requests.js";
+import approvalsRouter from "./approvals.js";
+import approvalRulesRouter from "./approval-rules.js";
+import purchaseOrdersRouter from "./purchase-orders.js";
+import notificationsRouter from "./notifications.js";
+import auditLogsRouter from "./audit-logs.js";
+import settingsRouter from "./settings.js";
+import dashboardRouter from "./dashboard.js";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.use(healthRouter);
+router.use("/auth", authRouter);
+router.use("/users", usersRouter);
+router.use("/purchase-requests", purchaseRequestsRouter);
+router.use("/approvals", approvalsRouter);
+router.use("/approval-rules", approvalRulesRouter);
+router.use("/purchase-orders", purchaseOrdersRouter);
+router.use("/notifications", notificationsRouter);
+router.use("/audit-logs", auditLogsRouter);
+router.use("/settings", settingsRouter);
+router.use("/dashboard", dashboardRouter);
 
 export default router;

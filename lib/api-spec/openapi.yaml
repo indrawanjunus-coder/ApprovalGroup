@@ -1,22 +1,39 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: PR/PO Approval System API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication
+  - name: users
+    description: User management
+  - name: purchase-requests
+    description: Purchase Request management
+  - name: approvals
+    description: Approval workflow
+  - name: purchase-orders
+    description: Purchase Order management
+  - name: notifications
+    description: Notification management
+  - name: audit-logs
+    description: Audit log management
+  - name: settings
+    description: System settings
+  - name: dashboard
+    description: Dashboard data
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +41,715 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout user
+      responses:
+        "200":
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /users:
+    get:
+      operationId: getUsers
+      tags: [users]
+      summary: Get all users
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}:
+    get:
+      operationId: getUserById
+      tags: [users]
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      operationId: updateUser
+      tags: [users]
+      summary: Update a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete a user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /purchase-requests:
+    get:
+      operationId: getPurchaseRequests
+      tags: [purchase-requests]
+      summary: Get purchase requests
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, waiting_approval, approved, rejected, completed]
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [purchase, repair, leave]
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of purchase requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequestListResponse"
+
+    post:
+      operationId: createPurchaseRequest
+      tags: [purchase-requests]
+      summary: Create a purchase request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePurchaseRequestRequest"
+      responses:
+        "201":
+          description: Purchase request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+
+  /purchase-requests/{id}:
+    get:
+      operationId: getPurchaseRequestById
+      tags: [purchase-requests]
+      summary: Get purchase request by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Purchase request found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    put:
+      operationId: updatePurchaseRequest
+      tags: [purchase-requests]
+      summary: Update a purchase request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePurchaseRequestRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+
+  /purchase-requests/{id}/submit:
+    post:
+      operationId: submitPurchaseRequest
+      tags: [purchase-requests]
+      summary: Submit PR for approval
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+
+  /purchase-requests/{id}/receive:
+    post:
+      operationId: receivePurchaseRequest
+      tags: [purchase-requests]
+      summary: Mark PR as received
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceivePRRequest"
+      responses:
+        "200":
+          description: Received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+
+  /approvals:
+    get:
+      operationId: getApprovals
+      tags: [approvals]
+      summary: Get approvals pending for current user
+      responses:
+        "200":
+          description: List of pending approvals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalListResponse"
+
+  /approvals/{id}/approve:
+    post:
+      operationId: approvePR
+      tags: [approvals]
+      summary: Approve a PR
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalActionRequest"
+      responses:
+        "200":
+          description: Approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Approval"
+
+  /approvals/{id}/reject:
+    post:
+      operationId: rejectPR
+      tags: [approvals]
+      summary: Reject a PR
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalActionRequest"
+      responses:
+        "200":
+          description: Rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Approval"
+
+  /approval-rules:
+    get:
+      operationId: getApprovalRules
+      tags: [approvals]
+      summary: Get approval rules
+      responses:
+        "200":
+          description: Approval rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApprovalRule"
+
+    post:
+      operationId: createApprovalRule
+      tags: [approvals]
+      summary: Create approval rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApprovalRuleRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRule"
+
+  /approval-rules/{id}:
+    put:
+      operationId: updateApprovalRule
+      tags: [approvals]
+      summary: Update approval rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApprovalRuleRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRule"
+
+    delete:
+      operationId: deleteApprovalRule
+      tags: [approvals]
+      summary: Delete approval rule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /purchase-orders:
+    get:
+      operationId: getPurchaseOrders
+      tags: [purchase-orders]
+      summary: Get purchase orders
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, issued, receiving, received]
+      responses:
+        "200":
+          description: List of purchase orders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrderListResponse"
+
+    post:
+      operationId: createPurchaseOrder
+      tags: [purchase-orders]
+      summary: Create purchase order from PR
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePurchaseOrderRequest"
+      responses:
+        "201":
+          description: PO created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+
+  /purchase-orders/{id}:
+    get:
+      operationId: getPurchaseOrderById
+      tags: [purchase-orders]
+      summary: Get PO by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: PO found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+
+    put:
+      operationId: updatePurchaseOrder
+      tags: [purchase-orders]
+      summary: Update PO
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePurchaseOrderRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+
+  /purchase-orders/{id}/issue:
+    post:
+      operationId: issuePurchaseOrder
+      tags: [purchase-orders]
+      summary: Issue a PO
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+
+  /purchase-orders/{id}/receive:
+    post:
+      operationId: receivePurchaseOrder
+      tags: [purchase-orders]
+      summary: Receive a PO
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Received
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseOrder"
+
+  /notifications:
+    get:
+      operationId: getNotifications
+      tags: [notifications]
+      summary: Get notifications for current user
+      parameters:
+        - name: unread
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationListResponse"
+
+  /notifications/{id}/read:
+    put:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+
+  /notifications/read-all:
+    put:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark all notifications as read
+      responses:
+        "200":
+          description: All marked as read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /audit-logs:
+    get:
+      operationId: getAuditLogs
+      tags: [audit-logs]
+      summary: Get audit logs
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: prId
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of audit logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogListResponse"
+
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Get system settings
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+
+    put:
+      operationId: updateSettings
+      tags: [settings]
+      summary: Update system settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingsRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      summary: Get dashboard statistics
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardData"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +760,838 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required:
+        - success
+
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      required:
+        - username
+        - password
+
+    LoginResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        message:
+          type: string
+      required:
+        - user
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        department:
+          type: string
+        position:
+          type: string
+        role:
+          type: string
+          enum: [admin, user, approver, purchasing]
+        superiorId:
+          type: integer
+          nullable: true
+        superiorName:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - username
+        - name
+        - department
+        - position
+        - role
+        - isActive
+        - createdAt
+
+    UserListResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required:
+        - users
+        - total
+        - page
+        - limit
+
+    CreateUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        department:
+          type: string
+        position:
+          type: string
+        role:
+          type: string
+          enum: [admin, user, approver, purchasing]
+        superiorId:
+          type: integer
+          nullable: true
+      required:
+        - username
+        - password
+        - name
+        - department
+        - position
+        - role
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        department:
+          type: string
+        position:
+          type: string
+        role:
+          type: string
+          enum: [admin, user, approver, purchasing]
+        superiorId:
+          type: integer
+          nullable: true
+        isActive:
+          type: boolean
+        password:
+          type: string
+
+    PrItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        prId:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        qty:
+          type: number
+        unit:
+          type: string
+        estimatedPrice:
+          type: number
+        totalPrice:
+          type: number
+      required:
+        - id
+        - prId
+        - name
+        - qty
+        - unit
+        - estimatedPrice
+        - totalPrice
+
+    PrItemInput:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        qty:
+          type: number
+        unit:
+          type: string
+        estimatedPrice:
+          type: number
+      required:
+        - name
+        - qty
+        - unit
+        - estimatedPrice
+
+    PurchaseRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        prNumber:
+          type: string
+        date:
+          type: string
+          format: date-time
+        requesterId:
+          type: integer
+        requesterName:
+          type: string
+        department:
+          type: string
+        type:
+          type: string
+          enum: [purchase, repair, leave]
+        description:
+          type: string
+        status:
+          type: string
+          enum: [draft, waiting_approval, approved, rejected, completed]
+        totalAmount:
+          type: number
+        attachmentUrl:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrItem"
+        approvals:
+          type: array
+          items:
+            $ref: "#/components/schemas/Approval"
+        currentApprovalLevel:
+          type: integer
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - prNumber
+        - date
+        - requesterId
+        - requesterName
+        - department
+        - type
+        - description
+        - status
+        - totalAmount
+        - items
+        - approvals
+        - createdAt
+        - updatedAt
+
+    PurchaseRequestListResponse:
+      type: object
+      properties:
+        purchaseRequests:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseRequest"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required:
+        - purchaseRequests
+        - total
+        - page
+        - limit
+
+    CreatePurchaseRequestRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [purchase, repair, leave]
+        description:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrItemInput"
+        notes:
+          type: string
+          nullable: true
+      required:
+        - type
+        - description
+        - items
+
+    UpdatePurchaseRequestRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [purchase, repair, leave]
+        description:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrItemInput"
+        notes:
+          type: string
+          nullable: true
+
+    ReceivePRRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+          nullable: true
+      required: []
+
+    Approval:
+      type: object
+      properties:
+        id:
+          type: integer
+        prId:
+          type: integer
+        approverId:
+          type: integer
+        approverName:
+          type: string
+        level:
+          type: integer
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        notes:
+          type: string
+          nullable: true
+        actionAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - prId
+        - approverId
+        - approverName
+        - level
+        - status
+        - createdAt
+
+    ApprovalListResponse:
+      type: object
+      properties:
+        approvals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalWithPR"
+        total:
+          type: integer
+      required:
+        - approvals
+        - total
+
+    ApprovalWithPR:
+      type: object
+      properties:
+        id:
+          type: integer
+        prId:
+          type: integer
+        prNumber:
+          type: string
+        prType:
+          type: string
+        prDescription:
+          type: string
+        requesterName:
+          type: string
+        department:
+          type: string
+        totalAmount:
+          type: number
+        approverId:
+          type: integer
+        approverName:
+          type: string
+        level:
+          type: integer
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        notes:
+          type: string
+          nullable: true
+        actionAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - prId
+        - prNumber
+        - prType
+        - prDescription
+        - requesterName
+        - department
+        - totalAmount
+        - approverId
+        - approverName
+        - level
+        - status
+        - createdAt
+
+    ApprovalActionRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+          nullable: true
+      required: []
+
+    ApprovalRule:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        minAmount:
+          type: number
+        maxAmount:
+          type: number
+          nullable: true
+        levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalRuleLevel"
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - minAmount
+        - levels
+        - createdAt
+
+    ApprovalRuleLevel:
+      type: object
+      properties:
+        id:
+          type: integer
+        ruleId:
+          type: integer
+        level:
+          type: integer
+        role:
+          type: string
+          enum: [admin, user, approver, purchasing]
+        position:
+          type: string
+          nullable: true
+      required:
+        - id
+        - ruleId
+        - level
+        - role
+
+    CreateApprovalRuleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        minAmount:
+          type: number
+        maxAmount:
+          type: number
+          nullable: true
+        levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalRuleLevelInput"
+      required:
+        - name
+        - minAmount
+        - levels
+
+    ApprovalRuleLevelInput:
+      type: object
+      properties:
+        level:
+          type: integer
+        role:
+          type: string
+          enum: [admin, user, approver, purchasing]
+        position:
+          type: string
+          nullable: true
+      required:
+        - level
+        - role
+
+    PoItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        poId:
+          type: integer
+        prItemId:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        qty:
+          type: number
+        unit:
+          type: string
+        negotiatedPrice:
+          type: number
+        totalPrice:
+          type: number
+      required:
+        - id
+        - poId
+        - name
+        - qty
+        - unit
+        - negotiatedPrice
+        - totalPrice
+
+    PoItemInput:
+      type: object
+      properties:
+        prItemId:
+          type: integer
+          nullable: true
+        name:
+          type: string
+        qty:
+          type: number
+        unit:
+          type: string
+        negotiatedPrice:
+          type: number
+      required:
+        - name
+        - qty
+        - unit
+        - negotiatedPrice
+
+    PurchaseOrder:
+      type: object
+      properties:
+        id:
+          type: integer
+        poNumber:
+          type: string
+        prId:
+          type: integer
+        prNumber:
+          type: string
+        supplier:
+          type: string
+        status:
+          type: string
+          enum: [draft, issued, receiving, received]
+        totalAmount:
+          type: number
+        notes:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoItem"
+        createdById:
+          type: integer
+        createdByName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - poNumber
+        - prId
+        - prNumber
+        - supplier
+        - status
+        - totalAmount
+        - items
+        - createdById
+        - createdByName
+        - createdAt
+        - updatedAt
+
+    PurchaseOrderListResponse:
+      type: object
+      properties:
+        purchaseOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseOrder"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required:
+        - purchaseOrders
+        - total
+        - page
+        - limit
+
+    CreatePurchaseOrderRequest:
+      type: object
+      properties:
+        prId:
+          type: integer
+        supplier:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoItemInput"
+        notes:
+          type: string
+          nullable: true
+      required:
+        - prId
+        - supplier
+        - items
+
+    UpdatePurchaseOrderRequest:
+      type: object
+      properties:
+        supplier:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PoItemInput"
+        notes:
+          type: string
+          nullable: true
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        title:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+          enum: [approval_request, approved, rejected, received, info]
+        isRead:
+          type: boolean
+        prId:
+          type: integer
+          nullable: true
+        poId:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - title
+        - message
+        - type
+        - isRead
+        - createdAt
+
+    NotificationListResponse:
+      type: object
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        unreadCount:
+          type: integer
+        total:
+          type: integer
+      required:
+        - notifications
+        - unreadCount
+        - total
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        userName:
+          type: string
+        action:
+          type: string
+        entityType:
+          type: string
+          enum: [pr, po, user, approval, setting]
+        entityId:
+          type: integer
+        details:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - userId
+        - userName
+        - action
+        - entityType
+        - entityId
+        - createdAt
+
+    AuditLogListResponse:
+      type: object
+      properties:
+        auditLogs:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLog"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required:
+        - auditLogs
+        - total
+        - page
+        - limit
+
+    Settings:
+      type: object
+      properties:
+        poEnabled:
+          type: boolean
+        companyName:
+          type: string
+        currency:
+          type: string
+      required:
+        - poEnabled
+        - companyName
+        - currency
+
+    UpdateSettingsRequest:
+      type: object
+      properties:
+        poEnabled:
+          type: boolean
+        companyName:
+          type: string
+        currency:
+          type: string
+
+    DashboardData:
+      type: object
+      properties:
+        pendingApprovals:
+          type: integer
+        myPendingPRs:
+          type: integer
+        pendingPOs:
+          type: integer
+        totalPRs:
+          type: integer
+        totalPOs:
+          type: integer
+        recentPRs:
+          type: array
+          items:
+            $ref: "#/components/schemas/PurchaseRequest"
+        recentApprovals:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalWithPR"
+        prByStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+      required:
+        - pendingApprovals
+        - myPendingPRs
+        - pendingPOs
+        - totalPRs
+        - totalPOs
+        - recentPRs
+        - recentApprovals
+        - prByStatus
+
+    StatusCount:
+      type: object
+      properties:
+        status:
+          type: string
+        count:
+          type: integer
+      required:
+        - status
+        - count
