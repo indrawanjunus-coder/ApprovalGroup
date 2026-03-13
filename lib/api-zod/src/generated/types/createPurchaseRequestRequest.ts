@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import type { CreatePurchaseRequestRequestType } from "./createPurchaseRequestRequestType";
 import type { PrItemInput } from "./prItemInput";
@@ -11,6 +11,11 @@ import type { PrItemInput } from "./prItemInput";
 export interface CreatePurchaseRequestRequest {
   type: CreatePurchaseRequestRequestType;
   description: string;
-  items: PrItemInput[];
+  companyId?: number | null;
+  department?: string | null;
+  items?: PrItemInput[];
   notes?: string | null;
+  leaveStartDate?: string | null;
+  leaveEndDate?: string | null;
+  leaveRequesterId?: number | null;
 }

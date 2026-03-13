@@ -3,12 +3,11 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
-import type { GetPurchaseOrdersStatus } from "./getPurchaseOrdersStatus";
 
 export type GetPurchaseOrdersParams = {
   page?: number;
   limit?: number;
-  status?: GetPurchaseOrdersStatus;
+  status?: string;
 };

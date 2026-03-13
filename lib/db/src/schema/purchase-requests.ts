@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, numeric, timestamp, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -8,6 +8,7 @@ export const purchaseRequestsTable = pgTable("purchase_requests", {
   date: timestamp("date").notNull().defaultNow(),
   requesterId: integer("requester_id").notNull(),
   department: text("department").notNull(),
+  companyId: integer("company_id"),
   type: text("type").notNull(),
   description: text("description").notNull(),
   status: text("status").notNull().default("draft"),
@@ -15,6 +16,9 @@ export const purchaseRequestsTable = pgTable("purchase_requests", {
   attachmentUrl: text("attachment_url"),
   currentApprovalLevel: integer("current_approval_level"),
   notes: text("notes"),
+  leaveStartDate: date("leave_start_date"),
+  leaveEndDate: date("leave_end_date"),
+  leaveRequesterId: integer("leave_requester_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

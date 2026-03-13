@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 export interface HealthStatus {
   status: string;
@@ -33,23 +33,56 @@ export const UserRole = {
   purchasing: "purchasing",
 } as const;
 
+export interface UserCompanyAssignment {
+  id: number;
+  userId: string;
+  companyId: string;
+  companyName: string;
+  department: string;
+}
+
 export interface User {
   id: number;
   username: string;
   name: string;
-  email?: string;
+  email?: string | null;
   department: string;
   position: string;
   role: UserRole;
   superiorId?: number | null;
   superiorName?: string | null;
   isActive: boolean;
+  companies?: UserCompanyAssignment[];
   createdAt: string;
 }
 
 export interface LoginResponse {
   user: User;
   message?: string;
+}
+
+export interface Company {
+  id: number;
+  name: string;
+  code: string;
+  address?: string | null;
+  isActive: string;
+  createdAt: string;
+}
+
+export interface CreateCompanyRequest {
+  name: string;
+  code: string;
+  address?: string | null;
+}
+
+export interface UserCompanyInput {
+  companyId: number;
+  department: string;
+}
+
+export interface UpdateUserCompaniesRequest {
+  assignments: UserCompanyInput[];
 }
 
 export interface UserListResponse {
@@ -73,11 +106,12 @@ export interface CreateUserRequest {
   username: string;
   password: string;
   name: string;
-  email?: string;
+  email?: string | null;
   department: string;
   position: string;
   role: CreateUserRequestRole;
   superiorId?: number | null;
+  companies?: UserCompanyInput[];
 }
 
 export type UpdateUserRequestRole =
@@ -92,13 +126,14 @@ export const UpdateUserRequestRole = {
 
 export interface UpdateUserRequest {
   name?: string;
-  email?: string;
+  email?: string | null;
   department?: string;
   position?: string;
   role?: UpdateUserRequestRole;
   superiorId?: number | null;
   isActive?: boolean;
   password?: string;
+  companies?: UserCompanyInput[];
 }
 
 export interface PrItem {
@@ -168,6 +203,8 @@ export interface PurchaseRequest {
   requesterId: number;
   requesterName: string;
   department: string;
+  companyId?: number | null;
+  companyName?: string | null;
   type: PurchaseRequestType;
   description: string;
   status: PurchaseRequestStatus;
@@ -177,6 +214,10 @@ export interface PurchaseRequest {
   approvals: Approval[];
   currentApprovalLevel?: number | null;
   notes?: string | null;
+  leaveStartDate?: string | null;
+  leaveEndDate?: string | null;
+  leaveRequesterId?: number | null;
+  leaveRequesterName?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -200,8 +241,13 @@ export const CreatePurchaseRequestRequestType = {
 export interface CreatePurchaseRequestRequest {
   type: CreatePurchaseRequestRequestType;
   description: string;
-  items: PrItemInput[];
+  companyId?: number | null;
+  department?: string | null;
+  items?: PrItemInput[];
   notes?: string | null;
+  leaveStartDate?: string | null;
+  leaveEndDate?: string | null;
+  leaveRequesterId?: number | null;
 }
 
 export type UpdatePurchaseRequestRequestType =
@@ -216,8 +262,12 @@ export const UpdatePurchaseRequestRequestType = {
 export interface UpdatePurchaseRequestRequest {
   type?: UpdatePurchaseRequestRequestType;
   description?: string;
+  companyId?: number | null;
   items?: PrItemInput[];
   notes?: string | null;
+  leaveStartDate?: string | null;
+  leaveEndDate?: string | null;
+  leaveRequesterId?: number | null;
 }
 
 export interface ReceivePRRequest {
@@ -260,53 +310,57 @@ export interface ApprovalActionRequest {
   notes?: string | null;
 }
 
-export type ApprovalRuleLevelRole =
-  (typeof ApprovalRuleLevelRole)[keyof typeof ApprovalRuleLevelRole];
-
-export const ApprovalRuleLevelRole = {
-  admin: "admin",
-  user: "user",
-  approver: "approver",
-  purchasing: "purchasing",
-} as const;
-
 export interface ApprovalRuleLevel {
   id: number;
   ruleId: number;
   level: number;
-  role: ApprovalRuleLevelRole;
-  position?: string | null;
+  approverId: number;
+  approverName: string;
+  minAmount?: number | null;
+  maxAmount?: number | null;
 }
+
+export interface ApprovalRuleLevelInput {
+  level: number;
+  approverId: number;
+  minAmount?: number | null;
+  maxAmount?: number | null;
+}
+
+export type ApprovalRuleType =
+  (typeof ApprovalRuleType)[keyof typeof ApprovalRuleType];
+
+export const ApprovalRuleType = {
+  purchase: "purchase",
+  repair: "repair",
+  leave: "leave",
+} as const;
 
 export interface ApprovalRule {
   id: number;
   name: string;
-  minAmount: number;
-  maxAmount?: number | null;
+  companyId?: number | null;
+  companyName?: string | null;
+  department?: string | null;
+  type: ApprovalRuleType;
   levels: ApprovalRuleLevel[];
   createdAt: string;
 }
 
-export type ApprovalRuleLevelInputRole =
-  (typeof ApprovalRuleLevelInputRole)[keyof typeof ApprovalRuleLevelInputRole];
+export type CreateApprovalRuleRequestType =
+  (typeof CreateApprovalRuleRequestType)[keyof typeof CreateApprovalRuleRequestType];
 
-export const ApprovalRuleLevelInputRole = {
-  admin: "admin",
-  user: "user",
-  approver: "approver",
-  purchasing: "purchasing",
+export const CreateApprovalRuleRequestType = {
+  purchase: "purchase",
+  repair: "repair",
+  leave: "leave",
 } as const;
-
-export interface ApprovalRuleLevelInput {
-  level: number;
-  role: ApprovalRuleLevelInputRole;
-  position?: string | null;
-}
 
 export interface CreateApprovalRuleRequest {
   name: string;
-  minAmount: number;
-  maxAmount?: number | null;
+  companyId?: number | null;
+  department?: string | null;
+  type: CreateApprovalRuleRequestType;
   levels: ApprovalRuleLevelInput[];
 }
 
@@ -404,23 +458,12 @@ export interface NotificationListResponse {
   total: number;
 }
 
-export type AuditLogEntityType =
-  (typeof AuditLogEntityType)[keyof typeof AuditLogEntityType];
-
-export const AuditLogEntityType = {
-  pr: "pr",
-  po: "po",
-  user: "user",
-  approval: "approval",
-  setting: "setting",
-} as const;
-
 export interface AuditLog {
   id: number;
   userId: number;
   userName: string;
   action: string;
-  entityType: AuditLogEntityType;
+  entityType: string;
   entityId: number;
   details?: string | null;
   createdAt: string;
@@ -465,31 +508,25 @@ export type GetUsersParams = {
   page?: number;
   limit?: number;
   search?: string;
+  role?: string;
 };
 
 export type GetPurchaseRequestsParams = {
   page?: number;
   limit?: number;
-  status?: GetPurchaseRequestsStatus;
-  type?: GetPurchaseRequestsType;
+  status?: string;
+  type?: string;
   search?: string;
 };
 
-export type GetPurchaseRequestsStatus =
-  (typeof GetPurchaseRequestsStatus)[keyof typeof GetPurchaseRequestsStatus];
+export type GetApprovalRulesParams = {
+  type?: GetApprovalRulesType;
+};
 
-export const GetPurchaseRequestsStatus = {
-  draft: "draft",
-  waiting_approval: "waiting_approval",
-  approved: "approved",
-  rejected: "rejected",
-  completed: "completed",
-} as const;
+export type GetApprovalRulesType =
+  (typeof GetApprovalRulesType)[keyof typeof GetApprovalRulesType];
 
-export type GetPurchaseRequestsType =
-  (typeof GetPurchaseRequestsType)[keyof typeof GetPurchaseRequestsType];
-
-export const GetPurchaseRequestsType = {
+export const GetApprovalRulesType = {
   purchase: "purchase",
   repair: "repair",
   leave: "leave",
@@ -498,18 +535,8 @@ export const GetPurchaseRequestsType = {
 export type GetPurchaseOrdersParams = {
   page?: number;
   limit?: number;
-  status?: GetPurchaseOrdersStatus;
+  status?: string;
 };
-
-export type GetPurchaseOrdersStatus =
-  (typeof GetPurchaseOrdersStatus)[keyof typeof GetPurchaseOrdersStatus];
-
-export const GetPurchaseOrdersStatus = {
-  draft: "draft",
-  issued: "issued",
-  receiving: "receiving",
-  received: "received",
-} as const;
 
 export type GetNotificationsParams = {
   unread?: boolean;

@@ -3,16 +3,15 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
-import type { AuditLogEntityType } from "./auditLogEntityType";
 
 export interface AuditLog {
   id: number;
   userId: number;
   userName: string;
   action: string;
-  entityType: AuditLogEntityType;
+  entityType: string;
   entityId: number;
   details?: string | null;
   createdAt: Date;

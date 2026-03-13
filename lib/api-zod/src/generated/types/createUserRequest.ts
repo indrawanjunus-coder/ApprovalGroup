@@ -3,17 +3,19 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import type { CreateUserRequestRole } from "./createUserRequestRole";
+import type { UserCompanyInput } from "./userCompanyInput";
 
 export interface CreateUserRequest {
   username: string;
   password: string;
   name: string;
-  email?: string;
+  email?: string | null;
   department: string;
   position: string;
   role: CreateUserRequestRole;
   superiorId?: number | null;
+  companies?: UserCompanyInput[];
 }

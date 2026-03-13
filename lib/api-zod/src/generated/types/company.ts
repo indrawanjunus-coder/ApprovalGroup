@@ -6,10 +6,11 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface PrItemInput {
+export interface Company {
+  id: number;
   name: string;
-  description?: string | null;
-  qty: number;
-  unit: string;
-  estimatedPrice: number;
+  code: string;
+  address?: string | null;
+  isActive: string;
+  createdAt: Date;
 }

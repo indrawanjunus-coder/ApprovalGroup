@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import * as zod from "zod";
 
@@ -14,9 +14,6 @@ export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
 
-/**
- * @summary Login user
- */
 export const LoginBody = zod.object({
   username: zod.string(),
   password: zod.string(),
@@ -27,46 +24,59 @@ export const LoginResponse = zod.object({
     id: zod.number(),
     username: zod.string(),
     name: zod.string(),
-    email: zod.string().optional(),
+    email: zod.string().nullish(),
     department: zod.string(),
     position: zod.string(),
     role: zod.enum(["admin", "user", "approver", "purchasing"]),
     superiorId: zod.number().nullish(),
     superiorName: zod.string().nullish(),
     isActive: zod.boolean(),
+    companies: zod
+      .array(
+        zod.object({
+          id: zod.number(),
+          userId: zod.string(),
+          companyId: zod.string(),
+          companyName: zod.string(),
+          department: zod.string(),
+        }),
+      )
+      .optional(),
     createdAt: zod.date(),
   }),
   message: zod.string().optional(),
 });
 
-/**
- * @summary Logout user
- */
 export const LogoutResponse = zod.object({
   success: zod.boolean(),
   message: zod.string().optional(),
 });
 
-/**
- * @summary Get current user
- */
 export const GetMeResponse = zod.object({
   id: zod.number(),
   username: zod.string(),
   name: zod.string(),
-  email: zod.string().optional(),
+  email: zod.string().nullish(),
   department: zod.string(),
   position: zod.string(),
   role: zod.enum(["admin", "user", "approver", "purchasing"]),
   superiorId: zod.number().nullish(),
   superiorName: zod.string().nullish(),
   isActive: zod.boolean(),
+  companies: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        userId: zod.string(),
+        companyId: zod.string(),
+        companyName: zod.string(),
+        department: zod.string(),
+      }),
+    )
+    .optional(),
   createdAt: zod.date(),
 });
 
-/**
- * @summary Get all users
- */
 export const getUsersQueryPageDefault = 1;
 export const getUsersQueryLimitDefault = 20;
 
@@ -74,6 +84,7 @@ export const GetUsersQueryParams = zod.object({
   page: zod.coerce.number().default(getUsersQueryPageDefault),
   limit: zod.coerce.number().default(getUsersQueryLimitDefault),
   search: zod.coerce.string().optional(),
+  role: zod.coerce.string().optional(),
 });
 
 export const GetUsersResponse = zod.object({
@@ -82,13 +93,24 @@ export const GetUsersResponse = zod.object({
       id: zod.number(),
       username: zod.string(),
       name: zod.string(),
-      email: zod.string().optional(),
+      email: zod.string().nullish(),
       department: zod.string(),
       position: zod.string(),
       role: zod.enum(["admin", "user", "approver", "purchasing"]),
       superiorId: zod.number().nullish(),
       superiorName: zod.string().nullish(),
       isActive: zod.boolean(),
+      companies: zod
+        .array(
+          zod.object({
+            id: zod.number(),
+            userId: zod.string(),
+            companyId: zod.string(),
+            companyName: zod.string(),
+            department: zod.string(),
+          }),
+        )
+        .optional(),
       createdAt: zod.date(),
     }),
   ),
@@ -97,23 +119,25 @@ export const GetUsersResponse = zod.object({
   limit: zod.number(),
 });
 
-/**
- * @summary Create a new user
- */
 export const CreateUserBody = zod.object({
   username: zod.string(),
   password: zod.string(),
   name: zod.string(),
-  email: zod.string().optional(),
+  email: zod.string().nullish(),
   department: zod.string(),
   position: zod.string(),
   role: zod.enum(["admin", "user", "approver", "purchasing"]),
   superiorId: zod.number().nullish(),
+  companies: zod
+    .array(
+      zod.object({
+        companyId: zod.number(),
+        department: zod.string(),
+      }),
+    )
+    .optional(),
 });
 
-/**
- * @summary Get user by ID
- */
 export const GetUserByIdParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -122,51 +146,75 @@ export const GetUserByIdResponse = zod.object({
   id: zod.number(),
   username: zod.string(),
   name: zod.string(),
-  email: zod.string().optional(),
+  email: zod.string().nullish(),
   department: zod.string(),
   position: zod.string(),
   role: zod.enum(["admin", "user", "approver", "purchasing"]),
   superiorId: zod.number().nullish(),
   superiorName: zod.string().nullish(),
   isActive: zod.boolean(),
+  companies: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        userId: zod.string(),
+        companyId: zod.string(),
+        companyName: zod.string(),
+        department: zod.string(),
+      }),
+    )
+    .optional(),
   createdAt: zod.date(),
 });
 
-/**
- * @summary Update a user
- */
 export const UpdateUserParams = zod.object({
   id: zod.coerce.number(),
 });
 
 export const UpdateUserBody = zod.object({
   name: zod.string().optional(),
-  email: zod.string().optional(),
+  email: zod.string().nullish(),
   department: zod.string().optional(),
   position: zod.string().optional(),
   role: zod.enum(["admin", "user", "approver", "purchasing"]).optional(),
   superiorId: zod.number().nullish(),
   isActive: zod.boolean().optional(),
   password: zod.string().optional(),
+  companies: zod
+    .array(
+      zod.object({
+        companyId: zod.number(),
+        department: zod.string(),
+      }),
+    )
+    .optional(),
 });
 
 export const UpdateUserResponse = zod.object({
   id: zod.number(),
   username: zod.string(),
   name: zod.string(),
-  email: zod.string().optional(),
+  email: zod.string().nullish(),
   department: zod.string(),
   position: zod.string(),
   role: zod.enum(["admin", "user", "approver", "purchasing"]),
   superiorId: zod.number().nullish(),
   superiorName: zod.string().nullish(),
   isActive: zod.boolean(),
+  companies: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        userId: zod.string(),
+        companyId: zod.string(),
+        companyName: zod.string(),
+        department: zod.string(),
+      }),
+    )
+    .optional(),
   createdAt: zod.date(),
 });
 
-/**
- * @summary Delete a user
- */
 export const DeleteUserParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -176,19 +224,95 @@ export const DeleteUserResponse = zod.object({
   message: zod.string().optional(),
 });
 
-/**
- * @summary Get purchase requests
- */
+export const GetUserCompaniesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetUserCompaniesResponseItem = zod.object({
+  id: zod.number(),
+  userId: zod.string(),
+  companyId: zod.string(),
+  companyName: zod.string(),
+  department: zod.string(),
+});
+export const GetUserCompaniesResponse = zod.array(GetUserCompaniesResponseItem);
+
+export const UpdateUserCompaniesParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateUserCompaniesBody = zod.object({
+  assignments: zod.array(
+    zod.object({
+      companyId: zod.number(),
+      department: zod.string(),
+    }),
+  ),
+});
+
+export const UpdateUserCompaniesResponseItem = zod.object({
+  id: zod.number(),
+  userId: zod.string(),
+  companyId: zod.string(),
+  companyName: zod.string(),
+  department: zod.string(),
+});
+export const UpdateUserCompaniesResponse = zod.array(
+  UpdateUserCompaniesResponseItem,
+);
+
+export const GetCompaniesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  isActive: zod.string(),
+  createdAt: zod.date(),
+});
+export const GetCompaniesResponse = zod.array(GetCompaniesResponseItem);
+
+export const CreateCompanyBody = zod.object({
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+});
+
+export const UpdateCompanyParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateCompanyBody = zod.object({
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+});
+
+export const UpdateCompanyResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  code: zod.string(),
+  address: zod.string().nullish(),
+  isActive: zod.string(),
+  createdAt: zod.date(),
+});
+
+export const DeleteCompanyParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteCompanyResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string().optional(),
+});
+
 export const getPurchaseRequestsQueryPageDefault = 1;
 export const getPurchaseRequestsQueryLimitDefault = 20;
 
 export const GetPurchaseRequestsQueryParams = zod.object({
   page: zod.coerce.number().default(getPurchaseRequestsQueryPageDefault),
   limit: zod.coerce.number().default(getPurchaseRequestsQueryLimitDefault),
-  status: zod
-    .enum(["draft", "waiting_approval", "approved", "rejected", "completed"])
-    .optional(),
-  type: zod.enum(["purchase", "repair", "leave"]).optional(),
+  status: zod.coerce.string().optional(),
+  type: zod.coerce.string().optional(),
   search: zod.coerce.string().optional(),
 });
 
@@ -201,6 +325,8 @@ export const GetPurchaseRequestsResponse = zod.object({
       requesterId: zod.number(),
       requesterName: zod.string(),
       department: zod.string(),
+      companyId: zod.number().nullish(),
+      companyName: zod.string().nullish(),
       type: zod.enum(["purchase", "repair", "leave"]),
       description: zod.string(),
       status: zod.enum([
@@ -239,6 +365,10 @@ export const GetPurchaseRequestsResponse = zod.object({
       ),
       currentApprovalLevel: zod.number().nullish(),
       notes: zod.string().nullish(),
+      leaveStartDate: zod.string().nullish(),
+      leaveEndDate: zod.string().nullish(),
+      leaveRequesterId: zod.number().nullish(),
+      leaveRequesterName: zod.string().nullish(),
       createdAt: zod.date(),
       updatedAt: zod.date(),
     }),
@@ -248,90 +378,11 @@ export const GetPurchaseRequestsResponse = zod.object({
   limit: zod.number(),
 });
 
-/**
- * @summary Create a purchase request
- */
 export const CreatePurchaseRequestBody = zod.object({
   type: zod.enum(["purchase", "repair", "leave"]),
   description: zod.string(),
-  items: zod.array(
-    zod.object({
-      name: zod.string(),
-      description: zod.string().nullish(),
-      qty: zod.number(),
-      unit: zod.string(),
-      estimatedPrice: zod.number(),
-    }),
-  ),
-  notes: zod.string().nullish(),
-});
-
-/**
- * @summary Get purchase request by ID
- */
-export const GetPurchaseRequestByIdParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const GetPurchaseRequestByIdResponse = zod.object({
-  id: zod.number(),
-  prNumber: zod.string(),
-  date: zod.date(),
-  requesterId: zod.number(),
-  requesterName: zod.string(),
-  department: zod.string(),
-  type: zod.enum(["purchase", "repair", "leave"]),
-  description: zod.string(),
-  status: zod.enum([
-    "draft",
-    "waiting_approval",
-    "approved",
-    "rejected",
-    "completed",
-  ]),
-  totalAmount: zod.number(),
-  attachmentUrl: zod.string().nullish(),
-  items: zod.array(
-    zod.object({
-      id: zod.number(),
-      prId: zod.number(),
-      name: zod.string(),
-      description: zod.string().nullish(),
-      qty: zod.number(),
-      unit: zod.string(),
-      estimatedPrice: zod.number(),
-      totalPrice: zod.number(),
-    }),
-  ),
-  approvals: zod.array(
-    zod.object({
-      id: zod.number(),
-      prId: zod.number(),
-      approverId: zod.number(),
-      approverName: zod.string(),
-      level: zod.number(),
-      status: zod.enum(["pending", "approved", "rejected"]),
-      notes: zod.string().nullish(),
-      actionAt: zod.date().nullish(),
-      createdAt: zod.date(),
-    }),
-  ),
-  currentApprovalLevel: zod.number().nullish(),
-  notes: zod.string().nullish(),
-  createdAt: zod.date(),
-  updatedAt: zod.date(),
-});
-
-/**
- * @summary Update a purchase request
- */
-export const UpdatePurchaseRequestParams = zod.object({
-  id: zod.coerce.number(),
-});
-
-export const UpdatePurchaseRequestBody = zod.object({
-  type: zod.enum(["purchase", "repair", "leave"]).optional(),
-  description: zod.string().optional(),
+  companyId: zod.number().nullish(),
+  department: zod.string().nullish(),
   items: zod
     .array(
       zod.object({
@@ -344,15 +395,24 @@ export const UpdatePurchaseRequestBody = zod.object({
     )
     .optional(),
   notes: zod.string().nullish(),
+  leaveStartDate: zod.string().nullish(),
+  leaveEndDate: zod.string().nullish(),
+  leaveRequesterId: zod.number().nullish(),
 });
 
-export const UpdatePurchaseRequestResponse = zod.object({
+export const GetPurchaseRequestByIdParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetPurchaseRequestByIdResponse = zod.object({
   id: zod.number(),
   prNumber: zod.string(),
   date: zod.date(),
   requesterId: zod.number(),
   requesterName: zod.string(),
   department: zod.string(),
+  companyId: zod.number().nullish(),
+  companyName: zod.string().nullish(),
   type: zod.enum(["purchase", "repair", "leave"]),
   description: zod.string(),
   status: zod.enum([
@@ -391,13 +451,94 @@ export const UpdatePurchaseRequestResponse = zod.object({
   ),
   currentApprovalLevel: zod.number().nullish(),
   notes: zod.string().nullish(),
+  leaveStartDate: zod.string().nullish(),
+  leaveEndDate: zod.string().nullish(),
+  leaveRequesterId: zod.number().nullish(),
+  leaveRequesterName: zod.string().nullish(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
 
-/**
- * @summary Submit PR for approval
- */
+export const UpdatePurchaseRequestParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdatePurchaseRequestBody = zod.object({
+  type: zod.enum(["purchase", "repair", "leave"]).optional(),
+  description: zod.string().optional(),
+  companyId: zod.number().nullish(),
+  items: zod
+    .array(
+      zod.object({
+        name: zod.string(),
+        description: zod.string().nullish(),
+        qty: zod.number(),
+        unit: zod.string(),
+        estimatedPrice: zod.number(),
+      }),
+    )
+    .optional(),
+  notes: zod.string().nullish(),
+  leaveStartDate: zod.string().nullish(),
+  leaveEndDate: zod.string().nullish(),
+  leaveRequesterId: zod.number().nullish(),
+});
+
+export const UpdatePurchaseRequestResponse = zod.object({
+  id: zod.number(),
+  prNumber: zod.string(),
+  date: zod.date(),
+  requesterId: zod.number(),
+  requesterName: zod.string(),
+  department: zod.string(),
+  companyId: zod.number().nullish(),
+  companyName: zod.string().nullish(),
+  type: zod.enum(["purchase", "repair", "leave"]),
+  description: zod.string(),
+  status: zod.enum([
+    "draft",
+    "waiting_approval",
+    "approved",
+    "rejected",
+    "completed",
+  ]),
+  totalAmount: zod.number(),
+  attachmentUrl: zod.string().nullish(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      name: zod.string(),
+      description: zod.string().nullish(),
+      qty: zod.number(),
+      unit: zod.string(),
+      estimatedPrice: zod.number(),
+      totalPrice: zod.number(),
+    }),
+  ),
+  approvals: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      approverId: zod.number(),
+      approverName: zod.string(),
+      level: zod.number(),
+      status: zod.enum(["pending", "approved", "rejected"]),
+      notes: zod.string().nullish(),
+      actionAt: zod.date().nullish(),
+      createdAt: zod.date(),
+    }),
+  ),
+  currentApprovalLevel: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  leaveStartDate: zod.string().nullish(),
+  leaveEndDate: zod.string().nullish(),
+  leaveRequesterId: zod.number().nullish(),
+  leaveRequesterName: zod.string().nullish(),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+
 export const SubmitPurchaseRequestParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -409,6 +550,8 @@ export const SubmitPurchaseRequestResponse = zod.object({
   requesterId: zod.number(),
   requesterName: zod.string(),
   department: zod.string(),
+  companyId: zod.number().nullish(),
+  companyName: zod.string().nullish(),
   type: zod.enum(["purchase", "repair", "leave"]),
   description: zod.string(),
   status: zod.enum([
@@ -447,13 +590,14 @@ export const SubmitPurchaseRequestResponse = zod.object({
   ),
   currentApprovalLevel: zod.number().nullish(),
   notes: zod.string().nullish(),
+  leaveStartDate: zod.string().nullish(),
+  leaveEndDate: zod.string().nullish(),
+  leaveRequesterId: zod.number().nullish(),
+  leaveRequesterName: zod.string().nullish(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
 
-/**
- * @summary Mark PR as received
- */
 export const ReceivePurchaseRequestParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -469,6 +613,8 @@ export const ReceivePurchaseRequestResponse = zod.object({
   requesterId: zod.number(),
   requesterName: zod.string(),
   department: zod.string(),
+  companyId: zod.number().nullish(),
+  companyName: zod.string().nullish(),
   type: zod.enum(["purchase", "repair", "leave"]),
   description: zod.string(),
   status: zod.enum([
@@ -507,13 +653,14 @@ export const ReceivePurchaseRequestResponse = zod.object({
   ),
   currentApprovalLevel: zod.number().nullish(),
   notes: zod.string().nullish(),
+  leaveStartDate: zod.string().nullish(),
+  leaveEndDate: zod.string().nullish(),
+  leaveRequesterId: zod.number().nullish(),
+  leaveRequesterName: zod.string().nullish(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
 
-/**
- * @summary Get approvals pending for current user
- */
 export const GetApprovalsResponse = zod.object({
   approvals: zod.array(
     zod.object({
@@ -537,9 +684,6 @@ export const GetApprovalsResponse = zod.object({
   total: zod.number(),
 });
 
-/**
- * @summary Approve a PR
- */
 export const ApprovePRParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -560,9 +704,6 @@ export const ApprovePRResponse = zod.object({
   createdAt: zod.date(),
 });
 
-/**
- * @summary Reject a PR
- */
 export const RejectPRParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -583,59 +724,62 @@ export const RejectPRResponse = zod.object({
   createdAt: zod.date(),
 });
 
-/**
- * @summary Get approval rules
- */
+export const GetApprovalRulesQueryParams = zod.object({
+  type: zod.enum(["purchase", "repair", "leave"]).optional(),
+});
+
 export const GetApprovalRulesResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
-  minAmount: zod.number(),
-  maxAmount: zod.number().nullish(),
+  companyId: zod.number().nullish(),
+  companyName: zod.string().nullish(),
+  department: zod.string().nullish(),
+  type: zod.enum(["purchase", "repair", "leave"]),
   levels: zod.array(
     zod.object({
       id: zod.number(),
       ruleId: zod.number(),
       level: zod.number(),
-      role: zod.enum(["admin", "user", "approver", "purchasing"]),
-      position: zod.string().nullish(),
+      approverId: zod.number(),
+      approverName: zod.string(),
+      minAmount: zod.number().nullish(),
+      maxAmount: zod.number().nullish(),
     }),
   ),
   createdAt: zod.date(),
 });
 export const GetApprovalRulesResponse = zod.array(GetApprovalRulesResponseItem);
 
-/**
- * @summary Create approval rule
- */
 export const CreateApprovalRuleBody = zod.object({
   name: zod.string(),
-  minAmount: zod.number(),
-  maxAmount: zod.number().nullish(),
+  companyId: zod.number().nullish(),
+  department: zod.string().nullish(),
+  type: zod.enum(["purchase", "repair", "leave"]),
   levels: zod.array(
     zod.object({
       level: zod.number(),
-      role: zod.enum(["admin", "user", "approver", "purchasing"]),
-      position: zod.string().nullish(),
+      approverId: zod.number(),
+      minAmount: zod.number().nullish(),
+      maxAmount: zod.number().nullish(),
     }),
   ),
 });
 
-/**
- * @summary Update approval rule
- */
 export const UpdateApprovalRuleParams = zod.object({
   id: zod.coerce.number(),
 });
 
 export const UpdateApprovalRuleBody = zod.object({
   name: zod.string(),
-  minAmount: zod.number(),
-  maxAmount: zod.number().nullish(),
+  companyId: zod.number().nullish(),
+  department: zod.string().nullish(),
+  type: zod.enum(["purchase", "repair", "leave"]),
   levels: zod.array(
     zod.object({
       level: zod.number(),
-      role: zod.enum(["admin", "user", "approver", "purchasing"]),
-      position: zod.string().nullish(),
+      approverId: zod.number(),
+      minAmount: zod.number().nullish(),
+      maxAmount: zod.number().nullish(),
     }),
   ),
 });
@@ -643,23 +787,24 @@ export const UpdateApprovalRuleBody = zod.object({
 export const UpdateApprovalRuleResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
-  minAmount: zod.number(),
-  maxAmount: zod.number().nullish(),
+  companyId: zod.number().nullish(),
+  companyName: zod.string().nullish(),
+  department: zod.string().nullish(),
+  type: zod.enum(["purchase", "repair", "leave"]),
   levels: zod.array(
     zod.object({
       id: zod.number(),
       ruleId: zod.number(),
       level: zod.number(),
-      role: zod.enum(["admin", "user", "approver", "purchasing"]),
-      position: zod.string().nullish(),
+      approverId: zod.number(),
+      approverName: zod.string(),
+      minAmount: zod.number().nullish(),
+      maxAmount: zod.number().nullish(),
     }),
   ),
   createdAt: zod.date(),
 });
 
-/**
- * @summary Delete approval rule
- */
 export const DeleteApprovalRuleParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -669,16 +814,13 @@ export const DeleteApprovalRuleResponse = zod.object({
   message: zod.string().optional(),
 });
 
-/**
- * @summary Get purchase orders
- */
 export const getPurchaseOrdersQueryPageDefault = 1;
 export const getPurchaseOrdersQueryLimitDefault = 20;
 
 export const GetPurchaseOrdersQueryParams = zod.object({
   page: zod.coerce.number().default(getPurchaseOrdersQueryPageDefault),
   limit: zod.coerce.number().default(getPurchaseOrdersQueryLimitDefault),
-  status: zod.enum(["draft", "issued", "receiving", "received"]).optional(),
+  status: zod.coerce.string().optional(),
 });
 
 export const GetPurchaseOrdersResponse = zod.object({
@@ -715,9 +857,6 @@ export const GetPurchaseOrdersResponse = zod.object({
   limit: zod.number(),
 });
 
-/**
- * @summary Create purchase order from PR
- */
 export const CreatePurchaseOrderBody = zod.object({
   prId: zod.number(),
   supplier: zod.string(),
@@ -733,9 +872,6 @@ export const CreatePurchaseOrderBody = zod.object({
   notes: zod.string().nullish(),
 });
 
-/**
- * @summary Get PO by ID
- */
 export const GetPurchaseOrderByIdParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -767,9 +903,6 @@ export const GetPurchaseOrderByIdResponse = zod.object({
   updatedAt: zod.date(),
 });
 
-/**
- * @summary Update PO
- */
 export const UpdatePurchaseOrderParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -817,9 +950,6 @@ export const UpdatePurchaseOrderResponse = zod.object({
   updatedAt: zod.date(),
 });
 
-/**
- * @summary Issue a PO
- */
 export const IssuePurchaseOrderParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -851,9 +981,6 @@ export const IssuePurchaseOrderResponse = zod.object({
   updatedAt: zod.date(),
 });
 
-/**
- * @summary Receive a PO
- */
 export const ReceivePurchaseOrderParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -885,9 +1012,6 @@ export const ReceivePurchaseOrderResponse = zod.object({
   updatedAt: zod.date(),
 });
 
-/**
- * @summary Get notifications for current user
- */
 export const GetNotificationsQueryParams = zod.object({
   unread: zod.coerce.boolean().optional(),
 });
@@ -916,9 +1040,6 @@ export const GetNotificationsResponse = zod.object({
   total: zod.number(),
 });
 
-/**
- * @summary Mark notification as read
- */
 export const MarkNotificationReadParams = zod.object({
   id: zod.coerce.number(),
 });
@@ -941,17 +1062,11 @@ export const MarkNotificationReadResponse = zod.object({
   createdAt: zod.date(),
 });
 
-/**
- * @summary Mark all notifications as read
- */
 export const MarkAllNotificationsReadResponse = zod.object({
   success: zod.boolean(),
   message: zod.string().optional(),
 });
 
-/**
- * @summary Get audit logs
- */
 export const getAuditLogsQueryPageDefault = 1;
 export const getAuditLogsQueryLimitDefault = 20;
 
@@ -968,7 +1083,7 @@ export const GetAuditLogsResponse = zod.object({
       userId: zod.number(),
       userName: zod.string(),
       action: zod.string(),
-      entityType: zod.enum(["pr", "po", "user", "approval", "setting"]),
+      entityType: zod.string(),
       entityId: zod.number(),
       details: zod.string().nullish(),
       createdAt: zod.date(),
@@ -979,18 +1094,12 @@ export const GetAuditLogsResponse = zod.object({
   limit: zod.number(),
 });
 
-/**
- * @summary Get system settings
- */
 export const GetSettingsResponse = zod.object({
   poEnabled: zod.boolean(),
   companyName: zod.string(),
   currency: zod.string(),
 });
 
-/**
- * @summary Update system settings
- */
 export const UpdateSettingsBody = zod.object({
   poEnabled: zod.boolean().optional(),
   companyName: zod.string().optional(),
@@ -1003,9 +1112,6 @@ export const UpdateSettingsResponse = zod.object({
   currency: zod.string(),
 });
 
-/**
- * @summary Get dashboard statistics
- */
 export const GetDashboardResponse = zod.object({
   pendingApprovals: zod.number(),
   myPendingPRs: zod.number(),
@@ -1020,6 +1126,8 @@ export const GetDashboardResponse = zod.object({
       requesterId: zod.number(),
       requesterName: zod.string(),
       department: zod.string(),
+      companyId: zod.number().nullish(),
+      companyName: zod.string().nullish(),
       type: zod.enum(["purchase", "repair", "leave"]),
       description: zod.string(),
       status: zod.enum([
@@ -1058,6 +1166,10 @@ export const GetDashboardResponse = zod.object({
       ),
       currentApprovalLevel: zod.number().nullish(),
       notes: zod.string().nullish(),
+      leaveStartDate: zod.string().nullish(),
+      leaveEndDate: zod.string().nullish(),
+      leaveRequesterId: zod.number().nullish(),
+      leaveRequesterName: zod.string().nullish(),
       createdAt: zod.date(),
       updatedAt: zod.date(),
     }),

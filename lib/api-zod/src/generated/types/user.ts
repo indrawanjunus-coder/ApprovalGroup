@@ -3,20 +3,22 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
+import type { UserCompanyAssignment } from "./userCompanyAssignment";
 import type { UserRole } from "./userRole";
 
 export interface User {
   id: number;
   username: string;
   name: string;
-  email?: string;
+  email?: string | null;
   department: string;
   position: string;
   role: UserRole;
   superiorId?: number | null;
   superiorName?: string | null;
   isActive: boolean;
+  companies?: UserCompanyAssignment[];
   createdAt: Date;
 }

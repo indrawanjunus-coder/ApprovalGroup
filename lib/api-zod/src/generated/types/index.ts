@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 
 export * from "./approval";
@@ -12,15 +12,16 @@ export * from "./approvalListResponse";
 export * from "./approvalRule";
 export * from "./approvalRuleLevel";
 export * from "./approvalRuleLevelInput";
-export * from "./approvalRuleLevelInputRole";
-export * from "./approvalRuleLevelRole";
+export * from "./approvalRuleType";
 export * from "./approvalStatus";
 export * from "./approvalWithPR";
 export * from "./approvalWithPRStatus";
 export * from "./auditLog";
-export * from "./auditLogEntityType";
 export * from "./auditLogListResponse";
+export * from "./company";
 export * from "./createApprovalRuleRequest";
+export * from "./createApprovalRuleRequestType";
+export * from "./createCompanyRequest";
 export * from "./createPurchaseOrderRequest";
 export * from "./createPurchaseRequestRequest";
 export * from "./createPurchaseRequestRequestType";
@@ -28,13 +29,12 @@ export * from "./createUserRequest";
 export * from "./createUserRequestRole";
 export * from "./dashboardData";
 export * from "./errorResponse";
+export * from "./getApprovalRulesParams";
+export * from "./getApprovalRulesType";
 export * from "./getAuditLogsParams";
 export * from "./getNotificationsParams";
 export * from "./getPurchaseOrdersParams";
-export * from "./getPurchaseOrdersStatus";
 export * from "./getPurchaseRequestsParams";
-export * from "./getPurchaseRequestsStatus";
-export * from "./getPurchaseRequestsType";
 export * from "./getUsersParams";
 export * from "./healthStatus";
 export * from "./loginRequest";
@@ -61,8 +61,11 @@ export * from "./updatePurchaseOrderRequest";
 export * from "./updatePurchaseRequestRequest";
 export * from "./updatePurchaseRequestRequestType";
 export * from "./updateSettingsRequest";
+export * from "./updateUserCompaniesRequest";
 export * from "./updateUserRequest";
 export * from "./updateUserRequestRole";
 export * from "./user";
+export * from "./userCompanyAssignment";
+export * from "./userCompanyInput";
 export * from "./userListResponse";
 export * from "./userRole";

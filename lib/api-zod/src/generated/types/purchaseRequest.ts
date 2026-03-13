@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import type { Approval } from "./approval";
 import type { PrItem } from "./prItem";
@@ -17,6 +17,8 @@ export interface PurchaseRequest {
   requesterId: number;
   requesterName: string;
   department: string;
+  companyId?: number | null;
+  companyName?: string | null;
   type: PurchaseRequestType;
   description: string;
   status: PurchaseRequestStatus;
@@ -26,6 +28,10 @@ export interface PurchaseRequest {
   approvals: Approval[];
   currentApprovalLevel?: number | null;
   notes?: string | null;
+  leaveStartDate?: string | null;
+  leaveEndDate?: string | null;
+  leaveRequesterId?: number | null;
+  leaveRequesterName?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

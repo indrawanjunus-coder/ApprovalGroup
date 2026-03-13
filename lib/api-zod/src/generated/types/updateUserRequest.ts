@@ -3,17 +3,19 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import type { UpdateUserRequestRole } from "./updateUserRequestRole";
+import type { UserCompanyInput } from "./userCompanyInput";
 
 export interface UpdateUserRequest {
   name?: string;
-  email?: string;
+  email?: string | null;
   department?: string;
   position?: string;
   role?: UpdateUserRequestRole;
   superiorId?: number | null;
   isActive?: boolean;
   password?: string;
+  companies?: UserCompanyInput[];
 }

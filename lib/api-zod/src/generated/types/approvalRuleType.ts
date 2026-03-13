@@ -6,10 +6,10 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export type CreatePurchaseRequestRequestType =
-  (typeof CreatePurchaseRequestRequestType)[keyof typeof CreatePurchaseRequestRequestType];
+export type ApprovalRuleType =
+  (typeof ApprovalRuleType)[keyof typeof ApprovalRuleType];
 
-export const CreatePurchaseRequestRequestType = {
+export const ApprovalRuleType = {
   purchase: "purchase",
   repair: "repair",
   leave: "leave",

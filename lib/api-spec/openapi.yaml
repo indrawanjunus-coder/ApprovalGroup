@@ -1,32 +1,23 @@
 openapi: 3.1.0
 info:
   title: Api
-  version: 0.1.0
+  version: 0.2.0
   description: PR/PO Approval System API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
   - name: auth
-    description: Authentication
   - name: users
-    description: User management
+  - name: companies
   - name: purchase-requests
-    description: Purchase Request management
   - name: approvals
-    description: Approval workflow
   - name: purchase-orders
-    description: Purchase Order management
   - name: notifications
-    description: Notification management
   - name: audit-logs
-    description: Audit log management
   - name: settings
-    description: System settings
   - name: dashboard
-    description: Dashboard data
 
 paths:
   /healthz:
@@ -46,7 +37,6 @@ paths:
     post:
       operationId: login
       tags: [auth]
-      summary: Login user
       requestBody:
         required: true
         content:
@@ -61,7 +51,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/LoginResponse"
         "401":
-          description: Invalid credentials
+          description: Unauthorized
           content:
             application/json:
               schema:
@@ -71,10 +61,9 @@ paths:
     post:
       operationId: logout
       tags: [auth]
-      summary: Logout user
       responses:
         "200":
-          description: Logout successful
+          description: OK
           content:
             application/json:
               schema:
@@ -84,7 +73,6 @@ paths:
     get:
       operationId: getMe
       tags: [auth]
-      summary: Get current user
       responses:
         "200":
           description: Current user
@@ -103,7 +91,6 @@ paths:
     get:
       operationId: getUsers
       tags: [users]
-      summary: Get all users
       parameters:
         - name: page
           in: query
@@ -119,9 +106,13 @@ paths:
           in: query
           schema:
             type: string
+        - name: role
+          in: query
+          schema:
+            type: string
       responses:
         "200":
-          description: List of users
+          description: OK
           content:
             application/json:
               schema:
@@ -130,7 +121,6 @@ paths:
     post:
       operationId: createUser
       tags: [users]
-      summary: Create a new user
       requestBody:
         required: true
         content:
@@ -139,7 +129,7 @@ paths:
               $ref: "#/components/schemas/CreateUserRequest"
       responses:
         "201":
-          description: User created
+          description: Created
           content:
             application/json:
               schema:
@@ -149,7 +139,6 @@ paths:
     get:
       operationId: getUserById
       tags: [users]
-      summary: Get user by ID
       parameters:
         - name: id
           in: path
@@ -158,13 +147,13 @@ paths:
             type: integer
       responses:
         "200":
-          description: User found
+          description: OK
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
         "404":
-          description: User not found
+          description: Not found
           content:
             application/json:
               schema:
@@ -173,7 +162,6 @@ paths:
     put:
       operationId: updateUser
       tags: [users]
-      summary: Update a user
       parameters:
         - name: id
           in: path
@@ -188,7 +176,7 @@ paths:
               $ref: "#/components/schemas/UpdateUserRequest"
       responses:
         "200":
-          description: User updated
+          description: OK
           content:
             application/json:
               schema:
@@ -197,7 +185,6 @@ paths:
     delete:
       operationId: deleteUser
       tags: [users]
-      summary: Delete a user
       parameters:
         - name: id
           in: path
@@ -206,7 +193,124 @@ paths:
             type: integer
       responses:
         "200":
-          description: User deleted
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /users/{id}/companies:
+    get:
+      operationId: getUserCompanies
+      tags: [users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserCompanyAssignment"
+
+    put:
+      operationId: updateUserCompanies
+      tags: [users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserCompaniesRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserCompanyAssignment"
+
+  /companies:
+    get:
+      operationId: getCompanies
+      tags: [companies]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Company"
+
+    post:
+      operationId: createCompany
+      tags: [companies]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompanyRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+  /companies/{id}:
+    put:
+      operationId: updateCompany
+      tags: [companies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompanyRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Company"
+
+    delete:
+      operationId: deleteCompany
+      tags: [companies]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
           content:
             application/json:
               schema:
@@ -216,7 +320,6 @@ paths:
     get:
       operationId: getPurchaseRequests
       tags: [purchase-requests]
-      summary: Get purchase requests
       parameters:
         - name: page
           in: query
@@ -232,19 +335,17 @@ paths:
           in: query
           schema:
             type: string
-            enum: [draft, waiting_approval, approved, rejected, completed]
         - name: type
           in: query
           schema:
             type: string
-            enum: [purchase, repair, leave]
         - name: search
           in: query
           schema:
             type: string
       responses:
         "200":
-          description: List of purchase requests
+          description: OK
           content:
             application/json:
               schema:
@@ -253,7 +354,6 @@ paths:
     post:
       operationId: createPurchaseRequest
       tags: [purchase-requests]
-      summary: Create a purchase request
       requestBody:
         required: true
         content:
@@ -262,7 +362,7 @@ paths:
               $ref: "#/components/schemas/CreatePurchaseRequestRequest"
       responses:
         "201":
-          description: Purchase request created
+          description: Created
           content:
             application/json:
               schema:
@@ -272,7 +372,6 @@ paths:
     get:
       operationId: getPurchaseRequestById
       tags: [purchase-requests]
-      summary: Get purchase request by ID
       parameters:
         - name: id
           in: path
@@ -281,7 +380,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: Purchase request found
+          description: OK
           content:
             application/json:
               schema:
@@ -296,7 +395,6 @@ paths:
     put:
       operationId: updatePurchaseRequest
       tags: [purchase-requests]
-      summary: Update a purchase request
       parameters:
         - name: id
           in: path
@@ -311,7 +409,7 @@ paths:
               $ref: "#/components/schemas/UpdatePurchaseRequestRequest"
       responses:
         "200":
-          description: Updated
+          description: OK
           content:
             application/json:
               schema:
@@ -321,7 +419,6 @@ paths:
     post:
       operationId: submitPurchaseRequest
       tags: [purchase-requests]
-      summary: Submit PR for approval
       parameters:
         - name: id
           in: path
@@ -330,7 +427,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: Submitted
+          description: OK
           content:
             application/json:
               schema:
@@ -340,7 +437,6 @@ paths:
     post:
       operationId: receivePurchaseRequest
       tags: [purchase-requests]
-      summary: Mark PR as received
       parameters:
         - name: id
           in: path
@@ -355,7 +451,7 @@ paths:
               $ref: "#/components/schemas/ReceivePRRequest"
       responses:
         "200":
-          description: Received
+          description: OK
           content:
             application/json:
               schema:
@@ -365,10 +461,9 @@ paths:
     get:
       operationId: getApprovals
       tags: [approvals]
-      summary: Get approvals pending for current user
       responses:
         "200":
-          description: List of pending approvals
+          description: OK
           content:
             application/json:
               schema:
@@ -378,7 +473,6 @@ paths:
     post:
       operationId: approvePR
       tags: [approvals]
-      summary: Approve a PR
       parameters:
         - name: id
           in: path
@@ -393,7 +487,7 @@ paths:
               $ref: "#/components/schemas/ApprovalActionRequest"
       responses:
         "200":
-          description: Approved
+          description: OK
           content:
             application/json:
               schema:
@@ -403,7 +497,6 @@ paths:
     post:
       operationId: rejectPR
       tags: [approvals]
-      summary: Reject a PR
       parameters:
         - name: id
           in: path
@@ -418,7 +511,7 @@ paths:
               $ref: "#/components/schemas/ApprovalActionRequest"
       responses:
         "200":
-          description: Rejected
+          description: OK
           content:
             application/json:
               schema:
@@ -428,10 +521,15 @@ paths:
     get:
       operationId: getApprovalRules
       tags: [approvals]
-      summary: Get approval rules
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [purchase, repair, leave]
       responses:
         "200":
-          description: Approval rules
+          description: OK
           content:
             application/json:
               schema:
@@ -442,7 +540,6 @@ paths:
     post:
       operationId: createApprovalRule
       tags: [approvals]
-      summary: Create approval rule
       requestBody:
         required: true
         content:
@@ -461,7 +558,6 @@ paths:
     put:
       operationId: updateApprovalRule
       tags: [approvals]
-      summary: Update approval rule
       parameters:
         - name: id
           in: path
@@ -476,7 +572,7 @@ paths:
               $ref: "#/components/schemas/CreateApprovalRuleRequest"
       responses:
         "200":
-          description: Updated
+          description: OK
           content:
             application/json:
               schema:
@@ -485,7 +581,6 @@ paths:
     delete:
       operationId: deleteApprovalRule
       tags: [approvals]
-      summary: Delete approval rule
       parameters:
         - name: id
           in: path
@@ -494,7 +589,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: Deleted
+          description: OK
           content:
             application/json:
               schema:
@@ -504,7 +599,6 @@ paths:
     get:
       operationId: getPurchaseOrders
       tags: [purchase-orders]
-      summary: Get purchase orders
       parameters:
         - name: page
           in: query
@@ -520,10 +614,9 @@ paths:
           in: query
           schema:
             type: string
-            enum: [draft, issued, receiving, received]
       responses:
         "200":
-          description: List of purchase orders
+          description: OK
           content:
             application/json:
               schema:
@@ -532,7 +625,6 @@ paths:
     post:
       operationId: createPurchaseOrder
       tags: [purchase-orders]
-      summary: Create purchase order from PR
       requestBody:
         required: true
         content:
@@ -541,7 +633,7 @@ paths:
               $ref: "#/components/schemas/CreatePurchaseOrderRequest"
       responses:
         "201":
-          description: PO created
+          description: Created
           content:
             application/json:
               schema:
@@ -551,7 +643,6 @@ paths:
     get:
       operationId: getPurchaseOrderById
       tags: [purchase-orders]
-      summary: Get PO by ID
       parameters:
         - name: id
           in: path
@@ -560,7 +651,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: PO found
+          description: OK
           content:
             application/json:
               schema:
@@ -569,7 +660,6 @@ paths:
     put:
       operationId: updatePurchaseOrder
       tags: [purchase-orders]
-      summary: Update PO
       parameters:
         - name: id
           in: path
@@ -584,7 +674,7 @@ paths:
               $ref: "#/components/schemas/UpdatePurchaseOrderRequest"
       responses:
         "200":
-          description: Updated
+          description: OK
           content:
             application/json:
               schema:
@@ -594,7 +684,6 @@ paths:
     post:
       operationId: issuePurchaseOrder
       tags: [purchase-orders]
-      summary: Issue a PO
       parameters:
         - name: id
           in: path
@@ -603,7 +692,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: Issued
+          description: OK
           content:
             application/json:
               schema:
@@ -613,7 +702,6 @@ paths:
     post:
       operationId: receivePurchaseOrder
       tags: [purchase-orders]
-      summary: Receive a PO
       parameters:
         - name: id
           in: path
@@ -622,7 +710,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: Received
+          description: OK
           content:
             application/json:
               schema:
@@ -632,7 +720,6 @@ paths:
     get:
       operationId: getNotifications
       tags: [notifications]
-      summary: Get notifications for current user
       parameters:
         - name: unread
           in: query
@@ -640,7 +727,7 @@ paths:
             type: boolean
       responses:
         "200":
-          description: List of notifications
+          description: OK
           content:
             application/json:
               schema:
@@ -650,7 +737,6 @@ paths:
     put:
       operationId: markNotificationRead
       tags: [notifications]
-      summary: Mark notification as read
       parameters:
         - name: id
           in: path
@@ -659,7 +745,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: Marked as read
+          description: OK
           content:
             application/json:
               schema:
@@ -669,10 +755,9 @@ paths:
     put:
       operationId: markAllNotificationsRead
       tags: [notifications]
-      summary: Mark all notifications as read
       responses:
         "200":
-          description: All marked as read
+          description: OK
           content:
             application/json:
               schema:
@@ -682,7 +767,6 @@ paths:
     get:
       operationId: getAuditLogs
       tags: [audit-logs]
-      summary: Get audit logs
       parameters:
         - name: page
           in: query
@@ -700,7 +784,7 @@ paths:
             type: integer
       responses:
         "200":
-          description: List of audit logs
+          description: OK
           content:
             application/json:
               schema:
@@ -710,10 +794,9 @@ paths:
     get:
       operationId: getSettings
       tags: [settings]
-      summary: Get system settings
       responses:
         "200":
-          description: Settings
+          description: OK
           content:
             application/json:
               schema:
@@ -722,7 +805,6 @@ paths:
     put:
       operationId: updateSettings
       tags: [settings]
-      summary: Update system settings
       requestBody:
         required: true
         content:
@@ -731,7 +813,7 @@ paths:
               $ref: "#/components/schemas/UpdateSettingsRequest"
       responses:
         "200":
-          description: Updated
+          description: OK
           content:
             application/json:
               schema:
@@ -741,10 +823,9 @@ paths:
     get:
       operationId: getDashboard
       tags: [dashboard]
-      summary: Get dashboard statistics
       responses:
         "200":
-          description: Dashboard data
+          description: OK
           content:
             application/json:
               schema:
@@ -757,8 +838,7 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
     ErrorResponse:
       type: object
@@ -767,8 +847,7 @@ components:
           type: string
         message:
           type: string
-      required:
-        - error
+      required: [error]
 
     SuccessResponse:
       type: object
@@ -777,8 +856,7 @@ components:
           type: boolean
         message:
           type: string
-      required:
-        - success
+      required: [success]
 
     LoginRequest:
       type: object
@@ -787,9 +865,7 @@ components:
           type: string
         password:
           type: string
-      required:
-        - username
-        - password
+      required: [username, password]
 
     LoginResponse:
       type: object
@@ -798,8 +874,71 @@ components:
           $ref: "#/components/schemas/User"
         message:
           type: string
-      required:
-        - user
+      required: [user]
+
+    Company:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        code:
+          type: string
+        address:
+          type: string
+          nullable: true
+        isActive:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, code, isActive, createdAt]
+
+    CreateCompanyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        address:
+          type: string
+          nullable: true
+      required: [name, code]
+
+    UserCompanyAssignment:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: string
+        companyId:
+          type: string
+        companyName:
+          type: string
+        department:
+          type: string
+      required: [id, userId, companyId, companyName, department]
+
+    UpdateUserCompaniesRequest:
+      type: object
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserCompanyInput"
+      required: [assignments]
+
+    UserCompanyInput:
+      type: object
+      properties:
+        companyId:
+          type: integer
+        department:
+          type: string
+      required: [companyId, department]
 
     User:
       type: object
@@ -812,6 +951,7 @@ components:
           type: string
         email:
           type: string
+          nullable: true
         department:
           type: string
         position:
@@ -827,18 +967,14 @@ components:
           nullable: true
         isActive:
           type: boolean
+        companies:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserCompanyAssignment"
         createdAt:
           type: string
           format: date-time
-      required:
-        - id
-        - username
-        - name
-        - department
-        - position
-        - role
-        - isActive
-        - createdAt
+      required: [id, username, name, department, position, role, isActive, createdAt]
 
     UserListResponse:
       type: object
@@ -853,11 +989,7 @@ components:
           type: integer
         limit:
           type: integer
-      required:
-        - users
-        - total
-        - page
-        - limit
+      required: [users, total, page, limit]
 
     CreateUserRequest:
       type: object
@@ -870,6 +1002,7 @@ components:
           type: string
         email:
           type: string
+          nullable: true
         department:
           type: string
         position:
@@ -880,13 +1013,11 @@ components:
         superiorId:
           type: integer
           nullable: true
-      required:
-        - username
-        - password
-        - name
-        - department
-        - position
-        - role
+        companies:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserCompanyInput"
+      required: [username, password, name, department, position, role]
 
     UpdateUserRequest:
       type: object
@@ -895,6 +1026,7 @@ components:
           type: string
         email:
           type: string
+          nullable: true
         department:
           type: string
         position:
@@ -909,6 +1041,10 @@ components:
           type: boolean
         password:
           type: string
+        companies:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserCompanyInput"
 
     PrItem:
       type: object
@@ -930,14 +1066,7 @@ components:
           type: number
         totalPrice:
           type: number
-      required:
-        - id
-        - prId
-        - name
-        - qty
-        - unit
-        - estimatedPrice
-        - totalPrice
+      required: [id, prId, name, qty, unit, estimatedPrice, totalPrice]
 
     PrItemInput:
       type: object
@@ -953,11 +1082,7 @@ components:
           type: string
         estimatedPrice:
           type: number
-      required:
-        - name
-        - qty
-        - unit
-        - estimatedPrice
+      required: [name, qty, unit, estimatedPrice]
 
     PurchaseRequest:
       type: object
@@ -975,6 +1100,12 @@ components:
           type: string
         department:
           type: string
+        companyId:
+          type: integer
+          nullable: true
+        companyName:
+          type: string
+          nullable: true
         type:
           type: string
           enum: [purchase, repair, leave]
@@ -1002,27 +1133,25 @@ components:
         notes:
           type: string
           nullable: true
+        leaveStartDate:
+          type: string
+          nullable: true
+        leaveEndDate:
+          type: string
+          nullable: true
+        leaveRequesterId:
+          type: integer
+          nullable: true
+        leaveRequesterName:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-      required:
-        - id
-        - prNumber
-        - date
-        - requesterId
-        - requesterName
-        - department
-        - type
-        - description
-        - status
-        - totalAmount
-        - items
-        - approvals
-        - createdAt
-        - updatedAt
+      required: [id, prNumber, date, requesterId, requesterName, department, type, description, status, totalAmount, items, approvals, createdAt, updatedAt]
 
     PurchaseRequestListResponse:
       type: object
@@ -1037,11 +1166,7 @@ components:
           type: integer
         limit:
           type: integer
-      required:
-        - purchaseRequests
-        - total
-        - page
-        - limit
+      required: [purchaseRequests, total, page, limit]
 
     CreatePurchaseRequestRequest:
       type: object
@@ -1051,6 +1176,12 @@ components:
           enum: [purchase, repair, leave]
         description:
           type: string
+        companyId:
+          type: integer
+          nullable: true
+        department:
+          type: string
+          nullable: true
         items:
           type: array
           items:
@@ -1058,10 +1189,16 @@ components:
         notes:
           type: string
           nullable: true
-      required:
-        - type
-        - description
-        - items
+        leaveStartDate:
+          type: string
+          nullable: true
+        leaveEndDate:
+          type: string
+          nullable: true
+        leaveRequesterId:
+          type: integer
+          nullable: true
+      required: [type, description]
 
     UpdatePurchaseRequestRequest:
       type: object
@@ -1071,12 +1208,24 @@ components:
           enum: [purchase, repair, leave]
         description:
           type: string
+        companyId:
+          type: integer
+          nullable: true
         items:
           type: array
           items:
             $ref: "#/components/schemas/PrItemInput"
         notes:
           type: string
+          nullable: true
+        leaveStartDate:
+          type: string
+          nullable: true
+        leaveEndDate:
+          type: string
+          nullable: true
+        leaveRequesterId:
+          type: integer
           nullable: true
 
     ReceivePRRequest:
@@ -1085,7 +1234,6 @@ components:
         notes:
           type: string
           nullable: true
-      required: []
 
     Approval:
       type: object
@@ -1113,14 +1261,7 @@ components:
         createdAt:
           type: string
           format: date-time
-      required:
-        - id
-        - prId
-        - approverId
-        - approverName
-        - level
-        - status
-        - createdAt
+      required: [id, prId, approverId, approverName, level, status, createdAt]
 
     ApprovalListResponse:
       type: object
@@ -1131,9 +1272,7 @@ components:
             $ref: "#/components/schemas/ApprovalWithPR"
         total:
           type: integer
-      required:
-        - approvals
-        - total
+      required: [approvals, total]
 
     ApprovalWithPR:
       type: object
@@ -1173,20 +1312,7 @@ components:
         createdAt:
           type: string
           format: date-time
-      required:
-        - id
-        - prId
-        - prNumber
-        - prType
-        - prDescription
-        - requesterName
-        - department
-        - totalAmount
-        - approverId
-        - approverName
-        - level
-        - status
-        - createdAt
+      required: [id, prId, prNumber, prType, prDescription, requesterName, department, totalAmount, approverId, approverName, level, status, createdAt]
 
     ApprovalActionRequest:
       type: object
@@ -1194,33 +1320,6 @@ components:
         notes:
           type: string
           nullable: true
-      required: []
-
-    ApprovalRule:
-      type: object
-      properties:
-        id:
-          type: integer
-        name:
-          type: string
-        minAmount:
-          type: number
-        maxAmount:
-          type: number
-          nullable: true
-        levels:
-          type: array
-          items:
-            $ref: "#/components/schemas/ApprovalRuleLevel"
-        createdAt:
-          type: string
-          format: date-time
-      required:
-        - id
-        - name
-        - minAmount
-        - levels
-        - createdAt
 
     ApprovalRuleLevel:
       type: object
@@ -1231,51 +1330,80 @@ components:
           type: integer
         level:
           type: integer
-        role:
-          type: string
-          enum: [admin, user, approver, purchasing]
-        position:
-          type: string
-          nullable: true
-      required:
-        - id
-        - ruleId
-        - level
-        - role
-
-    CreateApprovalRuleRequest:
-      type: object
-      properties:
-        name:
+        approverId:
+          type: integer
+        approverName:
           type: string
         minAmount:
           type: number
+          nullable: true
         maxAmount:
           type: number
           nullable: true
-        levels:
-          type: array
-          items:
-            $ref: "#/components/schemas/ApprovalRuleLevelInput"
-      required:
-        - name
-        - minAmount
-        - levels
+      required: [id, ruleId, level, approverId, approverName]
 
     ApprovalRuleLevelInput:
       type: object
       properties:
         level:
           type: integer
-        role:
+        approverId:
+          type: integer
+        minAmount:
+          type: number
+          nullable: true
+        maxAmount:
+          type: number
+          nullable: true
+      required: [level, approverId]
+
+    ApprovalRule:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
           type: string
-          enum: [admin, user, approver, purchasing]
-        position:
+        companyId:
+          type: integer
+          nullable: true
+        companyName:
           type: string
           nullable: true
-      required:
-        - level
-        - role
+        department:
+          type: string
+          nullable: true
+        type:
+          type: string
+          enum: [purchase, repair, leave]
+        levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalRuleLevel"
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, type, levels, createdAt]
+
+    CreateApprovalRuleRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        companyId:
+          type: integer
+          nullable: true
+        department:
+          type: string
+          nullable: true
+        type:
+          type: string
+          enum: [purchase, repair, leave]
+        levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalRuleLevelInput"
+      required: [name, type, levels]
 
     PoItem:
       type: object
@@ -1297,14 +1425,7 @@ components:
           type: number
         totalPrice:
           type: number
-      required:
-        - id
-        - poId
-        - name
-        - qty
-        - unit
-        - negotiatedPrice
-        - totalPrice
+      required: [id, poId, name, qty, unit, negotiatedPrice, totalPrice]
 
     PoItemInput:
       type: object
@@ -1320,11 +1441,7 @@ components:
           type: string
         negotiatedPrice:
           type: number
-      required:
-        - name
-        - qty
-        - unit
-        - negotiatedPrice
+      required: [name, qty, unit, negotiatedPrice]
 
     PurchaseOrder:
       type: object
@@ -1361,19 +1478,7 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required:
-        - id
-        - poNumber
-        - prId
-        - prNumber
-        - supplier
-        - status
-        - totalAmount
-        - items
-        - createdById
-        - createdByName
-        - createdAt
-        - updatedAt
+      required: [id, poNumber, prId, prNumber, supplier, status, totalAmount, items, createdById, createdByName, createdAt, updatedAt]
 
     PurchaseOrderListResponse:
       type: object
@@ -1388,11 +1493,7 @@ components:
           type: integer
         limit:
           type: integer
-      required:
-        - purchaseOrders
-        - total
-        - page
-        - limit
+      required: [purchaseOrders, total, page, limit]
 
     CreatePurchaseOrderRequest:
       type: object
@@ -1408,10 +1509,7 @@ components:
         notes:
           type: string
           nullable: true
-      required:
-        - prId
-        - supplier
-        - items
+      required: [prId, supplier, items]
 
     UpdatePurchaseOrderRequest:
       type: object
@@ -1451,14 +1549,7 @@ components:
         createdAt:
           type: string
           format: date-time
-      required:
-        - id
-        - userId
-        - title
-        - message
-        - type
-        - isRead
-        - createdAt
+      required: [id, userId, title, message, type, isRead, createdAt]
 
     NotificationListResponse:
       type: object
@@ -1471,10 +1562,7 @@ components:
           type: integer
         total:
           type: integer
-      required:
-        - notifications
-        - unreadCount
-        - total
+      required: [notifications, unreadCount, total]
 
     AuditLog:
       type: object
@@ -1489,7 +1577,6 @@ components:
           type: string
         entityType:
           type: string
-          enum: [pr, po, user, approval, setting]
         entityId:
           type: integer
         details:
@@ -1498,14 +1585,7 @@ components:
         createdAt:
           type: string
           format: date-time
-      required:
-        - id
-        - userId
-        - userName
-        - action
-        - entityType
-        - entityId
-        - createdAt
+      required: [id, userId, userName, action, entityType, entityId, createdAt]
 
     AuditLogListResponse:
       type: object
@@ -1520,11 +1600,7 @@ components:
           type: integer
         limit:
           type: integer
-      required:
-        - auditLogs
-        - total
-        - page
-        - limit
+      required: [auditLogs, total, page, limit]
 
     Settings:
       type: object
@@ -1535,10 +1611,7 @@ components:
           type: string
         currency:
           type: string
-      required:
-        - poEnabled
-        - companyName
-        - currency
+      required: [poEnabled, companyName, currency]
 
     UpdateSettingsRequest:
       type: object
@@ -1575,15 +1648,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StatusCount"
-      required:
-        - pendingApprovals
-        - myPendingPRs
-        - pendingPOs
-        - totalPRs
-        - totalPOs
-        - recentPRs
-        - recentApprovals
-        - prByStatus
+      required: [pendingApprovals, myPendingPRs, pendingPOs, totalPRs, totalPOs, recentPRs, recentApprovals, prByStatus]
 
     StatusCount:
       type: object
@@ -1592,6 +1657,4 @@ components:
           type: string
         count:
           type: integer
-      required:
-        - status
-        - count
+      required: [status, count]

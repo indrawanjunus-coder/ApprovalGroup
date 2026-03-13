@@ -3,12 +3,12 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
-import type { ApprovalRuleLevelInputRole } from "./approvalRuleLevelInputRole";
 
 export interface ApprovalRuleLevelInput {
   level: number;
-  role: ApprovalRuleLevelInputRole;
-  position?: string | null;
+  approverId: number;
+  minAmount?: number | null;
+  maxAmount?: number | null;
 }

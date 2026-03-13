@@ -3,13 +3,15 @@
  * Do not edit manually.
  * Api
  * PR/PO Approval System API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import type { ApprovalRuleLevelInput } from "./approvalRuleLevelInput";
+import type { CreateApprovalRuleRequestType } from "./createApprovalRuleRequestType";
 
 export interface CreateApprovalRuleRequest {
   name: string;
-  minAmount: number;
-  maxAmount?: number | null;
+  companyId?: number | null;
+  department?: string | null;
+  type: CreateApprovalRuleRequestType;
   levels: ApprovalRuleLevelInput[];
 }

@@ -6,8 +6,10 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface Settings {
-  poEnabled: boolean;
+export interface UserCompanyAssignment {
+  id: number;
+  userId: string;
+  companyId: string;
   companyName: string;
-  currency: string;
+  department: string;
 }

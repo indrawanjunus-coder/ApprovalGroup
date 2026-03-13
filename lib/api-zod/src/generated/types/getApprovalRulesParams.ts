@@ -5,10 +5,8 @@
  * PR/PO Approval System API
  * OpenAPI spec version: 0.2.0
  */
+import type { GetApprovalRulesType } from "./getApprovalRulesType";
 
-export type GetUsersParams = {
-  page?: number;
-  limit?: number;
-  search?: string;
-  role?: string;
+export type GetApprovalRulesParams = {
+  type?: GetApprovalRulesType;
 };

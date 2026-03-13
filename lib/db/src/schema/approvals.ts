@@ -16,8 +16,9 @@ export const approvalsTable = pgTable("approvals", {
 export const approvalRulesTable = pgTable("approval_rules", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  minAmount: numeric("min_amount", { precision: 15, scale: 2 }).notNull().default("0"),
-  maxAmount: numeric("max_amount", { precision: 15, scale: 2 }),
+  companyId: integer("company_id"),
+  department: text("department"),
+  type: text("type").notNull().default("purchase"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -25,8 +26,9 @@ export const approvalRuleLevelsTable = pgTable("approval_rule_levels", {
   id: serial("id").primaryKey(),
   ruleId: integer("rule_id").notNull(),
   level: integer("level").notNull(),
-  role: text("role").notNull(),
-  position: text("position"),
+  approverId: integer("approver_id").notNull(),
+  minAmount: numeric("min_amount", { precision: 15, scale: 2 }),
+  maxAmount: numeric("max_amount", { precision: 15, scale: 2 }),
 });
 
 export const insertApprovalSchema = createInsertSchema(approvalsTable).omit({
