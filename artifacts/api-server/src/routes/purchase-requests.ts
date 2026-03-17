@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import {
   purchaseRequestsTable, prItemsTable, approvalsTable, approvalRulesTable,
   approvalRuleLevelsTable, usersTable, companiesTable, prVendorAttachmentsTable,
-  purchaseOrdersTable, prReceivingItemsTable
+  purchaseOrdersTable, prReceivingItemsTable, userLeaveBalancesTable
 } from "@workspace/db/schema";
 import { eq, desc, ilike, and, inArray, count, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
@@ -166,6 +166,60 @@ router.post("/", async (req, res) => {
   if (type !== "leave" && (!items || !Array.isArray(items) || items.length === 0)) {
     res.status(400).json({ error: "Bad Request", message: "Items required for this request type" }); return;
   }
+
+  // Leave balance validation
+  if (type === "leave") {
+    if (!leaveStartDate || !leaveEndDate) {
+      res.status(400).json({ error: "Bad Request", message: "Tanggal cuti wajib diisi" }); return;
+    }
+    const start = new Date(leaveStartDate);
+    const end = new Date(leaveEndDate);
+    if (end < start) {
+      res.status(400).json({ error: "Bad Request", message: "Tanggal akhir tidak boleh sebelum tanggal mulai" }); return;
+    }
+    const requestedDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const targetUserId = leaveRequesterId ? parseInt(leaveRequesterId) : user.id;
+    const year = start.getFullYear();
+
+    try {
+      const [targetUser] = await db.select().from(usersTable).where(eq(usersTable.id, targetUserId));
+      let [balance] = await db.select().from(userLeaveBalancesTable)
+        .where(and(eq(userLeaveBalancesTable.userId, targetUserId), eq(userLeaveBalancesTable.year, year)));
+
+      let availableDays = 0;
+      if (balance) {
+        availableDays = Math.max(0, parseFloat(balance.balanceDays) + parseFloat(balance.carriedOverDays) - parseFloat(balance.usedDays));
+      }
+
+      // Count already-pending/approved leave days for this user in the same year (to prevent double booking)
+      const pendingResult = await db.execute(sql`
+        SELECT COALESCE(SUM(
+          EXTRACT(DAY FROM (leave_end_date::date - leave_start_date::date)) + 1
+        ), 0) as pending_days
+        FROM purchase_requests
+        WHERE type = 'leave'
+          AND leave_requester_id = ${targetUserId}
+          AND status NOT IN ('rejected', 'closed', 'cancelled')
+          AND leave_start_date IS NOT NULL
+          AND EXTRACT(YEAR FROM leave_start_date::date) = ${year}
+      `);
+      const pendingDays = parseFloat((pendingResult.rows[0] as any)?.pending_days || "0");
+
+      if (requestedDays > (availableDays - pendingDays)) {
+        const remaining = Math.max(0, availableDays - pendingDays);
+        res.status(400).json({
+          error: "Saldo Cuti Tidak Cukup",
+          message: `Sisa cuti: ${remaining} hari (termasuk ${pendingDays} hari dalam pengajuan pending). Permintaan: ${requestedDays} hari.`,
+          availableDays, pendingDays, requestedDays, remaining,
+        });
+        return;
+      }
+    } catch (balanceErr) {
+      console.error("Leave balance check failed:", balanceErr);
+      // If balance check fails (no record), allow creation but log warning
+    }
+  }
+
   try {
     const prNumber = await generatePRNumber();
     const totalAmount = type === "leave" ? 0 : (items || []).reduce((sum: number, item: any) => sum + (parseFloat(item.qty) * parseFloat(item.estimatedPrice)), 0);

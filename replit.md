@@ -44,7 +44,21 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (Pr
 ### Master Data (Settings Page)
 - **Master Departemen**: CRUD for departments — `GET/POST/PUT/DELETE /api/departments` (write: admin only). Used in user create/edit and approval rules dropdowns.
 - **Master Jenis Request (PR Types)**: CRUD for PR types — `GET/POST/PUT/DELETE /api/pr-types` (write: admin only). System types (purchase/repair/leave) have `isSystem=true` and cannot be deleted. Type dropdown in PR Create and Approval Rules forms fetches from this master.
+  - Special code `pembayaran`: PRs of this type appear in the **Pembayaran** sidebar section instead of Penerimaan Barang.
 - **SMTP**: `GET/PUT /api/settings/smtp`, test email `POST /api/settings/smtp/test`
+
+### Pembayaran (Payment Processing)
+- Sidebar entry "Pembayaran" visible to admin and purchasing roles. Shows badge count.
+- Page at `/pembayaran` lists PRs with `type='pembayaran'` in `approved` or `vendor_selected` status.
+- Backend: `GET /api/pembayaran`, `POST /api/pembayaran/:id/process` (marks PR as `closed`, admin/purchasing only).
+- PRs of type `pembayaran` are automatically excluded from the Penerimaan Barang page.
+
+### Leave Balance Validation
+- When creating a leave PR, the system validates requested days against the user's remaining leave balance.
+- Balance fetched from `GET /api/users/:id/leave-balance`. Admin sets balance via `PUT /api/users/:id/leave-balance`.
+- Backend validation: counts pending leave PRs (not rejected/closed) + requested days vs available days. Returns `400` if exceeded.
+- Frontend: shows a real-time balance indicator (blue = ok, red = exceeded), disables submit when exceeded.
+- Formula: `availableDays = balanceDays + carriedOverDays - usedDays` (admin manages usedDays manually or via leave processing).
 
 ### Authentication
 - Session-based auth (SHA-256 + salt)

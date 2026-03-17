@@ -16,6 +16,7 @@ import PODetail from "./pages/po-detail";
 import UserList from "./pages/user-list";
 import Settings from "./pages/settings";
 import Receiving from "./pages/receiving";
+import Pembayaran from "./pages/pembayaran";
 import AuditLogs from "./pages/audit-logs";
 import NotFound from "./pages/not-found";
 
@@ -51,6 +52,7 @@ function Router() {
       <ProtectedRoute path="/purchase-orders/:id" component={PODetail} />
       
       <ProtectedRoute path="/receiving" component={Receiving} />
+      <ProtectedRoute path="/pembayaran" component={Pembayaran} />
       <ProtectedRoute path="/users" component={UserList} />
       <ProtectedRoute path="/settings" component={Settings} />
       <ProtectedRoute path="/audit-logs" component={AuditLogs} />

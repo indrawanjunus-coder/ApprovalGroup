@@ -17,6 +17,7 @@ router.get("/", async (req, res) => {
     for (const po of issuedPOs) {
       const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, po.prId));
       if (!pr) continue;
+      if (pr.type === "pembayaran") continue; // pembayaran type goes to Pembayaran page
       if (user.role === "user" && pr.requesterId !== user.id) continue;
       const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
       items.push({
@@ -32,6 +33,7 @@ router.get("/", async (req, res) => {
     if (user.role === "user") vsConditions.push(eq(purchaseRequestsTable.requesterId, user.id));
     const vsPRs = await db.select().from(purchaseRequestsTable).where(and(...vsConditions));
     for (const pr of vsPRs) {
+      if (pr.type === "pembayaran") continue; // pembayaran type goes to Pembayaran page
       if (user.role === "user" && pr.requesterId !== user.id) continue;
       const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
       const selectedVendor = pr.selectedVendorId

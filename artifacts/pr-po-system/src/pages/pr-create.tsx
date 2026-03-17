@@ -52,6 +52,25 @@ export default function PRCreate() {
   const activeTypes = (prTypesData || []).filter((t: any) => t.isActive);
   const activeDepts = (departmentsData || []).filter((d: any) => d.isActive);
 
+  // Fetch leave balance when type is "leave"
+  const leaveTargetUserId = leaveRequesterId || me?.id;
+  const leaveYear = leaveStartDate ? new Date(leaveStartDate).getFullYear() : new Date().getFullYear();
+  const { data: leaveBalance } = useQuery<any>({
+    queryKey: ["/api/users", leaveTargetUserId, "leave-balance", leaveYear],
+    queryFn: async () => {
+      if (!leaveTargetUserId) return null;
+      const res = await fetch(`${BASE}/api/users/${leaveTargetUserId}/leave-balance?year=${leaveYear}`, { credentials: "include" });
+      return res.ok ? res.json() : null;
+    },
+    enabled: type === "leave" && !!leaveTargetUserId,
+  });
+
+  const requestedDays = (leaveStartDate && leaveEndDate && leaveEndDate >= leaveStartDate)
+    ? Math.ceil((new Date(leaveEndDate).getTime() - new Date(leaveStartDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+    : 0;
+  const leaveAvailable = leaveBalance?.availableDays ?? null;
+  const leaveExceeded = leaveAvailable !== null && requestedDays > leaveAvailable;
+
   const { mutate: createPR, isPending } = useCreatePurchaseRequest({
     mutation: {
       onSuccess: (data) => {
@@ -91,6 +110,10 @@ export default function PRCreate() {
     if (type === "leave") {
       if (!leaveStartDate || !leaveEndDate) {
         toast({ variant: "destructive", title: "Validasi", description: "Tanggal cuti wajib diisi." });
+        return;
+      }
+      if (leaveExceeded) {
+        toast({ variant: "destructive", title: "Saldo Cuti Tidak Cukup", description: `Sisa cuti: ${leaveAvailable} hari. Permintaan: ${requestedDays} hari.` });
         return;
       }
       createPR({
@@ -226,12 +249,31 @@ export default function PRCreate() {
               </div>
 
               {leaveStartDate && leaveEndDate && leaveEndDate >= leaveStartDate && (
-                <div className="md:col-span-2">
-                  <p className="text-sm text-muted-foreground bg-blue-50 border border-blue-100 rounded-lg p-3 text-center">
-                    Durasi cuti: <strong className="text-blue-700">
-                      {Math.ceil((new Date(leaveEndDate).getTime() - new Date(leaveStartDate).getTime()) / (1000 * 60 * 60 * 24)) + 1} hari
-                    </strong>
-                  </p>
+                <div className="md:col-span-2 space-y-2">
+                  <div className={`text-sm rounded-lg p-3 flex items-center justify-between gap-4 border ${
+                    leaveExceeded
+                      ? "bg-red-50 border-red-200 text-red-700"
+                      : "bg-blue-50 border-blue-100 text-blue-700"
+                  }`}>
+                    <span>
+                      Durasi cuti: <strong>{requestedDays} hari</strong>
+                    </span>
+                    {leaveAvailable !== null && (
+                      <span className="text-right text-xs">
+                        Sisa cuti: <strong>{leaveAvailable} hari</strong>
+                        {leaveBalance && (
+                          <span className="ml-2 opacity-70">
+                            ({leaveBalance.balanceDays} + {leaveBalance.carriedOverDays} − {leaveBalance.usedDays})
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  {leaveExceeded && (
+                    <p className="text-xs text-red-600 font-medium">
+                      ⚠ Permintaan ({requestedDays} hari) melebihi sisa cuti ({leaveAvailable} hari). Pengajuan tidak dapat diproses.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -320,7 +362,7 @@ export default function PRCreate() {
 
         <div className="flex justify-end gap-4">
           <Button type="button" variant="ghost" onClick={() => setLocation("/purchase-requests")}>Batal</Button>
-          <Button type="submit" disabled={isPending} className="shadow-lg shadow-primary/20">
+          <Button type="submit" disabled={isPending || (type === "leave" && leaveExceeded)} className="shadow-lg shadow-primary/20">
             {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Simpan Draft
           </Button>

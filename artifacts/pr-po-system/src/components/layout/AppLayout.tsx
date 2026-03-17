@@ -1,10 +1,10 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useGetMe, useLogout, useGetNotifications, useGetReceivingList, useGetSettings, useChangePassword } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, FileText, CheckSquare, ShoppingCart,
-  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound
+  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound, Wallet
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { data: notifications } = useGetNotifications({ unread: true }, { query: { enabled: !!user } });
   const { data: receivingData } = useGetReceivingList({ query: { enabled: !!user } });
   const { data: settings } = useGetSettings({ query: { enabled: !!user } });
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  const { data: pembayaranData } = useQuery<any>({
+    queryKey: ["/api/pembayaran"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/pembayaran`, { credentials: "include" });
+      return res.ok ? res.json() : { items: [], total: 0 };
+    },
+    enabled: !!user,
+    refetchInterval: 60000,
+  });
 
   const { mutate: logout } = useLogout({
     mutation: { onSuccess: () => { queryClient.clear(); setLocation("/login"); } }
@@ -79,6 +89,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   if (!user) return null;
 
   const receivingCount = receivingData?.total || 0;
+  const pembayaranCount = pembayaranData?.total || 0;
 
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "user", "approver", "purchasing"] },
@@ -86,6 +97,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { name: "Approval", href: "/approvals", icon: CheckSquare, roles: ["admin", "approver"], badge: null },
     { name: "Purchase Order", href: "/purchase-orders", icon: ShoppingCart, roles: ["admin", "purchasing"] },
     { name: "Penerimaan Barang", href: "/receiving", icon: PackageCheck, roles: ["admin", "user", "purchasing"], badge: receivingCount > 0 ? receivingCount : null },
+    { name: "Pembayaran", href: "/pembayaran", icon: Wallet, roles: ["admin", "purchasing"], badge: pembayaranCount > 0 ? pembayaranCount : null },
     { name: "User Management", href: "/users", icon: Users, roles: ["admin"] },
     { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"] },
     { name: "Settings", href: "/settings", icon: Settings, roles: ["admin"] },

@@ -14,6 +14,7 @@ import dashboardRouter from "./dashboard.js";
 import receivingRouter from "./receiving.js";
 import departmentsRouter from "./departments.js";
 import prTypesRouter from "./pr-types.js";
+import pembayaranRouter from "./pembayaran.js";
 
 const router = Router();
 
@@ -32,5 +33,6 @@ router.use("/dashboard", dashboardRouter);
 router.use("/receiving", receivingRouter);
 router.use("/departments", departmentsRouter);
 router.use("/pr-types", prTypesRouter);
+router.use("/pembayaran", pembayaranRouter);
 
 export default router;
