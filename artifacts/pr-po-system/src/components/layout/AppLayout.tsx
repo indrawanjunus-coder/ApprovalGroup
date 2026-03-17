@@ -99,7 +99,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { name: "Penerimaan Barang", href: "/receiving", icon: PackageCheck, roles: ["admin", "user", "purchasing"], badge: receivingCount > 0 ? receivingCount : null },
     { name: "Pembayaran", href: "/pembayaran", icon: Wallet, roles: ["admin"], departments: ["Finance"], badge: pembayaranCount > 0 ? pembayaranCount : null },
     { name: "Riwayat", href: "/history", icon: History, roles: ["admin", "user", "approver", "purchasing"] },
-    { name: "Manajemen Cuti", href: "/leave-management", icon: CalendarDays, roles: ["admin", "approver", "user", "purchasing"] },
+    { name: "Manajemen Cuti", href: "/leave-management", icon: CalendarDays, roles: ["admin"] },
     { name: "User Management", href: "/users", icon: Users, roles: ["admin"] },
     { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"] },
     { name: "Settings", href: "/settings", icon: Settings, roles: ["admin"] },

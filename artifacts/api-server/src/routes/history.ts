@@ -119,14 +119,25 @@ router.get("/po", async (req, res) => {
       db.select({ count: count() }).from(purchaseOrdersTable).where(whereClause),
     ]);
 
-    // For non-admin: filter by PR's company_id matching user.hiredCompanyId
+    // For non-admin: filter POs by linked PR's company and (for approver) department
     let filteredRows = rows;
-    if (user.role !== "admin" && user.hiredCompanyId) {
+    if (user.role !== "admin") {
       const prIds = [...new Set(rows.map(r => r.prId))];
       if (prIds.length > 0) {
-        const linkedPRs = await db.select({ id: purchaseRequestsTable.id, companyId: purchaseRequestsTable.companyId })
-          .from(purchaseRequestsTable).where(inArray(purchaseRequestsTable.id, prIds));
-        const allowedPrIds = new Set(linkedPRs.filter(p => p.companyId === user.hiredCompanyId).map(p => p.id));
+        const linkedPRs = await db.select({
+          id: purchaseRequestsTable.id,
+          companyId: purchaseRequestsTable.companyId,
+          department: purchaseRequestsTable.department,
+        }).from(purchaseRequestsTable).where(inArray(purchaseRequestsTable.id, prIds));
+
+        const allowedPrIds = new Set(linkedPRs.filter(p => {
+          const companyMatch = user.hiredCompanyId ? p.companyId === user.hiredCompanyId : true;
+          if (user.role === "approver") {
+            return companyMatch && p.department === user.department;
+          }
+          return companyMatch;
+        }).map(p => p.id));
+
         filteredRows = rows.filter(r => allowedPrIds.has(r.prId));
       } else {
         filteredRows = [];

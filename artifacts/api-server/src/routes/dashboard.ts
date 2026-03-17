@@ -4,7 +4,7 @@ import {
   purchaseRequestsTable, purchaseOrdersTable, approvalsTable,
   usersTable, prVendorAttachmentsTable
 } from "@workspace/db/schema";
-import { eq, and, desc, count, sql, inArray, ne, isNotNull } from "drizzle-orm";
+import { eq, and, desc, count, sql, inArray, ne, isNotNull, or, SQL } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 
 const router = Router();
@@ -14,6 +14,23 @@ function daysBetween(start: Date, end: Date): number {
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
+// Build a WHERE condition for PRs based on user's role, company, and department
+function buildPRAccessCondition(user: Express.Request["user"] & {}): SQL | undefined {
+  if (!user) return undefined;
+  if ((user as any).role === "admin") return undefined; // admin: no restriction
+  const u = user as any;
+  if (u.role === "approver") {
+    // Approver: same department AND same company
+    const parts: SQL[] = [eq(purchaseRequestsTable.department, u.department)];
+    if (u.hiredCompanyId) parts.push(eq(purchaseRequestsTable.companyId, u.hiredCompanyId));
+    return and(...parts);
+  }
+  // user / purchasing: own PRs within same company
+  const parts: SQL[] = [eq(purchaseRequestsTable.requesterId, u.id)];
+  if (u.hiredCompanyId) parts.push(eq(purchaseRequestsTable.companyId, u.hiredCompanyId));
+  return and(...parts);
+}
+
 router.get("/", async (req, res) => {
   const user = req.user!;
   const isManager = ["admin", "approver", "purchasing"].includes(user.role);
@@ -21,37 +38,66 @@ router.get("/", async (req, res) => {
   const yearStart = new Date(`${currentYear}-01-01`);
   const yearEnd = new Date(`${currentYear}-12-31`);
 
+  // Access condition for PRs (company + dept filtering)
+  const prAccessCond = buildPRAccessCondition(user as any);
+
   try {
     // Base stats
     const [
       pendingApprovalsResult,
       myPRsResult,
-      pendingPOsResult,
       totalPRsResult,
     ] = await Promise.all([
       db.select({ count: count() }).from(approvalsTable)
         .where(and(eq(approvalsTable.approverId, user.id), eq(approvalsTable.status, "pending"))),
       db.select({ count: count() }).from(purchaseRequestsTable)
         .where(and(eq(purchaseRequestsTable.requesterId, user.id), eq(purchaseRequestsTable.status, "waiting_approval"))),
-      db.select({ count: count() }).from(purchaseOrdersTable)
-        .where(eq(purchaseOrdersTable.status, "draft")),
-      db.select({ count: count() }).from(purchaseRequestsTable),
+      db.select({ count: count() }).from(purchaseRequestsTable)
+        .where(prAccessCond ? and(ne(purchaseRequestsTable.type, "leave"), prAccessCond) : ne(purchaseRequestsTable.type, "leave")),
     ]);
+
+    // Pending POs: filter by company for non-admin (join via prId → companyId)
+    let pendingPOsCount = 0;
+    if (user.role === "admin") {
+      const r = await db.select({ count: count() }).from(purchaseOrdersTable)
+        .where(eq(purchaseOrdersTable.status, "draft"));
+      pendingPOsCount = Number(r[0]?.count) || 0;
+    } else if (user.hiredCompanyId) {
+      // Find PRs in user's company, then count POs linked to those PRs
+      const companyPRs = await db.select({ id: purchaseRequestsTable.id })
+        .from(purchaseRequestsTable)
+        .where(eq(purchaseRequestsTable.companyId, user.hiredCompanyId));
+      const companyPRIds = companyPRs.map(p => p.id);
+      if (companyPRIds.length > 0) {
+        const r = await db.select({ count: count() }).from(purchaseOrdersTable)
+          .where(and(eq(purchaseOrdersTable.status, "draft"), inArray(purchaseOrdersTable.prId, companyPRIds)));
+        pendingPOsCount = Number(r[0]?.count) || 0;
+      }
+    }
+
+    // Build combined condition for non-leave PRs with access control
+    const nonLeaveAccessCond = prAccessCond
+      ? and(ne(purchaseRequestsTable.type, "leave"), prAccessCond)
+      : ne(purchaseRequestsTable.type, "leave");
+
+    const leaveAccessCond = prAccessCond
+      ? and(eq(purchaseRequestsTable.type, "leave"), prAccessCond)
+      : eq(purchaseRequestsTable.type, "leave");
 
     // Recent PRs (non-leave types)
     const recentPRsRaw = await db.select().from(purchaseRequestsTable)
-      .where(ne(purchaseRequestsTable.type, "leave"))
+      .where(nonLeaveAccessCond)
       .orderBy(desc(purchaseRequestsTable.createdAt)).limit(8);
 
     // Recent Leave PRs
     const recentLeavePRsRaw = await db.select().from(purchaseRequestsTable)
-      .where(eq(purchaseRequestsTable.type, "leave"))
+      .where(leaveAccessCond)
       .orderBy(desc(purchaseRequestsTable.createdAt)).limit(8);
 
     // PR by status (non-leave)
     const prByStatusResult = await db.select({ status: purchaseRequestsTable.status, count: count() })
       .from(purchaseRequestsTable)
-      .where(ne(purchaseRequestsTable.type, "leave"))
+      .where(nonLeaveAccessCond)
       .groupBy(purchaseRequestsTable.status);
 
     // Fetch requester names for recent PRs
@@ -77,19 +123,17 @@ router.get("/", async (req, res) => {
     }));
 
     // --- Vendor Lead Time ---
-    // Find all PRs with receivingClosedAt set (received and closed)
+    const closedPRsWhere = prAccessCond
+      ? and(isNotNull(purchaseRequestsTable.receivingClosedAt), isNotNull(purchaseRequestsTable.vendorSelectedAt), prAccessCond)
+      : and(isNotNull(purchaseRequestsTable.receivingClosedAt), isNotNull(purchaseRequestsTable.vendorSelectedAt));
+
     const closedPRs = await db.select({
       id: purchaseRequestsTable.id,
       vendorSelectedAt: purchaseRequestsTable.vendorSelectedAt,
       selectedVendorId: purchaseRequestsTable.selectedVendorId,
       receivingClosedAt: purchaseRequestsTable.receivingClosedAt,
-    }).from(purchaseRequestsTable)
-      .where(and(
-        isNotNull(purchaseRequestsTable.receivingClosedAt),
-        isNotNull(purchaseRequestsTable.vendorSelectedAt),
-      ));
+    }).from(purchaseRequestsTable).where(closedPRsWhere);
 
-    // For each closed PR, get PO if exists (PO-ON flow)
     const closedPRIds = closedPRs.map(p => p.id);
     const relatedPOs = closedPRIds.length > 0
       ? await db.select({
@@ -102,7 +146,6 @@ router.get("/", async (req, res) => {
       : [];
     const poByPrId = new Map(relatedPOs.map(po => [po.prId, po]));
 
-    // Get vendor attachment names for PO-OFF flow
     const vendorAttIds = closedPRs.map(p => p.selectedVendorId).filter(Boolean) as number[];
     const vendorAtts = vendorAttIds.length > 0
       ? await db.select({ id: prVendorAttachmentsTable.id, vendorName: prVendorAttachmentsTable.vendorName })
@@ -110,7 +153,6 @@ router.get("/", async (req, res) => {
       : [];
     const vendorAttMap = new Map(vendorAtts.map(v => [v.id, v.vendorName]));
 
-    // Calculate lead times per vendor
     const vendorLeadMap = new Map<string, number[]>();
     for (const pr of closedPRs) {
       if (!pr.receivingClosedAt) continue;
@@ -146,18 +188,17 @@ router.get("/", async (req, res) => {
 
     if (isManager) {
       // Manager view: leave taken per user per department this year
-      // Query approved/completed leave PRs in current year
+      const leaveWhere = prAccessCond
+        ? and(eq(purchaseRequestsTable.type, "leave"), sql`EXTRACT(YEAR FROM created_at) = ${currentYear}`, prAccessCond)
+        : and(eq(purchaseRequestsTable.type, "leave"), sql`EXTRACT(YEAR FROM created_at) = ${currentYear}`);
+
       const leavePRs = await db.select({
         requesterId: purchaseRequestsTable.requesterId,
         leaveStartDate: purchaseRequestsTable.leaveStartDate,
         leaveEndDate: purchaseRequestsTable.leaveEndDate,
         department: purchaseRequestsTable.department,
         status: purchaseRequestsTable.status,
-      }).from(purchaseRequestsTable)
-        .where(and(
-          eq(purchaseRequestsTable.type, "leave"),
-          sql`EXTRACT(YEAR FROM created_at) = ${currentYear}`,
-        ));
+      }).from(purchaseRequestsTable).where(leaveWhere);
 
       const approvedLeave = leavePRs.filter(p => ["approved", "completed"].includes(p.status));
       const userIds = [...new Set(approvedLeave.map(p => p.requesterId))];
@@ -200,7 +241,7 @@ router.get("/", async (req, res) => {
       const monthlyMap = new Map<number, number>();
       for (const lp of ownLeavePRs.filter(p => ["approved", "completed"].includes(p.status))) {
         if (!lp.leaveStartDate) continue;
-        const month = new Date(lp.leaveStartDate).getMonth() + 1; // 1-12
+        const month = new Date(lp.leaveStartDate).getMonth() + 1;
         const start = new Date(lp.leaveStartDate);
         const end = lp.leaveEndDate ? new Date(lp.leaveEndDate) : start;
         const days = daysBetween(start, end) + 1;
@@ -215,7 +256,7 @@ router.get("/", async (req, res) => {
     res.json({
       pendingApprovals: Number(pendingApprovalsResult[0]?.count) || 0,
       myPendingPRs: Number(myPRsResult[0]?.count) || 0,
-      pendingPOs: Number(pendingPOsResult[0]?.count) || 0,
+      pendingPOs: pendingPOsCount,
       totalPRs: Number(totalPRsResult[0]?.count) || 0,
       recentPRs: formatPRList(recentPRsRaw),
       recentLeavePRs: formatPRList(recentLeavePRsRaw),
