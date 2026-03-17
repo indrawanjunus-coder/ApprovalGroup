@@ -17,6 +17,7 @@ import UserList from "./pages/user-list";
 import Settings from "./pages/settings";
 import Receiving from "./pages/receiving";
 import Pembayaran from "./pages/pembayaran";
+import LeaveManagement from "./pages/leave-management";
 import AuditLogs from "./pages/audit-logs";
 import NotFound from "./pages/not-found";
 
@@ -53,6 +54,7 @@ function Router() {
       
       <ProtectedRoute path="/receiving" component={Receiving} />
       <ProtectedRoute path="/pembayaran" component={Pembayaran} />
+      <ProtectedRoute path="/leave-management" component={LeaveManagement} />
       <ProtectedRoute path="/users" component={UserList} />
       <ProtectedRoute path="/settings" component={Settings} />
       <ProtectedRoute path="/audit-logs" component={AuditLogs} />

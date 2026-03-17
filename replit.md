@@ -53,6 +53,12 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (Pr
 - Backend: `GET /api/pembayaran`, `POST /api/pembayaran/:id/process` (marks PR as `closed`, admin/purchasing only).
 - PRs of type `pembayaran` are automatically excluded from the Penerimaan Barang page.
 
+### Leave Management (Sidebar: Manajemen Cuti)
+- Sidebar menu "Manajemen Cuti" (CalendarDays icon) visible to all roles at `/leave-management`.
+- **Tab: Laporan Cuti** — filterable table of all leave PRs (type='leave') by year/status/department/search. Rows are clickable and open the PR detail. Admin sees all; non-admin sees only their department/company.
+- **Tab: Saldo Cuti** — per-user leave balance table. Columns: Jatah, Carry Over, Terpakai, Sisa. Admin can click pencil icon to open edit dialog and update any user's balance for a given year. Non-admin sees a read-only scoped view (same dept/company).
+- Backend: `GET /api/leave/report`, `GET /api/leave/balances`, `PUT /api/leave/balances/:userId` (admin only).
+
 ### Leave Balance Validation
 - When creating a leave PR, the system validates requested days against the user's remaining leave balance.
 - Balance fetched from `GET /api/users/:id/leave-balance`. Admin sets balance via `PUT /api/users/:id/leave-balance`.
