@@ -8,15 +8,24 @@ import { createAuditLog } from "../lib/audit.js";
 const router = Router();
 router.use(requireAuth);
 
-// List PRs of type 'pembayaran' that are pending payment processing
+const PAYMENT_STATUSES = ["approved", "payment_pending"];
+
+function canAccessPembayaran(user: any) {
+  return user.role === "admin" || user.department === "Finance";
+}
+
+// List PRs of type 'pembayaran' that are approved or pending payment
 router.get("/", async (req, res) => {
   const user = req.user!;
+  if (!canAccessPembayaran(user)) {
+    res.status(403).json({ error: "Hanya departemen Finance yang dapat mengakses pembayaran" });
+    return;
+  }
   try {
     const conditions: any[] = [
       eq(purchaseRequestsTable.type, "pembayaran"),
-      inArray(purchaseRequestsTable.status, ["approved", "vendor_selected"]),
+      inArray(purchaseRequestsTable.status, PAYMENT_STATUSES),
     ];
-    if (user.role === "user") conditions.push(eq(purchaseRequestsTable.requesterId, user.id));
 
     const prs = await db.select().from(purchaseRequestsTable).where(and(...conditions));
     const items: any[] = [];
@@ -38,28 +47,80 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Mark a pembayaran PR as processed/paid
+// Update payment status: payment_pending | payment_rejected | paid
+router.put("/:id/status", async (req, res) => {
+  const user = req.user!;
+  if (!canAccessPembayaran(user)) {
+    res.status(403).json({ error: "Hanya departemen Finance yang dapat memproses pembayaran" });
+    return;
+  }
+  const id = parseInt(req.params.id);
+  const { status, notes } = req.body;
+
+  const ALLOWED_STATUSES = ["payment_pending", "payment_rejected", "paid"];
+  if (!ALLOWED_STATUSES.includes(status)) {
+    res.status(400).json({ error: "Status tidak valid. Gunakan: payment_pending, payment_rejected, atau paid" });
+    return;
+  }
+
+  try {
+    const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
+    if (!pr) { res.status(404).json({ error: "PR tidak ditemukan" }); return; }
+    if (pr.type !== "pembayaran") { res.status(400).json({ error: "Bukan jenis request pembayaran" }); return; }
+    if (!PAYMENT_STATUSES.includes(pr.status)) {
+      res.status(400).json({ error: "Status PR tidak memungkinkan untuk diubah" }); return;
+    }
+
+    const notePrefix: Record<string, string> = {
+      payment_pending: "[Menunggu Pembayaran]",
+      payment_rejected: "[Pembayaran Ditolak]",
+      paid: "[Dibayar]",
+    };
+    const updatedNotes = notes
+      ? (pr.notes ? `${pr.notes}\n${notePrefix[status]} ${notes}` : `${notePrefix[status]} ${notes}`)
+      : pr.notes;
+
+    const [updated] = await db.update(purchaseRequestsTable)
+      .set({ status, notes: updatedNotes, updatedAt: new Date() })
+      .where(eq(purchaseRequestsTable.id, id))
+      .returning();
+
+    const actionLabel: Record<string, string> = {
+      payment_pending: "ditandai menunggu pembayaran",
+      payment_rejected: "ditolak pembayarannya",
+      paid: "selesai dibayar",
+    };
+    await createAuditLog(user.id, `payment_${status}`, "pr", id, `PR ${pr.prNumber} ${actionLabel[status]}`);
+    res.json({ success: true, pr: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Legacy process endpoint (kept for backward compatibility → maps to 'paid')
 router.post("/:id/process", async (req, res) => {
   const user = req.user!;
+  if (!canAccessPembayaran(user)) {
+    res.status(403).json({ error: "Hanya departemen Finance yang dapat memproses pembayaran" });
+    return;
+  }
   const id = parseInt(req.params.id);
   const { notes } = req.body;
   try {
     const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
     if (!pr) { res.status(404).json({ error: "PR tidak ditemukan" }); return; }
     if (pr.type !== "pembayaran") { res.status(400).json({ error: "Bukan jenis request pembayaran" }); return; }
-    if (!["approved", "vendor_selected"].includes(pr.status)) {
+    if (!PAYMENT_STATUSES.includes(pr.status)) {
       res.status(400).json({ error: "Status PR tidak memungkinkan untuk diproses" }); return;
     }
-    if (user.role !== "admin" && user.role !== "purchasing") {
-      res.status(403).json({ error: "Hanya admin atau purchasing yang dapat memproses pembayaran" }); return;
-    }
-
+    const updatedNotes = notes
+      ? (pr.notes ? `${pr.notes}\n[Dibayar] ${notes}` : `[Dibayar] ${notes}`)
+      : pr.notes;
     const [updated] = await db.update(purchaseRequestsTable)
-      .set({ status: "closed", notes: notes ? (pr.notes ? pr.notes + "\n[Pembayaran] " + notes : "[Pembayaran] " + notes) : pr.notes, updatedAt: new Date() })
-      .where(eq(purchaseRequestsTable.id, id))
-      .returning();
-
-    await createAuditLog(user.id, "process_payment", "pr", id, `Pembayaran diproses untuk PR ${pr.prNumber}`);
+      .set({ status: "paid", notes: updatedNotes, updatedAt: new Date() })
+      .where(eq(purchaseRequestsTable.id, id)).returning();
+    await createAuditLog(user.id, "payment_paid", "pr", id, `Pembayaran selesai untuk PR ${pr.prNumber}`);
     res.json({ success: true, pr: updated });
   } catch (err) {
     console.error(err);

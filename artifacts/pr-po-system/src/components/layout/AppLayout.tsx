@@ -97,12 +97,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { name: "Approval", href: "/approvals", icon: CheckSquare, roles: ["admin", "approver"], badge: null },
     { name: "Purchase Order", href: "/purchase-orders", icon: ShoppingCart, roles: ["admin", "purchasing"] },
     { name: "Penerimaan Barang", href: "/receiving", icon: PackageCheck, roles: ["admin", "user", "purchasing"], badge: receivingCount > 0 ? receivingCount : null },
-    { name: "Pembayaran", href: "/pembayaran", icon: Wallet, roles: ["admin", "purchasing"], badge: pembayaranCount > 0 ? pembayaranCount : null },
+    { name: "Pembayaran", href: "/pembayaran", icon: Wallet, roles: ["admin"], departments: ["Finance"], badge: pembayaranCount > 0 ? pembayaranCount : null },
     { name: "Manajemen Cuti", href: "/leave-management", icon: CalendarDays, roles: ["admin", "approver", "user", "purchasing"] },
     { name: "User Management", href: "/users", icon: Users, roles: ["admin"] },
     { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"] },
     { name: "Settings", href: "/settings", icon: Settings, roles: ["admin"] },
-  ].filter(item => item.roles.includes(user.role));
+  ].filter(item => item.roles.includes(user.role) || (item as any).departments?.includes(user.department));
 
   const NavLink = ({ item, mobile = false, onClick }: { item: typeof navItems[0], mobile?: boolean, onClick?: () => void }) => {
     const isActive = location.startsWith(item.href);

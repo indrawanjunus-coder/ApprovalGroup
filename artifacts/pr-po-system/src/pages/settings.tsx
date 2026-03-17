@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   useGetSettings, useUpdateSettings, useGetCompanies, useCreateCompany,
   useUpdateCompany, useDeleteCompany, useGetApprovalRules,
@@ -876,8 +876,9 @@ function AppearanceSettings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-  const [imageUrl, setImageUrl] = useState("");
-  const [previewError, setPreviewError] = useState(false);
+  const [imageDataUrl, setImageDataUrl] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { isLoading } = useQuery({
     queryKey: ["/api/settings/appearance"],
@@ -887,7 +888,7 @@ function AppearanceSettings() {
       return res.json();
     },
     onSuccess: (data: any) => {
-      setImageUrl(data.landingPageImageUrl || "");
+      setImageDataUrl(data.landingPageImageUrl || "");
     },
   } as any);
 
@@ -897,7 +898,7 @@ function AppearanceSettings() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ landingPageImageUrl: imageUrl }),
+        body: JSON.stringify({ landingPageImageUrl: imageDataUrl }),
       });
       if (!res.ok) throw new Error("Gagal menyimpan");
       return res.json();
@@ -909,48 +910,74 @@ function AppearanceSettings() {
     onError: () => toast({ variant: "destructive", title: "Gagal", description: "Tidak dapat menyimpan tampilan." }),
   });
 
+  const handleFile = (file: File) => {
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      toast({ variant: "destructive", title: "Format tidak valid", description: "Hanya JPG dan PNG yang diperbolehkan." });
+      return;
+    }
+    if (file.size > 1 * 1024 * 1024) {
+      toast({ variant: "destructive", title: "File terlalu besar", description: "Ukuran maksimal 1 MB." });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => setImageDataUrl(e.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
   return (
     <Card className="border-0 shadow-sm">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <ImageIcon className="h-5 w-5" /> Tampilan Halaman Login
         </CardTitle>
-        <CardDescription>Ganti gambar background di sisi kiri halaman login</CardDescription>
+        <CardDescription>Upload gambar background untuk sisi kiri halaman login (JPG/PNG, maks. 1 MB)</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {isLoading ? (
           <div className="flex items-center gap-2 text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Memuat...</div>
         ) : (
           <>
-            <div className="space-y-2">
-              <Label>URL Gambar Background</Label>
-              <Input
-                placeholder="https://example.com/gambar.jpg"
-                value={imageUrl}
-                onChange={e => { setImageUrl(e.target.value); setPreviewError(false); }}
-              />
-              <p className="text-xs text-muted-foreground">
-                Masukkan URL gambar (JPG, PNG, WebP). Kosongkan untuk menggunakan gambar default.
-              </p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png"
+              className="hidden"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+            />
+            <div
+              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${isDragging ? "border-primary bg-primary/5" : "border-slate-200 hover:border-primary/50 hover:bg-slate-50"}`}
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+            >
+              <ImageIcon className="h-8 w-8 text-slate-300 mx-auto mb-3" />
+              <p className="text-sm font-medium text-foreground">Klik atau drag & drop gambar ke sini</p>
+              <p className="text-xs text-muted-foreground mt-1">JPG, PNG — Maksimal 1 MB</p>
             </div>
-            {imageUrl && !previewError && (
+
+            {imageDataUrl && (
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Preview</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">Preview</Label>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setImageDataUrl("")}>
+                    <X className="h-3.5 w-3.5 mr-1" /> Hapus Gambar
+                  </Button>
+                </div>
                 <div className="relative h-48 rounded-xl overflow-hidden border bg-primary">
-                  <img
-                    src={imageUrl}
-                    alt="Preview"
-                    className="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-overlay"
-                    onError={() => setPreviewError(true)}
-                  />
+                  <img src={imageDataUrl} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-overlay" />
                   <div className="absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/40 flex items-end p-4 text-white">
                     <p className="font-bold text-lg">Enterprise Procurement Simplified.</p>
                   </div>
                 </div>
               </div>
-            )}
-            {previewError && (
-              <p className="text-sm text-destructive">URL gambar tidak valid atau tidak dapat dimuat.</p>
             )}
             <Button onClick={() => save()} disabled={saving} className="shadow-md">
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
