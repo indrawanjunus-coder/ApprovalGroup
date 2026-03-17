@@ -16,6 +16,7 @@ import departmentsRouter from "./departments.js";
 import prTypesRouter from "./pr-types.js";
 import pembayaranRouter from "./pembayaran.js";
 import leaveManagementRouter from "./leave-management.js";
+import historyRouter from "./history.js";
 
 const router = Router();
 
@@ -36,5 +37,6 @@ router.use("/departments", departmentsRouter);
 router.use("/pr-types", prTypesRouter);
 router.use("/pembayaran", pembayaranRouter);
 router.use("/leave", leaveManagementRouter);
+router.use("/history", historyRouter);
 
 export default router;

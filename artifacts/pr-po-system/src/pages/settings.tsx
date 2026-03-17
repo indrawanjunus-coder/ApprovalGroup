@@ -872,13 +872,82 @@ function PrTypeManager() {
 }
 
 // Appearance Settings Component
+function useImageUpload(maxMb = 1, toast: any) {
+  const [dataUrl, setDataUrl] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (file: File) => {
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      toast({ variant: "destructive", title: "Format tidak valid", description: "Hanya JPG dan PNG yang diperbolehkan." });
+      return;
+    }
+    if (file.size > maxMb * 1024 * 1024) {
+      toast({ variant: "destructive", title: "File terlalu besar", description: `Ukuran maksimal ${maxMb} MB.` });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => setDataUrl(e.target?.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  return { dataUrl, setDataUrl, isDragging, setIsDragging, fileRef, handleFile, handleDrop };
+}
+
+function ImageUploadZone({ dataUrl, setDataUrl, isDragging, setIsDragging, fileRef, handleFile, handleDrop, label, toast }: any) {
+  return (
+    <div className="space-y-3">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png"
+        className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+      />
+      {dataUrl ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs text-muted-foreground">Preview — {label}</Label>
+            <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setDataUrl("")}>
+              <X className="h-3.5 w-3.5 mr-1" /> Hapus
+            </Button>
+          </div>
+          <img src={dataUrl} alt="Preview" className="h-24 rounded-lg border object-contain bg-slate-50 w-full" />
+        </div>
+      ) : (
+        <div
+          className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${isDragging ? "border-primary bg-primary/5" : "border-slate-200 hover:border-primary/50 hover:bg-slate-50"}`}
+          onClick={() => fileRef.current?.click()}
+          onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+        >
+          <ImageIcon className="h-6 w-6 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Klik atau drag & drop — JPG, PNG, maks. 1 MB</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AppearanceSettings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
-  const [imageDataUrl, setImageDataUrl] = useState("");
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const bg = useImageUpload(1, toast);
+  const logo = useImageUpload(1, toast);
+  const [landingHeading, setLandingHeading] = useState("");
+  const [landingSubtitle, setLandingSubtitle] = useState("");
+  const [appName, setAppName] = useState("");
 
   const { isLoading } = useQuery({
     queryKey: ["/api/settings/appearance"],
@@ -888,7 +957,11 @@ function AppearanceSettings() {
       return res.json();
     },
     onSuccess: (data: any) => {
-      setImageDataUrl(data.landingPageImageUrl || "");
+      bg.setDataUrl(data.landingPageImageUrl || "");
+      logo.setDataUrl(data.logoUrl || "");
+      setLandingHeading(data.landingHeading || "");
+      setLandingSubtitle(data.landingSubtitle || "");
+      setAppName(data.appName || "");
     },
   } as any);
 
@@ -898,7 +971,13 @@ function AppearanceSettings() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ landingPageImageUrl: imageDataUrl }),
+        body: JSON.stringify({
+          landingPageImageUrl: bg.dataUrl,
+          logoUrl: logo.dataUrl,
+          landingHeading,
+          landingSubtitle,
+          appName,
+        }),
       });
       if (!res.ok) throw new Error("Gagal menyimpan");
       return res.json();
@@ -910,26 +989,9 @@ function AppearanceSettings() {
     onError: () => toast({ variant: "destructive", title: "Gagal", description: "Tidak dapat menyimpan tampilan." }),
   });
 
-  const handleFile = (file: File) => {
-    if (!["image/jpeg", "image/png"].includes(file.type)) {
-      toast({ variant: "destructive", title: "Format tidak valid", description: "Hanya JPG dan PNG yang diperbolehkan." });
-      return;
-    }
-    if (file.size > 1 * 1024 * 1024) {
-      toast({ variant: "destructive", title: "File terlalu besar", description: "Ukuran maksimal 1 MB." });
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => setImageDataUrl(e.target?.result as string);
-    reader.readAsDataURL(file);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFile(file);
-  };
+  const headingPreview = landingHeading || "Enterprise\nProcurement\nSimplified.";
+  const subtitlePreview = landingSubtitle || "Kelola Purchase Request dan Purchase Order dengan alur persetujuan bertingkat yang efisien.";
+  const appNamePreview = appName || "ProcureFlow";
 
   return (
     <Card className="border-0 shadow-sm">
@@ -937,48 +999,83 @@ function AppearanceSettings() {
         <CardTitle className="text-lg flex items-center gap-2">
           <ImageIcon className="h-5 w-5" /> Tampilan Halaman Login
         </CardTitle>
-        <CardDescription>Upload gambar background untuk sisi kiri halaman login (JPG/PNG, maks. 1 MB)</CardDescription>
+        <CardDescription>Kustomisasi logo, gambar, teks, dan nama aplikasi pada halaman login</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-6">
         {isLoading ? (
           <div className="flex items-center gap-2 text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Memuat...</div>
         ) : (
           <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png"
-              className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
-            />
-            <div
-              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${isDragging ? "border-primary bg-primary/5" : "border-slate-200 hover:border-primary/50 hover:bg-slate-50"}`}
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-              onDragLeave={() => setIsDragging(false)}
-              onDrop={handleDrop}
-            >
-              <ImageIcon className="h-8 w-8 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm font-medium text-foreground">Klik atau drag & drop gambar ke sini</p>
-              <p className="text-xs text-muted-foreground mt-1">JPG, PNG — Maksimal 1 MB</p>
+            {/* Two upload zones side by side */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Logo Aplikasi</Label>
+                <p className="text-xs text-muted-foreground">Ditampilkan di pojok kiri atas login</p>
+                <ImageUploadZone {...logo} label="Upload Logo (JPG/PNG)" toast={toast} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Gambar Background</Label>
+                <p className="text-xs text-muted-foreground">Background panel kiri halaman login</p>
+                <ImageUploadZone {...bg} label="Upload Background (JPG/PNG)" toast={toast} />
+              </div>
             </div>
 
-            {imageDataUrl && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">Preview</Label>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive hover:text-destructive" onClick={() => setImageDataUrl("")}>
-                    <X className="h-3.5 w-3.5 mr-1" /> Hapus Gambar
-                  </Button>
-                </div>
-                <div className="relative h-48 rounded-xl overflow-hidden border bg-primary">
-                  <img src={imageDataUrl} alt="Preview" className="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-overlay" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/40 flex items-end p-4 text-white">
-                    <p className="font-bold text-lg">Enterprise Procurement Simplified.</p>
+            <div className="border-t pt-4 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="appName" className="text-sm font-medium">Nama Aplikasi</Label>
+                <Input
+                  id="appName"
+                  placeholder="ProcureFlow"
+                  value={appName}
+                  onChange={e => setAppName(e.target.value)}
+                  className="max-w-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="landingHeading" className="text-sm font-medium">Judul Utama (Heading)</Label>
+                <p className="text-xs text-muted-foreground">Gunakan baris baru (\n) untuk pemisah baris. Default: "Enterprise Procurement Simplified."</p>
+                <Input
+                  id="landingHeading"
+                  placeholder="Enterprise Procurement Simplified."
+                  value={landingHeading}
+                  onChange={e => setLandingHeading(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="landingSubtitle" className="text-sm font-medium">Subjudul (Subtitle)</Label>
+                <Input
+                  id="landingSubtitle"
+                  placeholder="Kelola Purchase Request dan Purchase Order..."
+                  value={landingSubtitle}
+                  onChange={e => setLandingSubtitle(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Live preview */}
+            <div className="border-t pt-4">
+              <Label className="text-xs text-muted-foreground mb-2 block">Preview Halaman Login</Label>
+              <div className="rounded-xl overflow-hidden border shadow-sm max-w-xs h-40 flex bg-primary relative">
+                {bg.dataUrl && (
+                  <img src={bg.dataUrl} alt="bg preview" className="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-overlay" />
+                )}
+                <div className="absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/40 p-4 flex flex-col justify-between text-white">
+                  <div className="flex items-center gap-2">
+                    {logo.dataUrl ? (
+                      <img src={logo.dataUrl} alt="logo preview" className="w-6 h-6 rounded-md object-contain bg-white/10" />
+                    ) : (
+                      <div className="w-6 h-6 rounded-md bg-white/20" />
+                    )}
+                    <span className="text-xs font-bold">{appNamePreview}</span>
+                  </div>
+                  <div>
+                    <p className="font-bold text-xs leading-snug whitespace-pre-line">{headingPreview}</p>
+                    <p className="text-white/70 text-[10px] mt-1 line-clamp-2">{subtitlePreview}</p>
                   </div>
                 </div>
               </div>
-            )}
+            </div>
+
             <Button onClick={() => save()} disabled={saving} className="shadow-md">
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
               Simpan Tampilan

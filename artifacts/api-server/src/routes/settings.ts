@@ -10,16 +10,24 @@ const router = Router();
 // Public endpoint - no auth required (must be before requireAuth middleware)
 router.get("/public", async (req, res) => {
   try {
-    const [landingPageImageUrl, landingPageStyle] = await Promise.all([
+    const [landingPageImageUrl, landingPageStyle, logoUrl, landingHeading, landingSubtitle, appName] = await Promise.all([
       getSettingValue("landing_page_image_url"),
       getSettingValue("landing_page_style"),
+      getSettingValue("logo_url"),
+      getSettingValue("landing_heading"),
+      getSettingValue("landing_subtitle"),
+      getSettingValue("app_name"),
     ]);
     res.json({
       landingPageImageUrl: landingPageImageUrl || null,
       landingPageStyle: landingPageStyle || "image",
+      logoUrl: logoUrl || null,
+      landingHeading: landingHeading || null,
+      landingSubtitle: landingSubtitle || null,
+      appName: appName || null,
     });
   } catch {
-    res.json({ landingPageImageUrl: null, landingPageStyle: "image" });
+    res.json({ landingPageImageUrl: null, landingPageStyle: "image", logoUrl: null, landingHeading: null, landingSubtitle: null, appName: null });
   }
 });
 
@@ -234,24 +242,50 @@ router.put("/company-leave/:companyId", requireRole("admin"), async (req, res) =
 // Appearance settings
 router.get("/appearance", requireRole("admin"), async (req, res) => {
   try {
-    const [landingPageImageUrl, landingPageStyle] = await Promise.all([
+    const [landingPageImageUrl, landingPageStyle, logoUrl, landingHeading, landingSubtitle, appName] = await Promise.all([
       getSettingValue("landing_page_image_url"),
       getSettingValue("landing_page_style"),
+      getSettingValue("logo_url"),
+      getSettingValue("landing_heading"),
+      getSettingValue("landing_subtitle"),
+      getSettingValue("app_name"),
     ]);
-    res.json({ landingPageImageUrl: landingPageImageUrl || "", landingPageStyle: landingPageStyle || "image" });
+    res.json({
+      landingPageImageUrl: landingPageImageUrl || "",
+      landingPageStyle: landingPageStyle || "image",
+      logoUrl: logoUrl || "",
+      landingHeading: landingHeading || "",
+      landingSubtitle: landingSubtitle || "",
+      appName: appName || "",
+    });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
 router.put("/appearance", requireRole("admin"), async (req, res) => {
-  const { landingPageImageUrl, landingPageStyle } = req.body;
+  const { landingPageImageUrl, landingPageStyle, logoUrl, landingHeading, landingSubtitle, appName } = req.body;
   try {
     if (landingPageImageUrl !== undefined) await upsertSetting("landing_page_image_url", landingPageImageUrl || "");
     if (landingPageStyle !== undefined) await upsertSetting("landing_page_style", landingPageStyle || "image");
-    const [url, style] = await Promise.all([
+    if (logoUrl !== undefined) await upsertSetting("logo_url", logoUrl || "");
+    if (landingHeading !== undefined) await upsertSetting("landing_heading", landingHeading || "");
+    if (landingSubtitle !== undefined) await upsertSetting("landing_subtitle", landingSubtitle || "");
+    if (appName !== undefined) await upsertSetting("app_name", appName || "");
+    const [url, style, logo, heading, subtitle, name] = await Promise.all([
       getSettingValue("landing_page_image_url"),
       getSettingValue("landing_page_style"),
+      getSettingValue("logo_url"),
+      getSettingValue("landing_heading"),
+      getSettingValue("landing_subtitle"),
+      getSettingValue("app_name"),
     ]);
-    res.json({ landingPageImageUrl: url || "", landingPageStyle: style || "image" });
+    res.json({
+      landingPageImageUrl: url || "",
+      landingPageStyle: style || "image",
+      logoUrl: logo || "",
+      landingHeading: heading || "",
+      landingSubtitle: subtitle || "",
+      appName: name || "",
+    });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
