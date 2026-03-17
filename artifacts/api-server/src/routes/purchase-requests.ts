@@ -384,6 +384,40 @@ router.post("/:id/submit", async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 
+// Cancel a draft PR (creator, approver assigned to PR, or admin)
+router.post("/:id/cancel", async (req, res) => {
+  const user = req.user!;
+  const id = parseInt(req.params.id);
+  const { notes } = req.body;
+  try {
+    const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
+    if (!pr) { res.status(404).json({ error: "Not Found" }); return; }
+    if (pr.status !== "draft") {
+      res.status(400).json({ error: "Bad Request", message: "Hanya PR berstatus Draft yang dapat dibatalkan." }); return;
+    }
+    const isCreator = pr.requesterId === user.id;
+    const isAdmin = user.role === "admin";
+    // Approver in same department (or any approver if no dept restriction) can cancel drafts
+    const isApproverSameDept = user.role === "approver" && pr.department === user.department;
+    if (!isCreator && !isAdmin && !isApproverSameDept) {
+      res.status(403).json({ error: "Forbidden", message: "Anda tidak memiliki izin untuk membatalkan PR ini." }); return;
+    }
+    const updatedNotes = notes
+      ? (pr.notes ? `${pr.notes}\n[Dibatalkan] ${notes}` : `[Dibatalkan] ${notes}`)
+      : pr.notes;
+    const [updated] = await db.update(purchaseRequestsTable)
+      .set({ status: "cancelled", notes: updatedNotes, updatedAt: new Date() })
+      .where(eq(purchaseRequestsTable.id, id)).returning();
+    await createAuditLog(user.id, "cancel_pr", "pr", id, `PR ${pr.prNumber} dibatalkan oleh ${user.name}`);
+    const [items, approvals] = await Promise.all([
+      db.select().from(prItemsTable).where(eq(prItemsTable.prId, id)),
+      db.select().from(approvalsTable).where(eq(approvalsTable.prId, id)),
+    ]);
+    const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
+    res.json(await buildFullPR({ ...updated, requesterName: requester?.name || user.name }, items, approvals, []));
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
 // Vendor attachments
 router.get("/:id/vendor-attachments", async (req, res) => {
   const id = parseInt(req.params.id);

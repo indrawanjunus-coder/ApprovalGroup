@@ -21,6 +21,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
     paid: { label: "Dibayar", color: "bg-emerald-100 text-emerald-700 hover:bg-emerald-200" },
     vendor_selected: { label: "Siap Dibayar", color: "bg-amber-100 text-amber-700 hover:bg-amber-200" },
     closed: { label: "Closed", color: "bg-slate-100 text-slate-600 hover:bg-slate-200" },
+    cancelled: { label: "Dibatalkan", color: "bg-rose-100 text-rose-700 hover:bg-rose-200" },
   };
 
   const c = config[status] || { label: status, color: "bg-slate-100 text-slate-700" };

@@ -6,7 +6,7 @@ import {
   useGetPRVendorAttachments, useAddPRVendorAttachment, useDeletePRVendorAttachment,
   useSelectPRVendor, useReceivePartialItems, useCloseReceiving,
 } from "@workspace/api-client-react";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +17,7 @@ import { formatIDR, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Send, CheckCircle2, XCircle, PackageCheck, Receipt,
-  Paperclip, Plus, Trash2, Building, ExternalLink, ChevronDown, Loader2, CheckSquare, Printer
+  Paperclip, Plus, Trash2, Building, ExternalLink, ChevronDown, Loader2, CheckSquare, Printer, Ban
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -156,6 +156,29 @@ export default function PRDetail() {
     }
   });
 
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelNotes, setCancelNotes] = useState("");
+  const { mutate: cancelPR, isPending: isCancelling } = useMutation({
+    mutationFn: async ({ id, notes }: { id: number; notes: string }) => {
+      const res = await fetch(`${BASE_URL}/api/purchase-requests/${id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ notes }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || d.error || "Gagal membatalkan PR");
+      return d;
+    },
+    onSuccess: () => {
+      toast({ title: "PR Dibatalkan", description: "PR berhasil dibatalkan." });
+      setShowCancelDialog(false);
+      setCancelNotes("");
+      invalidate();
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal Membatalkan", description: e.message }),
+  });
+
   if (isLoading) return <div className="p-8 text-center animate-pulse">Memuat detail...</div>;
   if (!pr) return <div className="p-8 text-center text-destructive">PR tidak ditemukan</div>;
 
@@ -199,6 +222,11 @@ export default function PRDetail() {
           {pr.status === "draft" && isRequester && (
             <Button onClick={() => submitPR({ id: prId })} disabled={isSubmitting} className="shadow-md shadow-primary/20">
               <Send className="mr-2 h-4 w-4" /> Kirim untuk Approval
+            </Button>
+          )}
+          {pr.status === "draft" && (isRequester || user?.role === "admin" || (user?.role === "approver" && pr.department === user.department)) && (
+            <Button variant="outline" className="border-destructive/40 text-destructive hover:bg-red-50" onClick={() => setShowCancelDialog(true)}>
+              <Ban className="mr-2 h-4 w-4" /> Batalkan PR
             </Button>
           )}
           {canApprove && (
@@ -655,6 +683,38 @@ export default function PRDetail() {
             }} disabled={isSelectingVendor || !finalAmount}>
               {isSelectingVendor ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckSquare className="mr-2 h-4 w-4" />}
               Konfirmasi Pilihan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Cancel PR Dialog */}
+      <Dialog open={showCancelDialog} onOpenChange={(o) => { if (!o) { setShowCancelDialog(false); setCancelNotes(""); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Ban className="h-5 w-5" /> Batalkan Purchase Request
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Anda akan membatalkan PR <span className="font-semibold text-foreground">{pr.prNumber}</span>. Tindakan ini tidak dapat dibatalkan.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Alasan Pembatalan (Opsional)</Label>
+              <Textarea
+                placeholder="Tuliskan alasan pembatalan..."
+                value={cancelNotes}
+                onChange={e => setCancelNotes(e.target.value)}
+                className="min-h-[80px]"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => { setShowCancelDialog(false); setCancelNotes(""); }}>Kembali</Button>
+            <Button variant="destructive" onClick={() => cancelPR({ id: prId, notes: cancelNotes })} disabled={isCancelling}>
+              {isCancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Ban className="mr-2 h-4 w-4" />}
+              Konfirmasi Batalkan
             </Button>
           </DialogFooter>
         </DialogContent>

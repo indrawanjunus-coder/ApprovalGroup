@@ -1,13 +1,13 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { purchaseRequestsTable, purchaseOrdersTable, prItemsTable, poItemsTable, usersTable } from "@workspace/db/schema";
-import { eq, desc, count, and, like, gte, lte, inArray, SQL } from "drizzle-orm";
+import { purchaseRequestsTable, purchaseOrdersTable, poItemsTable, usersTable } from "@workspace/db/schema";
+import { eq, desc, count, and, like, gte, lte, inArray, SQL, or } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 
 const router = Router();
 router.use(requireAuth);
 
-// PR History
+// PR History - filtered by company and department
 router.get("/pr", async (req, res) => {
   const user = req.user!;
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -17,21 +17,45 @@ router.get("/pr", async (req, res) => {
   const search = req.query.search as string;
   const dateFrom = req.query.dateFrom as string;
   const dateTo = req.query.dateTo as string;
-  const type = req.query.type as string;
 
   try {
     const conditions: SQL[] = [];
-    // Non-admin: only their own PRs
-    if (user.role !== "admin" && user.role !== "approver") {
-      conditions.push(eq(purchaseRequestsTable.requesterId, user.id));
+
+    if (user.role === "admin") {
+      // Admin: sees all PRs
+    } else if (user.role === "approver") {
+      // Approver: same department AND same company
+      const deptCond = eq(purchaseRequestsTable.department, user.department);
+      const companyConds: SQL[] = [];
+      if (user.hiredCompanyId) {
+        companyConds.push(eq(purchaseRequestsTable.companyId, user.hiredCompanyId));
+      }
+      // company null also visible if user has no company filter
+      const companyFilter = companyConds.length > 0
+        ? or(companyConds[0])
+        : undefined;
+      if (companyFilter) {
+        conditions.push(and(deptCond, companyFilter)!);
+      } else {
+        conditions.push(deptCond);
+      }
+    } else {
+      // User / purchasing: own PRs only, same company
+      const ownerCond = eq(purchaseRequestsTable.requesterId, user.id);
+      if (user.hiredCompanyId) {
+        conditions.push(and(ownerCond, or(
+          eq(purchaseRequestsTable.companyId, user.hiredCompanyId),
+        ))!);
+      } else {
+        conditions.push(ownerCond);
+      }
     }
+
     if (status) conditions.push(eq(purchaseRequestsTable.status, status));
-    if (type) conditions.push(eq(purchaseRequestsTable.type, type));
     if (search) conditions.push(like(purchaseRequestsTable.prNumber, `%${search}%`));
     if (dateFrom) conditions.push(gte(purchaseRequestsTable.createdAt, new Date(dateFrom)));
     if (dateTo) {
-      const end = new Date(dateTo);
-      end.setHours(23, 59, 59, 999);
+      const end = new Date(dateTo); end.setHours(23, 59, 59, 999);
       conditions.push(lte(purchaseRequestsTable.createdAt, end));
     }
 
@@ -45,15 +69,18 @@ router.get("/pr", async (req, res) => {
       db.select({ count: count() }).from(purchaseRequestsTable).where(whereClause),
     ]);
 
-    const result = await Promise.all(rows.map(async (pr) => {
-      const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
-      return {
-        id: pr.id, prNumber: pr.prNumber, description: pr.description,
-        type: pr.type, status: pr.status, department: pr.department,
-        totalAmount: parseFloat(pr.totalAmount), notes: pr.notes,
-        createdAt: pr.createdAt, updatedAt: pr.updatedAt,
-        requesterName: requester?.name || "Unknown",
-      };
+    const requesterIds = [...new Set(rows.map(r => r.requesterId))];
+    const requesters = requesterIds.length > 0
+      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, requesterIds))
+      : [];
+    const requesterMap = new Map(requesters.map(r => [r.id, r.name]));
+
+    const result = rows.map(pr => ({
+      id: pr.id, prNumber: pr.prNumber, description: pr.description,
+      type: pr.type, status: pr.status, department: pr.department,
+      totalAmount: parseFloat(pr.totalAmount), notes: pr.notes,
+      createdAt: pr.createdAt, updatedAt: pr.updatedAt,
+      requesterName: requesterMap.get(pr.requesterId) || "Unknown",
     }));
 
     res.json({ items: result, total: Number(totalResult[0]?.count) || 0, page, limit });
@@ -63,7 +90,7 @@ router.get("/pr", async (req, res) => {
   }
 });
 
-// PO History
+// PO History - filtered by company (via linked PR)
 router.get("/po", async (req, res) => {
   const user = req.user!;
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
@@ -80,42 +107,61 @@ router.get("/po", async (req, res) => {
     if (search) conditions.push(like(purchaseOrdersTable.poNumber, `%${search}%`));
     if (dateFrom) conditions.push(gte(purchaseOrdersTable.createdAt, new Date(dateFrom)));
     if (dateTo) {
-      const end = new Date(dateTo);
-      end.setHours(23, 59, 59, 999);
+      const end = new Date(dateTo); end.setHours(23, 59, 59, 999);
       conditions.push(lte(purchaseOrdersTable.createdAt, end));
     }
 
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [rows, totalResult] = await Promise.all([
-      db.select().from(purchaseOrdersTable)
-        .where(whereClause)
-        .orderBy(desc(purchaseOrdersTable.createdAt))
-        .limit(limit).offset(offset),
+    // Fetch all POs matching basic filters
+    const [rows, totalAllResult] = await Promise.all([
+      db.select().from(purchaseOrdersTable).where(whereClause).orderBy(desc(purchaseOrdersTable.createdAt)),
       db.select({ count: count() }).from(purchaseOrdersTable).where(whereClause),
     ]);
 
-    const result = await Promise.all(rows.map(async (po) => {
-      const [creator] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, po.createdBy));
-      const items = await db.select().from(poItemsTable).where(eq(poItemsTable.poId, po.id));
+    // For non-admin: filter by PR's company_id matching user.hiredCompanyId
+    let filteredRows = rows;
+    if (user.role !== "admin" && user.hiredCompanyId) {
+      const prIds = [...new Set(rows.map(r => r.prId))];
+      if (prIds.length > 0) {
+        const linkedPRs = await db.select({ id: purchaseRequestsTable.id, companyId: purchaseRequestsTable.companyId })
+          .from(purchaseRequestsTable).where(inArray(purchaseRequestsTable.id, prIds));
+        const allowedPrIds = new Set(linkedPRs.filter(p => p.companyId === user.hiredCompanyId).map(p => p.id));
+        filteredRows = rows.filter(r => allowedPrIds.has(r.prId));
+      } else {
+        filteredRows = [];
+      }
+    }
+
+    const total = user.role === "admin" ? Number(totalAllResult[0]?.count) || 0 : filteredRows.length;
+    const pagedRows = filteredRows.slice(offset, offset + limit);
+
+    const creatorIds = [...new Set(pagedRows.map(r => r.createdById))];
+    const creators = creatorIds.length > 0
+      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, creatorIds))
+      : [];
+    const creatorMap = new Map(creators.map(c => [c.id, c.name]));
+
+    const result = await Promise.all(pagedRows.map(async (po) => {
+      const items = await db.select({ id: poItemsTable.id }).from(poItemsTable).where(eq(poItemsTable.poId, po.id));
       return {
-        id: po.id, poNumber: po.poNumber, status: po.status,
-        vendorName: po.vendorName, vendorContact: po.vendorContact,
+        id: po.id, poNumber: po.poNumber, status: po.status, prId: po.prId,
+        vendorName: po.supplier || "—",
         totalAmount: parseFloat(po.totalAmount), notes: po.notes,
         createdAt: po.createdAt, updatedAt: po.updatedAt,
-        createdByName: creator?.name || "Unknown",
+        createdByName: creatorMap.get(po.createdById) || "Unknown",
         itemCount: items.length,
       };
     }));
 
-    res.json({ items: result, total: Number(totalResult[0]?.count) || 0, page, limit });
+    res.json({ items: result, total, page, limit });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// Payment History
+// Payment History - Finance dept only, filtered by company
 router.get("/payment", async (req, res) => {
   const user = req.user!;
   if (user.role !== "admin" && user.department !== "Finance") {
@@ -136,32 +182,37 @@ router.get("/payment", async (req, res) => {
       eq(purchaseRequestsTable.type, "pembayaran"),
       inArray(purchaseRequestsTable.status, status ? [status] : paymentStatuses),
     ];
+
+    // Finance (non-admin): filter by same company
+    if (user.role !== "admin" && user.hiredCompanyId) {
+      conditions.push(eq(purchaseRequestsTable.companyId, user.hiredCompanyId));
+    }
+
     if (search) conditions.push(like(purchaseRequestsTable.prNumber, `%${search}%`));
     if (dateFrom) conditions.push(gte(purchaseRequestsTable.createdAt, new Date(dateFrom)));
     if (dateTo) {
-      const end = new Date(dateTo);
-      end.setHours(23, 59, 59, 999);
+      const end = new Date(dateTo); end.setHours(23, 59, 59, 999);
       conditions.push(lte(purchaseRequestsTable.createdAt, end));
     }
 
     const whereClause = and(...conditions);
     const [rows, totalResult] = await Promise.all([
-      db.select().from(purchaseRequestsTable)
-        .where(whereClause)
-        .orderBy(desc(purchaseRequestsTable.updatedAt))
-        .limit(limit).offset(offset),
+      db.select().from(purchaseRequestsTable).where(whereClause).orderBy(desc(purchaseRequestsTable.updatedAt)).limit(limit).offset(offset),
       db.select({ count: count() }).from(purchaseRequestsTable).where(whereClause),
     ]);
 
-    const result = await Promise.all(rows.map(async (pr) => {
-      const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
-      return {
-        id: pr.id, prNumber: pr.prNumber, description: pr.description,
-        status: pr.status, department: pr.department,
-        totalAmount: parseFloat(pr.totalAmount), notes: pr.notes,
-        createdAt: pr.createdAt, updatedAt: pr.updatedAt,
-        requesterName: requester?.name || "Unknown",
-      };
+    const requesterIds = [...new Set(rows.map(r => r.requesterId))];
+    const requesters = requesterIds.length > 0
+      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, requesterIds))
+      : [];
+    const requesterMap = new Map(requesters.map(r => [r.id, r.name]));
+
+    const result = rows.map(pr => ({
+      id: pr.id, prNumber: pr.prNumber, description: pr.description,
+      status: pr.status, department: pr.department,
+      totalAmount: parseFloat(pr.totalAmount), notes: pr.notes,
+      createdAt: pr.createdAt, updatedAt: pr.updatedAt,
+      requesterName: requesterMap.get(pr.requesterId) || "Unknown",
     }));
 
     res.json({ items: result, total: Number(totalResult[0]?.count) || 0, page, limit });

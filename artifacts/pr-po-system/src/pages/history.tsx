@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Search, FileText, ShoppingCart, Wallet, ChevronLeft, ChevronRight, Calendar, X } from "lucide-react";
+import { Loader2, Search, FileText, ShoppingCart, Wallet, ChevronLeft, ChevronRight, Calendar, X, ExternalLink } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatIDR, formatDate } from "@/lib/utils";
 import { useGetMe } from "@workspace/api-client-react";
@@ -19,6 +19,7 @@ const PR_STATUSES = [
   { value: "waiting_approval", label: "Menunggu Approval" },
   { value: "approved", label: "Disetujui" },
   { value: "rejected", label: "Ditolak" },
+  { value: "cancelled", label: "Dibatalkan" },
   { value: "issued", label: "Issued (PO)" },
   { value: "receiving", label: "Receiving" },
   { value: "received", label: "Received" },
@@ -113,6 +114,7 @@ function LimitSelector({ limit, setLimit }: { limit: number; setLimit: (l: numbe
 
 // --- PR History Tab ---
 function PRHistoryTab() {
+  const [, setLocation] = useLocation();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [search, setSearch] = useState("");
@@ -162,7 +164,15 @@ function PRHistoryTab() {
             <tbody>
               {data.items.map((pr: any) => (
                 <tr key={pr.id} className="border-b hover:bg-slate-50/50 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{pr.prNumber}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setLocation(`/purchase-requests/${pr.id}`)}
+                      className="font-mono text-xs text-primary hover:underline flex items-center gap-1 group"
+                    >
+                      {pr.prNumber}
+                      <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                  </td>
                   <td className="px-4 py-3 max-w-[200px] truncate font-medium">{pr.description}</td>
                   <td className="px-4 py-3 text-muted-foreground">{pr.department || "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{pr.requesterName}</td>
@@ -182,6 +192,7 @@ function PRHistoryTab() {
 
 // --- PO History Tab ---
 function POHistoryTab() {
+  const [, setLocation] = useLocation();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [search, setSearch] = useState("");
@@ -231,7 +242,15 @@ function POHistoryTab() {
             <tbody>
               {data.items.map((po: any) => (
                 <tr key={po.id} className="border-b hover:bg-slate-50/50 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{po.poNumber}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setLocation(`/purchase-orders/${po.id}`)}
+                      className="font-mono text-xs text-primary hover:underline flex items-center gap-1 group"
+                    >
+                      {po.poNumber}
+                      <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                  </td>
                   <td className="px-4 py-3 font-medium">{po.vendorName || "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{po.createdByName}</td>
                   <td className="px-4 py-3 text-center text-muted-foreground">{po.itemCount}</td>
@@ -251,6 +270,7 @@ function POHistoryTab() {
 
 // --- Payment History Tab ---
 function PaymentHistoryTab() {
+  const [, setLocation] = useLocation();
   const { data: me } = useGetMe();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
@@ -313,7 +333,15 @@ function PaymentHistoryTab() {
             <tbody>
               {data.items.map((item: any) => (
                 <tr key={item.id} className="border-b hover:bg-slate-50/50 transition-colors">
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{item.prNumber}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setLocation(`/purchase-requests/${item.id}`)}
+                      className="font-mono text-xs text-primary hover:underline flex items-center gap-1 group"
+                    >
+                      {item.prNumber}
+                      <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                  </td>
                   <td className="px-4 py-3 max-w-[200px] truncate font-medium">{item.description}</td>
                   <td className="px-4 py-3 text-muted-foreground">{item.department || "—"}</td>
                   <td className="px-4 py-3 text-muted-foreground">{item.requesterName}</td>
