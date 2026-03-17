@@ -18,6 +18,15 @@ async function getSettingValue(key: string): Promise<string> {
   return setting?.value ?? DEFAULT_SETTINGS[key as keyof typeof DEFAULT_SETTINGS] ?? "";
 }
 
+async function upsertSetting(key: string, value: string) {
+  const existing = await db.select({ id: settingsTable.id }).from(settingsTable).where(eq(settingsTable.key, key));
+  if (existing.length > 0) {
+    await db.update(settingsTable).set({ value, updatedAt: new Date() }).where(eq(settingsTable.key, key));
+  } else {
+    await db.insert(settingsTable).values({ key, value });
+  }
+}
+
 router.get("/", async (req, res) => {
   try {
     const [poEnabled, companyName, currency] = await Promise.all([
@@ -34,19 +43,9 @@ router.get("/", async (req, res) => {
 router.put("/", requireRole("admin"), async (req, res) => {
   const { poEnabled, companyName, currency } = req.body;
   try {
-    const updates: { key: string; value: string }[] = [];
-    if (poEnabled !== undefined) updates.push({ key: "poEnabled", value: String(poEnabled) });
-    if (companyName !== undefined) updates.push({ key: "companyName", value: companyName });
-    if (currency !== undefined) updates.push({ key: "currency", value: currency });
-
-    for (const { key, value } of updates) {
-      const existing = await db.select({ id: settingsTable.id }).from(settingsTable).where(eq(settingsTable.key, key));
-      if (existing.length > 0) {
-        await db.update(settingsTable).set({ value, updatedAt: new Date() }).where(eq(settingsTable.key, key));
-      } else {
-        await db.insert(settingsTable).values({ key, value });
-      }
-    }
+    if (poEnabled !== undefined) await upsertSetting("poEnabled", String(poEnabled));
+    if (companyName !== undefined) await upsertSetting("companyName", companyName);
+    if (currency !== undefined) await upsertSetting("currency", currency);
 
     const [poEnabledVal, companyNameVal, currencyVal] = await Promise.all([
       getSettingValue("poEnabled"),
@@ -54,6 +53,49 @@ router.put("/", requireRole("admin"), async (req, res) => {
       getSettingValue("currency"),
     ]);
     res.json({ poEnabled: poEnabledVal === "true", companyName: companyNameVal, currency: currencyVal });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// SMTP settings
+router.get("/smtp", requireRole("admin"), async (req, res) => {
+  try {
+    const keys = ["smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_security", "smtp_from"];
+    const rows = await Promise.all(keys.map(k => getSettingValue(k)));
+    res.json({
+      smtpHost: rows[0],
+      smtpPort: rows[1] ? parseInt(rows[1]) : 587,
+      smtpUser: rows[2],
+      smtpPassword: rows[3],
+      smtpSecurity: rows[4] || "STARTTLS",
+      smtpFrom: rows[5],
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/smtp", requireRole("admin"), async (req, res) => {
+  const { smtpHost, smtpPort, smtpUser, smtpPassword, smtpSecurity, smtpFrom } = req.body;
+  try {
+    if (smtpHost !== undefined) await upsertSetting("smtp_host", smtpHost);
+    if (smtpPort !== undefined) await upsertSetting("smtp_port", String(smtpPort));
+    if (smtpUser !== undefined) await upsertSetting("smtp_user", smtpUser);
+    if (smtpPassword !== undefined) await upsertSetting("smtp_password", smtpPassword);
+    if (smtpSecurity !== undefined) await upsertSetting("smtp_security", smtpSecurity);
+    if (smtpFrom !== undefined) await upsertSetting("smtp_from", smtpFrom);
+
+    const keys = ["smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_security", "smtp_from"];
+    const rows = await Promise.all(keys.map(k => getSettingValue(k)));
+    res.json({
+      smtpHost: rows[0],
+      smtpPort: rows[1] ? parseInt(rows[1]) : 587,
+      smtpUser: rows[2],
+      smtpPassword: rows[3],
+      smtpSecurity: rows[4] || "STARTTLS",
+      smtpFrom: rows[5],
+    });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }

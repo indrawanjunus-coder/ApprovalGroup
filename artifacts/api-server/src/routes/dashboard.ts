@@ -1,25 +1,33 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import {
-  purchaseRequestsTable, purchaseOrdersTable, approvalsTable, prItemsTable, usersTable
+  purchaseRequestsTable, purchaseOrdersTable, approvalsTable,
+  usersTable, prVendorAttachmentsTable
 } from "@workspace/db/schema";
-import { eq, and, desc, count, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, count, sql, inArray, ne, isNotNull } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 
 const router = Router();
 router.use(requireAuth);
 
+function daysBetween(start: Date, end: Date): number {
+  return Math.max(0, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
 router.get("/", async (req, res) => {
   const user = req.user!;
+  const isManager = ["admin", "approver", "purchasing"].includes(user.role);
+  const currentYear = new Date().getFullYear();
+  const yearStart = new Date(`${currentYear}-01-01`);
+  const yearEnd = new Date(`${currentYear}-12-31`);
+
   try {
+    // Base stats
     const [
       pendingApprovalsResult,
       myPRsResult,
       pendingPOsResult,
       totalPRsResult,
-      totalPOsResult,
-      recentPRs,
-      prByStatusResult,
     ] = await Promise.all([
       db.select({ count: count() }).from(approvalsTable)
         .where(and(eq(approvalsTable.approverId, user.id), eq(approvalsTable.status, "pending"))),
@@ -28,87 +36,194 @@ router.get("/", async (req, res) => {
       db.select({ count: count() }).from(purchaseOrdersTable)
         .where(eq(purchaseOrdersTable.status, "draft")),
       db.select({ count: count() }).from(purchaseRequestsTable),
-      db.select({ count: count() }).from(purchaseOrdersTable),
-      db.select().from(purchaseRequestsTable).orderBy(desc(purchaseRequestsTable.createdAt)).limit(5),
-      db.select({ status: purchaseRequestsTable.status, count: count() }).from(purchaseRequestsTable).groupBy(purchaseRequestsTable.status),
     ]);
 
-    const prIds = recentPRs.map(p => p.id);
-    const [recentItems, recentApprovalsList, requesterIds] = await Promise.all([
-      prIds.length > 0 ? db.select().from(prItemsTable).where(inArray(prItemsTable.prId, prIds)) : [],
-      db.select().from(approvalsTable)
-        .where(and(eq(approvalsTable.approverId, user.id), eq(approvalsTable.status, "pending")))
-        .limit(5),
-      Promise.resolve([...new Set(recentPRs.map(p => p.requesterId))]),
-    ]);
+    // Recent PRs (non-leave types)
+    const recentPRsRaw = await db.select().from(purchaseRequestsTable)
+      .where(ne(purchaseRequestsTable.type, "leave"))
+      .orderBy(desc(purchaseRequestsTable.createdAt)).limit(8);
 
-    const requesters = requesterIds.length > 0
-      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, requesterIds))
+    // Recent Leave PRs
+    const recentLeavePRsRaw = await db.select().from(purchaseRequestsTable)
+      .where(eq(purchaseRequestsTable.type, "leave"))
+      .orderBy(desc(purchaseRequestsTable.createdAt)).limit(8);
+
+    // PR by status (non-leave)
+    const prByStatusResult = await db.select({ status: purchaseRequestsTable.status, count: count() })
+      .from(purchaseRequestsTable)
+      .where(ne(purchaseRequestsTable.type, "leave"))
+      .groupBy(purchaseRequestsTable.status);
+
+    // Fetch requester names for recent PRs
+    const allRecentIds = [...new Set([
+      ...recentPRsRaw.map(p => p.requesterId),
+      ...recentLeavePRsRaw.map(p => p.requesterId),
+    ])];
+    const recentRequesters = allRecentIds.length > 0
+      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, allRecentIds))
       : [];
-    const requesterMap = new Map(requesters.map(r => [r.id, r.name]));
+    const requesterMap = new Map(recentRequesters.map(r => [r.id, r.name]));
 
-    const recentPRsFormatted = recentPRs.map(pr => {
-      const items = recentItems.filter(i => i.prId === pr.id);
-      return {
-        ...pr,
-        requesterName: requesterMap.get(pr.requesterId) || "Unknown",
-        totalAmount: parseFloat(pr.totalAmount),
-        items: items.map(i => ({
-          ...i,
-          qty: parseFloat(i.qty),
-          estimatedPrice: parseFloat(i.estimatedPrice),
-          totalPrice: parseFloat(i.totalPrice),
-        })),
-        approvals: [],
-      };
-    });
+    const formatPRList = (prs: typeof recentPRsRaw) => prs.map(pr => ({
+      id: pr.id,
+      prNumber: pr.prNumber,
+      type: pr.type,
+      status: pr.status,
+      totalAmount: parseFloat(pr.totalAmount),
+      requesterName: requesterMap.get(pr.requesterId) || "Unknown",
+      createdAt: pr.createdAt,
+      leaveStartDate: pr.leaveStartDate,
+      leaveEndDate: pr.leaveEndDate,
+    }));
 
-    const approvalPrIds = recentApprovalsList.map(a => a.prId);
-    const approvalPrs = approvalPrIds.length > 0
-      ? await db.select().from(purchaseRequestsTable).where(inArray(purchaseRequestsTable.id, approvalPrIds))
+    // --- Vendor Lead Time ---
+    // Find all PRs with receivingClosedAt set (received and closed)
+    const closedPRs = await db.select({
+      id: purchaseRequestsTable.id,
+      vendorSelectedAt: purchaseRequestsTable.vendorSelectedAt,
+      selectedVendorId: purchaseRequestsTable.selectedVendorId,
+      receivingClosedAt: purchaseRequestsTable.receivingClosedAt,
+    }).from(purchaseRequestsTable)
+      .where(and(
+        isNotNull(purchaseRequestsTable.receivingClosedAt),
+        isNotNull(purchaseRequestsTable.vendorSelectedAt),
+      ));
+
+    // For each closed PR, get PO if exists (PO-ON flow)
+    const closedPRIds = closedPRs.map(p => p.id);
+    const relatedPOs = closedPRIds.length > 0
+      ? await db.select({
+          prId: purchaseOrdersTable.prId,
+          supplier: purchaseOrdersTable.supplier,
+          issuedAt: purchaseOrdersTable.issuedAt,
+          createdAt: purchaseOrdersTable.createdAt,
+        }).from(purchaseOrdersTable)
+        .where(and(inArray(purchaseOrdersTable.prId, closedPRIds), isNotNull(purchaseOrdersTable.issuedAt)))
       : [];
-    const approvalPrMap = new Map(approvalPrs.map(p => [p.id, p]));
-    const approvalRequesterIds = [...new Set(approvalPrs.map(p => p.requesterId))];
-    const approvalRequesters = approvalRequesterIds.length > 0
-      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, approvalRequesterIds))
+    const poByPrId = new Map(relatedPOs.map(po => [po.prId, po]));
+
+    // Get vendor attachment names for PO-OFF flow
+    const vendorAttIds = closedPRs.map(p => p.selectedVendorId).filter(Boolean) as number[];
+    const vendorAtts = vendorAttIds.length > 0
+      ? await db.select({ id: prVendorAttachmentsTable.id, vendorName: prVendorAttachmentsTable.vendorName })
+        .from(prVendorAttachmentsTable).where(inArray(prVendorAttachmentsTable.id, vendorAttIds))
       : [];
-    const approvalRequesterMap = new Map(approvalRequesters.map(r => [r.id, r.name]));
+    const vendorAttMap = new Map(vendorAtts.map(v => [v.id, v.vendorName]));
 
-    const filteredApprovals = recentApprovalsList.filter(a => {
-      const pr = approvalPrMap.get(a.prId);
-      return pr && pr.currentApprovalLevel === a.level;
-    });
+    // Calculate lead times per vendor
+    const vendorLeadMap = new Map<string, number[]>();
+    for (const pr of closedPRs) {
+      if (!pr.receivingClosedAt) continue;
+      const po = poByPrId.get(pr.id);
+      let startDate: Date | null = null;
+      let vendorName: string | null = null;
 
-    const recentApprovalsFormatted = filteredApprovals.map(a => {
-      const pr = approvalPrMap.get(a.prId)!;
-      return {
-        id: a.id,
-        prId: a.prId,
-        prNumber: pr.prNumber,
-        prType: pr.type,
-        prDescription: pr.description,
-        requesterName: approvalRequesterMap.get(pr.requesterId) || "Unknown",
-        department: pr.department,
-        totalAmount: parseFloat(pr.totalAmount),
-        approverId: a.approverId,
-        approverName: user.name,
-        level: a.level,
-        status: a.status,
-        notes: a.notes,
-        actionAt: a.actionAt,
-        createdAt: a.createdAt,
-      };
-    });
+      if (po && po.issuedAt) {
+        startDate = po.issuedAt;
+        vendorName = po.supplier;
+      } else if (pr.vendorSelectedAt && pr.selectedVendorId) {
+        startDate = pr.vendorSelectedAt;
+        vendorName = vendorAttMap.get(pr.selectedVendorId) || null;
+      }
+
+      if (startDate && vendorName && pr.receivingClosedAt) {
+        const days = daysBetween(startDate, pr.receivingClosedAt);
+        if (!vendorLeadMap.has(vendorName)) vendorLeadMap.set(vendorName, []);
+        vendorLeadMap.get(vendorName)!.push(days);
+      }
+    }
+
+    const vendorLeadTime = Array.from(vendorLeadMap.entries()).map(([vendor, days]) => ({
+      vendor,
+      avgDays: Math.round(days.reduce((a, b) => a + b, 0) / days.length),
+      count: days.length,
+    })).sort((a, b) => b.avgDays - a.avgDays).slice(0, 10);
+
+    // --- Leave Charts ---
+    let leaveChartDept: { dept: string; userName: string; userId: number; usedDays: number }[] = [];
+    let leaveChartMonthly: { month: number; monthName: string; usedDays: number }[] = [];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+
+    if (isManager) {
+      // Manager view: leave taken per user per department this year
+      // Query approved/completed leave PRs in current year
+      const leavePRs = await db.select({
+        requesterId: purchaseRequestsTable.requesterId,
+        leaveStartDate: purchaseRequestsTable.leaveStartDate,
+        leaveEndDate: purchaseRequestsTable.leaveEndDate,
+        department: purchaseRequestsTable.department,
+        status: purchaseRequestsTable.status,
+      }).from(purchaseRequestsTable)
+        .where(and(
+          eq(purchaseRequestsTable.type, "leave"),
+          sql`EXTRACT(YEAR FROM created_at) = ${currentYear}`,
+        ));
+
+      const approvedLeave = leavePRs.filter(p => ["approved", "completed"].includes(p.status));
+      const userIds = [...new Set(approvedLeave.map(p => p.requesterId))];
+      const usersData = userIds.length > 0
+        ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, userIds))
+        : [];
+      const userNameMap = new Map(usersData.map(u => [u.id, u.name]));
+
+      const deptUserMap = new Map<string, Map<number, number>>();
+      for (const lp of approvedLeave) {
+        if (!lp.leaveStartDate || !lp.leaveEndDate) continue;
+        const start = new Date(lp.leaveStartDate);
+        const end = new Date(lp.leaveEndDate);
+        const days = daysBetween(start, end) + 1;
+        const dept = lp.department || "Lainnya";
+        if (!deptUserMap.has(dept)) deptUserMap.set(dept, new Map());
+        const userMap = deptUserMap.get(dept)!;
+        userMap.set(lp.requesterId, (userMap.get(lp.requesterId) || 0) + days);
+      }
+
+      for (const [dept, userMap] of deptUserMap.entries()) {
+        for (const [userId, usedDays] of userMap.entries()) {
+          leaveChartDept.push({ dept, userId, userName: userNameMap.get(userId) || "Unknown", usedDays });
+        }
+      }
+      leaveChartDept.sort((a, b) => a.dept.localeCompare(b.dept) || b.usedDays - a.usedDays);
+    } else {
+      // User view: own leave by month in current year
+      const ownLeavePRs = await db.select({
+        leaveStartDate: purchaseRequestsTable.leaveStartDate,
+        leaveEndDate: purchaseRequestsTable.leaveEndDate,
+        status: purchaseRequestsTable.status,
+      }).from(purchaseRequestsTable)
+        .where(and(
+          eq(purchaseRequestsTable.requesterId, user.id),
+          eq(purchaseRequestsTable.type, "leave"),
+          sql`EXTRACT(YEAR FROM created_at) = ${currentYear}`,
+        ));
+
+      const monthlyMap = new Map<number, number>();
+      for (const lp of ownLeavePRs.filter(p => ["approved", "completed"].includes(p.status))) {
+        if (!lp.leaveStartDate) continue;
+        const month = new Date(lp.leaveStartDate).getMonth() + 1; // 1-12
+        const start = new Date(lp.leaveStartDate);
+        const end = lp.leaveEndDate ? new Date(lp.leaveEndDate) : start;
+        const days = daysBetween(start, end) + 1;
+        monthlyMap.set(month, (monthlyMap.get(month) || 0) + days);
+      }
+
+      for (let m = 1; m <= 12; m++) {
+        leaveChartMonthly.push({ month: m, monthName: monthNames[m - 1], usedDays: monthlyMap.get(m) || 0 });
+      }
+    }
 
     res.json({
       pendingApprovals: Number(pendingApprovalsResult[0]?.count) || 0,
       myPendingPRs: Number(myPRsResult[0]?.count) || 0,
       pendingPOs: Number(pendingPOsResult[0]?.count) || 0,
       totalPRs: Number(totalPRsResult[0]?.count) || 0,
-      totalPOs: Number(totalPOsResult[0]?.count) || 0,
-      recentPRs: recentPRsFormatted,
-      recentApprovals: recentApprovalsFormatted,
+      recentPRs: formatPRList(recentPRsRaw),
+      recentLeavePRs: formatPRList(recentLeavePRsRaw),
       prByStatus: prByStatusResult.map(r => ({ status: r.status, count: Number(r.count) })),
+      vendorLeadTime,
+      leaveChartDept,
+      leaveChartMonthly,
+      isManager,
     });
   } catch (err) {
     console.error(err);

@@ -1,14 +1,19 @@
-import { Link, useLocation } from "wouter";
+import { useState } from "react";
+import { useLocation } from "wouter";
 import { useGetApprovals } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatIDR, formatDate } from "@/lib/utils";
+import { PaginationControls } from "@/components/PaginationControls";
 import { CheckSquare } from "lucide-react";
 
 export default function ApprovalList() {
   const [, setLocation] = useLocation();
-  const { data, isLoading } = useGetApprovals();
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+
+  const { data, isLoading } = useGetApprovals({ page, limit } as any);
 
   return (
     <div className="space-y-6">
@@ -33,7 +38,7 @@ export default function ApprovalList() {
               <TableBody>
                 {isLoading ? (
                   <TableRow><TableCell colSpan={5} className="text-center h-24 text-muted-foreground">Memuat data...</TableCell></TableRow>
-                ) : data?.approvals?.length === 0 ? (
+                ) : (data?.approvals?.length ?? 0) === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center h-48">
                       <div className="flex flex-col items-center justify-center text-muted-foreground">
@@ -44,8 +49,8 @@ export default function ApprovalList() {
                   </TableRow>
                 ) : (
                   data?.approvals.map((app) => (
-                    <TableRow 
-                      key={app.id} 
+                    <TableRow
+                      key={app.id}
                       className="cursor-pointer hover:bg-slate-50 transition-colors"
                       onClick={() => setLocation(`/purchase-requests/${app.prId}`)}
                     >
@@ -55,7 +60,7 @@ export default function ApprovalList() {
                         <div className="text-sm font-medium">{app.requesterName}</div>
                         <div className="text-xs text-muted-foreground">{app.department}</div>
                       </TableCell>
-                      <TableCell className="text-right font-medium text-slate-700 text-left">{formatIDR(app.totalAmount)}</TableCell>
+                      <TableCell className="font-medium text-slate-700">{formatIDR(app.totalAmount)}</TableCell>
                       <TableCell>
                         <span className="bg-amber-100 text-amber-700 px-2.5 py-1 rounded-md text-xs font-semibold whitespace-nowrap">
                           Perlu Tindakan (Lvl {app.level})
@@ -67,6 +72,13 @@ export default function ApprovalList() {
               </TableBody>
             </Table>
           </div>
+          <PaginationControls
+            page={page}
+            limit={limit}
+            total={(data as any)?.total ?? (data?.approvals?.length ?? 0)}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+          />
         </CardContent>
       </Card>
     </div>

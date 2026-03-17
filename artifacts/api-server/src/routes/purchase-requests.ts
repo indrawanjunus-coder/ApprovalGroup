@@ -10,6 +10,7 @@ import { requireAuth } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
 import { createNotification } from "../lib/notifications.js";
 import { generatePRNumber } from "../lib/prNumber.js";
+import { sendApprovalRequestEmail, sendVendorAttachmentRequestEmail, sendReceivingReadyEmail } from "../lib/email.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -298,9 +299,14 @@ router.post("/:id/submit", async (req, res) => {
       status: "waiting_approval", currentApprovalLevel: minLevel, updatedAt: new Date(),
     }).where(eq(purchaseRequestsTable.id, id)).returning();
 
-    for (const l of applicableLevels.filter(l => l.level === minLevel)) {
+    const firstLevelApprovers = applicableLevels.filter(l => l.level === minLevel);
+    for (const l of firstLevelApprovers) {
       await createNotification(l.approverId!, "PR Perlu Disetujui",
         `PR ${pr.prNumber} dari ${user.name} membutuhkan persetujuan Anda`, "approval_request", id);
+      const [approverUser] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, l.approverId!));
+      if (approverUser?.email) {
+        sendApprovalRequestEmail(approverUser.email, approverUser.name, pr.prNumber, user.name, parseFloat(pr.totalAmount), pr.description).catch(() => {});
+      }
     }
     await createAuditLog(user.id, "submit_pr", "pr", id, `PR ${pr.prNumber} submitted`);
 
@@ -535,10 +541,12 @@ router.post("/:id/close-receiving", async (req, res) => {
       res.status(403).json({ error: "Forbidden" }); return;
     }
 
+    const closedAt = new Date();
     const [updated] = await db.update(purchaseRequestsTable).set({
       receivingStatus: "closed",
+      receivingClosedAt: closedAt,
       status: "completed",
-      updatedAt: new Date(),
+      updatedAt: closedAt,
     }).where(eq(purchaseRequestsTable.id, id)).returning();
 
     await createAuditLog(user.id, "close_receiving", "pr", id);

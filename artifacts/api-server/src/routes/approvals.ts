@@ -7,66 +7,71 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
 import { createNotification } from "../lib/notifications.js";
+import { sendApprovalRequestEmail, sendVendorAttachmentRequestEmail } from "../lib/email.js";
 
 const router = Router();
 router.use(requireAuth);
 
 router.get("/", async (req, res) => {
   const user = req.user!;
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 20;
+  const offset = (page - 1) * limit;
   try {
-    // Get user's assigned companies and departments
-    const userAssignments = await db.select().from(userCompaniesTable)
-      .where(eq(sql`${userCompaniesTable.userId}::integer`, user.id));
+    let pendingApprovals: any[] = [];
+    if (user.role === "admin") {
+      pendingApprovals = await db.select().from(approvalsTable).where(eq(approvalsTable.status, "pending")).limit(limit).offset(offset);
+    } else {
+      pendingApprovals = await db.select().from(approvalsTable)
+        .where(and(eq(approvalsTable.approverId, user.id), eq(approvalsTable.status, "pending")))
+        .limit(limit).offset(offset);
+    }
 
-    // Get all pending approvals for this user
-    const myApprovals = await db.select().from(approvalsTable)
-      .where(and(eq(approvalsTable.approverId, user.id), eq(approvalsTable.status, "pending")));
+    const prIds = [...new Set(pendingApprovals.map(a => a.prId))];
+    if (prIds.length === 0) {
+      res.json({ approvals: [], total: 0, page, limit });
+      return;
+    }
 
-    if (myApprovals.length === 0) { res.json({ approvals: [], total: 0 }); return; }
+    const [prs, uploaderRows] = await Promise.all([
+      db.select().from(purchaseRequestsTable).where(inArray(purchaseRequestsTable.id, prIds)),
+      db.select({ prId: sql<number>`pr_id`, uploaderId: sql<number>`uploaded_by` }).from(sql`pr_vendor_attachments`),
+    ]);
+    const prMap = new Map(prs.map(p => [p.id, p]));
+    const uploaderIds = uploaderRows.map(r => r.uploaderId).filter(Boolean);
+    const approverIds = pendingApprovals.map(a => a.approverId);
+    const allIds = [...new Set([...approverIds, ...uploaderIds])];
+    const users = allIds.length > 0
+      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, allIds))
+      : [];
+    const userMap = new Map(users.map(u => [u.id, u.name]));
 
-    const prIds = myApprovals.map(a => a.prId);
-    const prs = await db.select().from(purchaseRequestsTable).where(inArray(purchaseRequestsTable.id, prIds));
-
-    // Filter PRs by current level AND company/department assignment
-    const filteredApprovals = myApprovals.filter(a => {
-      const pr = prs.find(p => p.id === a.prId);
-      if (!pr || pr.currentApprovalLevel !== a.level) return false;
-
-      // If user has company assignments, filter by them
-      if (userAssignments.length > 0) {
-        return userAssignments.some(ua => {
-          const companyMatch = !pr.companyId || ua.companyId === String(pr.companyId);
-          const deptMatch = !ua.department || ua.department === pr.department;
-          return companyMatch && deptMatch;
-        });
-      }
-      // No assignments = can approve all (for backward compat)
-      return true;
-    });
-
-    if (filteredApprovals.length === 0) { res.json({ approvals: [], total: 0 }); return; }
-
-    const filteredPrIds = filteredApprovals.map(a => a.prId);
-    const filteredPRs = prs.filter(p => filteredPrIds.includes(p.id));
-    const requesterIds = [...new Set(filteredPRs.map(p => p.requesterId))];
+    const requesterIds = [...new Set(prs.map(p => p.requesterId))];
     const requesters = requesterIds.length > 0
       ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, requesterIds))
       : [];
     const requesterMap = new Map(requesters.map(r => [r.id, r.name]));
-    const prMap = new Map(filteredPRs.map(p => [p.id, p]));
 
-    const result = filteredApprovals.map(a => {
-      const pr = prMap.get(a.prId)!;
-      return {
-        id: a.id, prId: a.prId, prNumber: pr.prNumber, prType: pr.type,
-        prDescription: pr.description, requesterName: requesterMap.get(pr.requesterId) || "Unknown",
-        department: pr.department, totalAmount: parseFloat(pr.totalAmount),
-        approverId: a.approverId, approverName: user.name, level: a.level,
-        status: a.status, notes: a.notes, actionAt: a.actionAt, createdAt: a.createdAt,
-      };
+    const filtered = pendingApprovals.filter(a => {
+      const pr = prMap.get(a.prId);
+      return pr && pr.currentApprovalLevel === a.level;
     });
 
-    res.json({ approvals: result, total: result.length });
+    res.json({
+      approvals: filtered.map(a => {
+        const pr = prMap.get(a.prId)!;
+        return {
+          id: a.id, prId: a.prId, prNumber: pr.prNumber, prType: pr.type, prDescription: pr.description,
+          requesterName: requesterMap.get(pr.requesterId) || "Unknown", department: pr.department,
+          totalAmount: parseFloat(pr.totalAmount), approverId: a.approverId,
+          approverName: userMap.get(a.approverId) || "Unknown",
+          level: a.level, status: a.status, notes: a.notes, actionAt: a.actionAt, createdAt: a.createdAt,
+        };
+      }),
+      total: filtered.length,
+      page,
+      limit,
+    });
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 
@@ -99,17 +104,29 @@ async function processApprovalAction(req: any, res: any, action: "approved" | "r
       const nextLevel = pendingHigher.length > 0 ? Math.min(...pendingHigher.map(a => a.level)) : Infinity;
 
       if (nextLevel === Infinity) {
+        // Fully approved
         await db.update(purchaseRequestsTable).set({ status: "approved", currentApprovalLevel: null, updatedAt: new Date() }).where(eq(purchaseRequestsTable.id, pr.id));
         await createNotification(pr.requesterId, "PR Disetujui", `PR ${pr.prNumber} telah disetujui semua level`, "approved", pr.id);
         const purchasingUsers = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.role, "purchasing"));
         for (const pu of purchasingUsers) {
           await createNotification(pu.id, "PR Siap Diproses", `PR ${pr.prNumber} siap untuk diproses`, "info", pr.id);
         }
+        // Email: notify requester to upload vendor attachments (non-PO flow handled at select-vendor)
+        const [requester] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
+        if (requester?.email) {
+          sendVendorAttachmentRequestEmail(requester.email, requester.name, pr.prNumber).catch(() => {});
+        }
       } else {
         await db.update(purchaseRequestsTable).set({ currentApprovalLevel: nextLevel, updatedAt: new Date() }).where(eq(purchaseRequestsTable.id, pr.id));
         const nextApprovers = allApprovals.filter(a => a.level === nextLevel);
         for (const na of nextApprovers) {
           await createNotification(na.approverId, "PR Perlu Disetujui", `PR ${pr.prNumber} perlu persetujuan Anda (Level ${nextLevel})`, "approval_request", pr.id);
+          // Send email to next approver
+          const [approverUser] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, na.approverId));
+          if (approverUser?.email) {
+            const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
+            sendApprovalRequestEmail(approverUser.email, approverUser.name, pr.prNumber, requester?.name || "Unknown", parseFloat(pr.totalAmount), pr.description).catch(() => {});
+          }
         }
       }
       await createAuditLog(user.id, "approve_pr", "approval", id, `Approved PR ${pr.prNumber} level ${approval.level}`);

@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { useGetPurchaseRequests, useGetMe } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select"; // Using native HTML for reliability in loops
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatIDR, formatDate } from "@/lib/utils";
+import { PaginationControls } from "@/components/PaginationControls";
 import { Search, Plus, Filter } from "lucide-react";
 
 export default function PRList() {
@@ -15,12 +15,18 @@ export default function PRList() {
   const { data: user } = useGetMe();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<any>("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
 
-  const { data, isLoading } = useGetPurchaseRequests({ 
-    search: search || undefined, 
+  const { data, isLoading } = useGetPurchaseRequests({
+    search: search || undefined,
     status: status || undefined,
-    limit: 50 
+    page,
+    limit,
   });
+
+  const handleSearch = (val: string) => { setSearch(val); setPage(1); };
+  const handleStatus = (val: string) => { setStatus(val); setPage(1); };
 
   return (
     <div className="space-y-6">
@@ -36,35 +42,34 @@ export default function PRList() {
 
       <Card className="border-0 shadow-sm">
         <CardContent className="p-0">
-          {/* Filters */}
           <div className="p-4 border-b flex flex-col md:flex-row gap-4 bg-slate-50/50 rounded-t-xl">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input 
-                placeholder="Cari nomor PR atau nama..." 
+              <Input
+                placeholder="Cari nomor PR atau nama..."
                 className="pl-9 h-10 bg-white"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
               />
             </div>
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-muted-foreground hidden md:block" />
-              <select 
+              <select
                 className="flex h-10 w-full md:w-48 rounded-md border border-input bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 value={status}
-                onChange={(e) => setStatus(e.target.value)}
+                onChange={(e) => handleStatus(e.target.value)}
               >
                 <option value="">Semua Status</option>
                 <option value="draft">Draft</option>
                 <option value="waiting_approval">Menunggu Approval</option>
                 <option value="approved">Disetujui</option>
                 <option value="rejected">Ditolak</option>
+                <option value="vendor_selected">Vendor Dipilih</option>
                 <option value="completed">Selesai</option>
               </select>
             </div>
           </div>
 
-          {/* Table */}
           <div className="overflow-x-auto table-scrollbar">
             <Table>
               <TableHeader className="bg-slate-50/80">
@@ -80,12 +85,12 @@ export default function PRList() {
               <TableBody>
                 {isLoading ? (
                   <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Memuat data...</TableCell></TableRow>
-                ) : data?.purchaseRequests?.length === 0 ? (
+                ) : (data?.purchaseRequests?.length ?? 0) === 0 ? (
                   <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Tidak ada data ditemukan</TableCell></TableRow>
                 ) : (
                   data?.purchaseRequests.map((pr) => (
-                    <TableRow 
-                      key={pr.id} 
+                    <TableRow
+                      key={pr.id}
                       className="cursor-pointer hover:bg-slate-50 transition-colors"
                       onClick={() => setLocation(`/purchase-requests/${pr.id}`)}
                     >
@@ -104,6 +109,13 @@ export default function PRList() {
               </TableBody>
             </Table>
           </div>
+          <PaginationControls
+            page={page}
+            limit={limit}
+            total={data?.total ?? 0}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+          />
         </CardContent>
       </Card>
     </div>

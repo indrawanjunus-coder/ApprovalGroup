@@ -81,10 +81,35 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (Pr
 - Year-end carryover with cap + expiry
 - `GET|PUT /api/settings/company-leave` — Per-company leave config (accrual, max carryover, expiry)
 
+### Dashboard
+- Stat cards: pending approvals, my pending PRs, pending POs, total PRs
+- PR status distribution bar chart (Recharts)
+- Tabbed recent list: recent PRs vs recent leave requests
+- Vendor lead time horizontal bar chart (avg days from PO issue/vendor selected → receiving closed)
+- Leave usage chart: per-department stacked bars (manager view) or per-month bars (user view)
+
+### Pagination
+- All list pages (PR, PO, Approvals, Users, Audit Logs) have `PaginationControls` component
+- Supports 20/50/100 items per page with prev/next navigation
+- Backend routes all accept `page` + `limit` query params, return `total` in response
+
+### Email Notifications (SMTP)
+- `nodemailer` email service in `artifacts/api-server/src/lib/email.ts`
+- Reads SMTP config from settings table (smtp_host, smtp_port, smtp_user, smtp_password, smtp_security, smtp_from)
+- Sends notifications on: approval request, vendor attachment needed, PO issued, receiving ready, new user created
+- Silently skips if SMTP not configured
+- SMTP config UI in Settings page: `GET|PUT /api/settings/smtp`
+
+### Audit Log Page
+- Route: `/audit-logs` — shows all system activity
+- Columns: timestamp, user, action (color-coded badge), entity type/ID, details
+- Paginated with PaginationControls
+
 ### Settings
 - Feature toggles per company (PO feature on/off)
 - Company leave settings (accrual days/month, max carryover days, carryover expiry month/day)
 - Approval rules management
+- SMTP email configuration (host, port, user, password, security, from)
 
 ## PR Status Flow
 
@@ -160,6 +185,7 @@ artifacts-monorepo/
 ### Settings
 - `GET|PUT /api/settings`
 - `GET|PUT /api/settings/company-leave`
+- `GET|PUT /api/settings/smtp`
 
 ### Other
 - `GET /api/notifications`

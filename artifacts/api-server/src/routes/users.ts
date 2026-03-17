@@ -4,6 +4,7 @@ import { usersTable, userCompaniesTable, companiesTable, userLeaveBalancesTable,
 import { eq, ilike, or, count, inArray, sql, and } from "drizzle-orm";
 import { hashPassword, requireAuth, requireRole } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
+import { sendNewUserEmail } from "../lib/email.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -108,6 +109,9 @@ router.post("/", requireRole("admin"), async (req, res) => {
       }
     }
     await createAuditLog(req.user!.id, "create_user", "user", user.id);
+    if (email) {
+      sendNewUserEmail(email, name, username, password).catch(() => {});
+    }
     const { passwordHash: __, ...u } = user;
     const userComps = await getUserCompanies([user.id]);
     const hiredCompanyName = await getHiredCompanyName(u.hiredCompanyId);

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { PaginationControls } from "@/components/PaginationControls";
 import { Search, Plus, Pencil, Trash2, X, Check, Loader2, Building2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
@@ -25,6 +26,8 @@ const emptyForm = {
 
 export default function UserList() {
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
   const [showModal, setShowModal] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const [form, setForm] = useState({ ...emptyForm });
@@ -32,8 +35,10 @@ export default function UserList() {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data, isLoading } = useGetUsers({ search: search || undefined, limit: 100 });
+  const { data, isLoading } = useGetUsers({ search: search || undefined, page, limit });
   const { data: allUsers } = useGetUsers({ limit: 200 });
+
+  const handleSearch = (val: string) => { setSearch(val); setPage(1); };
   const { data: companiesData } = useGetCompanies();
   const companyList = companiesData || [];
 
@@ -160,7 +165,7 @@ export default function UserList() {
                 placeholder="Cari nama atau username..."
                 className="pl-9 h-10 bg-white"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
               />
             </div>
           </div>
@@ -231,6 +236,13 @@ export default function UserList() {
               </TableBody>
             </Table>
           </div>
+          <PaginationControls
+            page={page}
+            limit={limit}
+            total={(data as any)?.total ?? (data?.users?.length ?? 0)}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+          />
         </CardContent>
       </Card>
 

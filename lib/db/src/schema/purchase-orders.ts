@@ -11,6 +11,7 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   totalAmount: numeric("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   notes: text("notes"),
   createdById: integer("created_by_id").notNull(),
+  issuedAt: timestamp("issued_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

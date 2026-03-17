@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { sendPOCreatedEmail, sendReceivingReadyEmail } from "../lib/email.js";
 import { db } from "@workspace/db";
 import { purchaseOrdersTable, poItemsTable, purchaseRequestsTable, usersTable, settingsTable } from "@workspace/db/schema";
 import { eq, desc, count, inArray } from "drizzle-orm";
@@ -168,10 +169,15 @@ router.post("/:id/issue", requireRole("admin", "purchasing"), async (req, res) =
   try {
     const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
     if (!po) { res.status(404).json({ error: "Not Found" }); return; }
-    const [updated] = await db.update(purchaseOrdersTable).set({ status: "issued", updatedAt: new Date() }).where(eq(purchaseOrdersTable.id, id)).returning();
+    const issuedAt = new Date();
+    const [updated] = await db.update(purchaseOrdersTable).set({ status: "issued", issuedAt, updatedAt: issuedAt }).where(eq(purchaseOrdersTable.id, id)).returning();
     const [pr] = await db.select({ prNumber: purchaseRequestsTable.prNumber, requesterId: purchaseRequestsTable.requesterId }).from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, po.prId));
     if (pr) {
       await createNotification(pr.requesterId, "Barang Siap Diterima", `PO ${po.poNumber} telah diterbitkan, barang siap untuk receiving`, "received", po.prId, id);
+      const [requester] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
+      if (requester?.email) {
+        sendReceivingReadyEmail(requester.email, requester.name, pr.prNumber, po.poNumber).catch(() => {});
+      }
     }
     await createAuditLog(user.id, "issue_po", "po", id);
     const items = await db.select().from(poItemsTable).where(eq(poItemsTable.poId, id));

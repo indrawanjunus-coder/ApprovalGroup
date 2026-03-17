@@ -5,7 +5,7 @@ import {
   useCreateApprovalRule, useUpdateApprovalRule, useDeleteApprovalRule,
   useGetUsers, useGetCompanyLeaveSettings, useUpdateCompanyLeaveSetting,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail } from "lucide-react";
 
 // Company Management
 function CompanyManager() {
@@ -552,6 +552,112 @@ function ApprovalRuleManager() {
   );
 }
 
+// SMTP Settings Component
+function SmtpSettings() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
+  const { data: smtp, isLoading } = useQuery({
+    queryKey: ["/api/settings/smtp"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/settings/smtp`, { credentials: "include" });
+      if (!res.ok) throw new Error("Gagal memuat SMTP");
+      return res.json();
+    },
+  });
+
+  const [form, setForm] = useState({
+    smtpHost: "", smtpPort: 587, smtpUser: "", smtpPassword: "",
+    smtpSecurity: "STARTTLS", smtpFrom: "",
+  });
+
+  useEffect(() => {
+    if (smtp) {
+      setForm({
+        smtpHost: smtp.smtpHost || "",
+        smtpPort: smtp.smtpPort || 587,
+        smtpUser: smtp.smtpUser || "",
+        smtpPassword: smtp.smtpPassword || "",
+        smtpSecurity: smtp.smtpSecurity || "STARTTLS",
+        smtpFrom: smtp.smtpFrom || "",
+      });
+    }
+  }, [smtp]);
+
+  const { mutate: saveSMTP, isPending: saving } = useMutation({
+    mutationFn: async (data: typeof form) => {
+      const res = await fetch(`${BASE}/api/settings/smtp`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Gagal menyimpan");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Berhasil", description: "Pengaturan SMTP berhasil disimpan." });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/smtp"] });
+    },
+    onError: () => toast({ variant: "destructive", title: "Gagal", description: "Tidak dapat menyimpan SMTP." }),
+  });
+
+  if (isLoading) return <div className="animate-pulse text-sm text-center py-4 text-muted-foreground">Memuat...</div>;
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Mail className="h-5 w-5" /> Konfigurasi Email (SMTP)
+        </CardTitle>
+        <CardDescription>Pengaturan server email untuk notifikasi approval, PO, dan user baru</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">SMTP Host</Label>
+            <Input placeholder="smtp.gmail.com" value={form.smtpHost} onChange={e => setForm(f => ({ ...f, smtpHost: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Port</Label>
+            <Input type="number" placeholder="587" value={form.smtpPort} onChange={e => setForm(f => ({ ...f, smtpPort: parseInt(e.target.value) || 587 }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Username / Email Pengirim</Label>
+            <Input placeholder="no-reply@perusahaan.com" value={form.smtpUser} onChange={e => setForm(f => ({ ...f, smtpUser: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Password / App Password</Label>
+            <Input type="password" placeholder="••••••••" value={form.smtpPassword} onChange={e => setForm(f => ({ ...f, smtpPassword: e.target.value }))} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Enkripsi</Label>
+            <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={form.smtpSecurity} onChange={e => setForm(f => ({ ...f, smtpSecurity: e.target.value }))}>
+              <option value="STARTTLS">STARTTLS (Port 587)</option>
+              <option value="SSL">SSL/TLS (Port 465)</option>
+              <option value="NONE">Tanpa Enkripsi (Port 25)</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Nama Pengirim (From)</Label>
+            <Input placeholder="ProcureFlow System" value={form.smtpFrom} onChange={e => setForm(f => ({ ...f, smtpFrom: e.target.value }))} />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Kosongkan semua field jika tidak ingin menggunakan notifikasi email. Sistem akan tetap berjalan tanpa email.
+        </p>
+        <Button onClick={() => saveSMTP(form)} disabled={saving} className="shadow-md">
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Simpan SMTP
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 // Main Settings page
 export default function Settings() {
   const { data, isLoading } = useGetSettings();
@@ -629,6 +735,7 @@ export default function Settings() {
       <CompanyManager />
       <CompanyLeaveManager />
       <ApprovalRuleManager />
+      <SmtpSettings />
     </div>
   );
 }

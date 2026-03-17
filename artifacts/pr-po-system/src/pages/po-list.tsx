@@ -5,15 +5,21 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatIDR, formatDate } from "@/lib/utils";
+import { PaginationControls } from "@/components/PaginationControls";
 
 export default function POList() {
   const [, setLocation] = useLocation();
   const [status, setStatus] = useState<any>("");
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
 
-  const { data, isLoading } = useGetPurchaseOrders({ 
+  const { data, isLoading } = useGetPurchaseOrders({
     status: status || undefined,
-    limit: 50 
+    page,
+    limit,
   });
+
+  const handleStatus = (val: string) => { setStatus(val); setPage(1); };
 
   return (
     <div className="space-y-6">
@@ -27,16 +33,17 @@ export default function POList() {
       <Card className="border-0 shadow-sm">
         <CardContent className="p-0">
           <div className="p-4 border-b bg-slate-50/50 rounded-t-xl">
-            <select 
+            <select
               className="flex h-10 w-full md:w-48 rounded-md border border-input bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => handleStatus(e.target.value)}
             >
               <option value="">Semua Status</option>
               <option value="draft">Draft</option>
               <option value="issued">Issued</option>
               <option value="receiving">Receiving</option>
               <option value="received">Received</option>
+              <option value="cancelled">Dibatalkan</option>
             </select>
           </div>
 
@@ -55,12 +62,12 @@ export default function POList() {
               <TableBody>
                 {isLoading ? (
                   <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Memuat data...</TableCell></TableRow>
-                ) : data?.purchaseOrders?.length === 0 ? (
+                ) : (data?.purchaseOrders?.length ?? 0) === 0 ? (
                   <TableRow><TableCell colSpan={6} className="text-center h-24 text-muted-foreground">Tidak ada data PO</TableCell></TableRow>
                 ) : (
                   data?.purchaseOrders.map((po) => (
-                    <TableRow 
-                      key={po.id} 
+                    <TableRow
+                      key={po.id}
                       className="cursor-pointer hover:bg-slate-50 transition-colors"
                       onClick={() => setLocation(`/purchase-orders/${po.id}`)}
                     >
@@ -76,6 +83,13 @@ export default function POList() {
               </TableBody>
             </Table>
           </div>
+          <PaginationControls
+            page={page}
+            limit={limit}
+            total={data?.total ?? 0}
+            onPageChange={setPage}
+            onLimitChange={setLimit}
+          />
         </CardContent>
       </Card>
     </div>
