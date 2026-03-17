@@ -2,7 +2,7 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System.
+pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (ProcureFlow) — mobile-friendly, Bahasa Indonesia UI.
 
 ## Stack
 
@@ -22,7 +22,7 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System.
 ### PR & PO Approval System (`artifacts/pr-po-system`)
 - Preview Path: `/`
 - Enterprise procurement web app with mobile-friendly UI
-- Features: User Management, Purchase Request, Multi-level Approval, Purchase Order, Dashboard, Notifications, Audit Log
+- Language: Bahasa Indonesia
 
 ### API Server (`artifacts/api-server`)
 - Preview Path: `/api`
@@ -33,17 +33,65 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System.
 | Role | Username | Password |
 |------|----------|----------|
 | Admin | admin | admin123 |
-| Manager (Approver) | manager1 | manager123 |
-| Director (Approver) | director1 | director123 |
-| Finance Director (Approver) | finance1 | finance123 |
-| Staff (User) | user1 | user123 |
-| Purchasing | purchasing1 | purchasing123 |
+| Manager (Approver) | manager1 | admin123 |
+| Director (Approver) | director1 | admin123 |
+| Finance Director (Approver) | finance1 | admin123 |
+| Staff (User) | user1 | admin123 |
+| Purchasing | purchasing1 | admin123 |
 
-## Approval Rules (Pre-configured)
+## Features
 
-- ≤ 5 Juta: Manager approval
-- 5-20 Juta: Manager + Director approval
-- > 20 Juta: Manager + Director + Finance Director approval
+### Authentication
+- Session-based auth (SHA-256 + salt)
+- Change Password: `POST /api/auth/change-password` — UI: key icon in sidebar profile
+
+### User Management
+- Roles: admin, user, approver, purchasing
+- `hiredCompanyId` — determines which company's leave settings apply
+- Multi-company assignment (user can work in multiple companies/departments)
+- Leave balance: `GET /api/users/:id/leave-balance`, `PUT /api/users/:id/leave-balance`
+  - Auto-accrues based on company's `accrualDaysPerMonth` setting from hire month
+  - Year-end carryover capped at `maxCarryoverDays`, expires on `carryoverExpiryMonth/Day`
+
+### Purchase Request Types
+- **purchase** — Regular procurement
+- **repair** — Equipment repair
+- **leave** — Leave request (deducts from user's leave balance)
+
+### Multi-level Approval Workflow
+- Configured per company + department + PR type
+- Amount-based rules (escalation tiers)
+
+### Vendor & Attachment Flow
+- Approvers can attach vendor proposals and select a vendor after approval
+
+### PO Management (toggle per company)
+- When PO feature ON: purchasing creates PO → receive via PO
+- When PO OFF: approver selects vendor → vendor_selected → requester receives items
+
+### Partial Receiving (Goods Receipt)
+- Item-level qty tracking: `pr_receiving_items` table
+- `receiving_status`: none → partial → closed
+- `POST /api/purchase-requests/:id/receive-items` — Submit received qtys per item
+- `POST /api/purchase-requests/:id/close-receiving` — Force-close receiving
+- History of all receiving records shown in PR detail
+
+### Leave Balance Management
+- Monthly accrual per company setting
+- Year-end carryover with cap + expiry
+- `GET|PUT /api/settings/company-leave` — Per-company leave config (accrual, max carryover, expiry)
+
+### Settings
+- Feature toggles per company (PO feature on/off)
+- Company leave settings (accrual days/month, max carryover days, carryover expiry month/day)
+- Approval rules management
+
+## PR Status Flow
+
+```
+draft → waiting_approval → approved → (vendor_selected | PO created) → completed
+receiving_status (separate): none → partial → closed
+```
 
 ## Structure
 
@@ -58,12 +106,13 @@ artifacts-monorepo/
 │   ├── api-zod/            # Generated Zod schemas from OpenAPI
 │   └── db/                 # Drizzle ORM schema + DB connection
 │       └── src/schema/
-│           ├── users.ts
-│           ├── purchase-requests.ts
+│           ├── users.ts                    # users, userCompanies, leaveBalances
+│           ├── purchase-requests.ts        # PRs, items, attachments, receivingItems, receivingRecords
 │           ├── approvals.ts
 │           ├── purchase-orders.ts
 │           ├── notifications.ts
-│           └── audit-logs.ts
+│           ├── audit-logs.ts
+│           └── settings.ts                 # companyLeaveSettings
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json
 ├── tsconfig.json
@@ -72,35 +121,72 @@ artifacts-monorepo/
 
 ## API Routes
 
-- `POST /api/auth/login` — Login
-- `POST /api/auth/logout` — Logout
-- `GET /api/auth/me` — Current user
-- `GET|POST /api/users` — User management
-- `GET|POST /api/purchase-requests` — PR CRUD
-- `POST /api/purchase-requests/:id/submit` — Submit PR for approval
-- `POST /api/purchase-requests/:id/receive` — Receive goods
-- `GET /api/approvals` — Pending approvals for current user
-- `POST /api/approvals/:id/approve` — Approve PR
-- `POST /api/approvals/:id/reject` — Reject PR
-- `GET|POST /api/approval-rules` — Approval rules management
-- `GET|POST /api/purchase-orders` — PO management
-- `POST /api/purchase-orders/:id/issue` — Issue PO
-- `POST /api/purchase-orders/:id/receive` — Receive PO
-- `GET /api/notifications` — Notifications
-- `GET /api/audit-logs` — Audit logs (admin only)
-- `GET|PUT /api/settings` — System settings
-- `GET /api/dashboard` — Dashboard stats
+### Auth
+- `POST /api/auth/login`
+- `POST /api/auth/logout`
+- `GET /api/auth/me`
+- `POST /api/auth/change-password`
+
+### Users
+- `GET|POST /api/users`
+- `PUT|DELETE /api/users/:id`
+- `GET /api/users/:id/leave-balance`
+- `PUT /api/users/:id/leave-balance`
+
+### Purchase Requests
+- `GET|POST /api/purchase-requests`
+- `GET /api/purchase-requests/:id`
+- `PUT /api/purchase-requests/:id`
+- `POST /api/purchase-requests/:id/submit`
+- `POST /api/purchase-requests/:id/receive-items` — Partial receiving
+- `POST /api/purchase-requests/:id/close-receiving` — Force close
+- `POST /api/purchase-requests/:id/select-vendor`
+- `POST /api/purchase-requests/:id/cancel`
+
+### Approvals
+- `GET /api/approvals`
+- `POST /api/approvals/:id/approve`
+- `POST /api/approvals/:id/reject`
+- `GET|POST /api/approval-rules`
+- `PUT|DELETE /api/approval-rules/:id`
+
+### Purchase Orders
+- `GET|POST /api/purchase-orders`
+- `GET /api/purchase-orders/:id`
+- `POST /api/purchase-orders/:id/issue`
+- `POST /api/purchase-orders/:id/receive`
+- `POST /api/purchase-orders/:id/cancel`
+
+### Settings
+- `GET|PUT /api/settings`
+- `GET|PUT /api/settings/company-leave`
+
+### Other
+- `GET /api/notifications`
+- `PUT /api/notifications/:id/read`
+- `GET /api/audit-logs`
+- `GET /api/dashboard`
+- `GET|POST /api/companies`
+- `GET|POST /api/departments`
 
 ## Database Tables
 
-- `users` — User accounts with roles
-- `purchase_requests` — PR records
-- `pr_items` — PR line items
+- `users` — User accounts with roles, hiredCompanyId
+- `user_companies` — Multi-company assignments (userId, companyId, departmentId, position)
+- `leave_balances` — Per user per year: accrual, carryover, used
+- `purchase_requests` — PR records with receivingStatus
+- `pr_items` — PR line items (qty, unit, price)
+- `pr_attachments` — Vendor proposals & attachments
+- `pr_receiving_records` — Receiving batch records
+- `pr_receiving_items` — Per-item received qty per batch
 - `approvals` — Approval workflow records
-- `approval_rules` — Amount-based approval rules
-- `approval_rule_levels` — Approval hierarchy levels
+- `approval_rules` — Per company+dept+type+amount rules
+- `approval_rule_levels` — Hierarchy levels per rule
 - `purchase_orders` — PO records
 - `po_items` — PO line items
 - `notifications` — User notifications
 - `audit_logs` — Audit trail
+- `companies` — Company list
+- `departments` — Department list
 - `settings` — System settings key-value store
+- `company_leave_settings` — Per-company leave config (accrual, carryover, expiry)

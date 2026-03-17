@@ -87,6 +87,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
   /users:
     get:
       operationId: getUsers
@@ -198,6 +216,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SuccessResponse"
+
+  /users/{id}/leave-balance:
+    get:
+      operationId: getUserLeaveBalance
+      tags: [users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: year
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveBalance"
+
+    put:
+      operationId: updateUserLeaveBalance
+      tags: [users]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLeaveBalanceRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveBalance"
 
   /users/{id}/companies:
     get:
@@ -456,6 +519,116 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PurchaseRequest"
+
+  /purchase-requests/{id}/receive-items:
+    post:
+      operationId: receivePartialItems
+      tags: [purchase-requests]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiveItemsRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+
+  /purchase-requests/{id}/close-receiving:
+    post:
+      operationId: closeReceiving
+      tags: [purchase-requests]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+
+  /purchase-requests/{id}/receiving-records:
+    get:
+      operationId: getReceivingRecords
+      tags: [purchase-requests]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReceivingRecord"
+
+  /settings/company-leave:
+    get:
+      operationId: getCompanyLeaveSettings
+      tags: [settings]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CompanyLeaveSetting"
+
+  /settings/company-leave/{companyId}:
+    put:
+      operationId: updateCompanyLeaveSetting
+      tags: [settings]
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCompanyLeaveSettingRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyLeaveSetting"
 
   /purchase-requests/{id}/vendor-attachments:
     get:
@@ -1042,6 +1215,134 @@ components:
           type: string
       required: [companyId, department]
 
+    ChangePasswordRequest:
+      type: object
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+      required: [currentPassword, newPassword]
+
+    LeaveBalance:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        year:
+          type: integer
+        balanceDays:
+          type: number
+        carriedOverDays:
+          type: number
+        carriedOverExpiry:
+          type: string
+          nullable: true
+        usedDays:
+          type: number
+        availableDays:
+          type: number
+        lastAccumulatedMonth:
+          type: integer
+        updatedAt:
+          type: string
+      required: [userId, year, balanceDays, carriedOverDays, usedDays, availableDays, lastAccumulatedMonth]
+
+    UpdateLeaveBalanceRequest:
+      type: object
+      properties:
+        year:
+          type: integer
+        balanceDays:
+          type: number
+          nullable: true
+        carriedOverDays:
+          type: number
+          nullable: true
+        usedDays:
+          type: number
+          nullable: true
+      required: [year]
+
+    CompanyLeaveSetting:
+      type: object
+      properties:
+        id:
+          type: integer
+        companyId:
+          type: integer
+        companyName:
+          type: string
+        carryoverExpiryMonth:
+          type: integer
+        carryoverExpiryDay:
+          type: integer
+        maxCarryoverDays:
+          type: integer
+        accrualDaysPerMonth:
+          type: number
+      required: [companyId, carryoverExpiryMonth, carryoverExpiryDay, maxCarryoverDays, accrualDaysPerMonth]
+
+    UpdateCompanyLeaveSettingRequest:
+      type: object
+      properties:
+        carryoverExpiryMonth:
+          type: integer
+        carryoverExpiryDay:
+          type: integer
+        maxCarryoverDays:
+          type: integer
+        accrualDaysPerMonth:
+          type: number
+      required: [carryoverExpiryMonth, carryoverExpiryDay, maxCarryoverDays, accrualDaysPerMonth]
+
+    ReceiveItemsRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              prItemId:
+                type: integer
+              receivedQty:
+                type: number
+              notes:
+                type: string
+                nullable: true
+            required: [prItemId, receivedQty]
+        notes:
+          type: string
+          nullable: true
+      required: [items]
+
+    ReceivingRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        prId:
+          type: integer
+        prItemId:
+          type: integer
+        itemName:
+          type: string
+        receivedQty:
+          type: number
+        receivedAt:
+          type: string
+        receivedBy:
+          type: integer
+        receivedByName:
+          type: string
+        notes:
+          type: string
+          nullable: true
+      required: [id, prId, prItemId, itemName, receivedQty, receivedAt, receivedBy, receivedByName]
+
     User:
       type: object
       properties:
@@ -1065,6 +1366,12 @@ components:
           type: integer
           nullable: true
         superiorName:
+          type: string
+          nullable: true
+        hiredCompanyId:
+          type: integer
+          nullable: true
+        hiredCompanyName:
           type: string
           nullable: true
         isActive:
@@ -1096,6 +1403,9 @@ components:
     CreateUserRequest:
       type: object
       properties:
+        hiredCompanyId:
+          type: integer
+          nullable: true
         username:
           type: string
         password:
@@ -1137,6 +1447,9 @@ components:
           type: string
           enum: [admin, user, approver, purchasing]
         superiorId:
+          type: integer
+          nullable: true
+        hiredCompanyId:
           type: integer
           nullable: true
         isActive:
@@ -1366,13 +1679,20 @@ components:
         vendorSelectedAt:
           type: string
           nullable: true
+        receivingStatus:
+          type: string
+          enum: [none, partial, closed]
+        receivingRecords:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReceivingRecord"
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-      required: [id, prNumber, date, requesterId, requesterName, department, type, description, status, totalAmount, items, approvals, vendorAttachments, createdAt, updatedAt]
+      required: [id, prNumber, date, requesterId, requesterName, department, type, description, status, totalAmount, items, approvals, vendorAttachments, receivingStatus, receivingRecords, createdAt, updatedAt]
 
     PurchaseRequestListResponse:
       type: object

@@ -15,6 +15,7 @@ export interface UpdateUserRequest {
   position?: string;
   role?: UpdateUserRequestRole;
   superiorId?: number | null;
+  hiredCompanyId?: number | null;
   isActive?: boolean;
   password?: string;
   companies?: UserCompanyInput[];

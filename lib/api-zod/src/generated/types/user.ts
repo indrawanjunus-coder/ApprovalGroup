@@ -18,6 +18,8 @@ export interface User {
   role: UserRole;
   superiorId?: number | null;
   superiorName?: string | null;
+  hiredCompanyId?: number | null;
+  hiredCompanyName?: string | null;
   isActive: boolean;
   companies?: UserCompanyAssignment[];
   createdAt: Date;

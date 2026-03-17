@@ -52,4 +52,27 @@ router.get("/me", requireAuth, async (req, res) => {
   res.json({ ...userWithoutPassword, superiorName });
 });
 
+router.post("/change-password", requireAuth, async (req, res) => {
+  const user = req.user!;
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    res.status(400).json({ error: "currentPassword dan newPassword wajib diisi" }); return;
+  }
+  if (newPassword.length < 6) {
+    res.status(400).json({ error: "Password baru minimal 6 karakter" }); return;
+  }
+  try {
+    const [dbUser] = await db.select().from(usersTable).where(eq(usersTable.id, user.id));
+    if (!verifyPassword(currentPassword, dbUser.passwordHash)) {
+      res.status(400).json({ error: "Password lama tidak sesuai" }); return;
+    }
+    await db.update(usersTable).set({ passwordHash: hashPassword(newPassword), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+    await createAuditLog(user.id, "change_password", "user", user.id, "Password changed");
+    res.json({ success: true, message: "Password berhasil diubah" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

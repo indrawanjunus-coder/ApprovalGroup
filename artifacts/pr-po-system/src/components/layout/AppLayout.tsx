@@ -1,23 +1,32 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useGetMe, useLogout, useGetNotifications, useGetReceivingList, useGetSettings } from "@workspace/api-client-react";
+import { useGetMe, useLogout, useGetNotifications, useGetReceivingList, useGetSettings, useChangePassword } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, FileText, CheckSquare, ShoppingCart,
-  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck
+  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [cpForm, setCpForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const { toast } = useToast();
 
   const { data: user, isLoading, error } = useGetMe({ query: { retry: false, refetchOnWindowFocus: false } });
   const { data: notifications } = useGetNotifications({ unread: true }, { query: { enabled: !!user } });
@@ -27,6 +36,30 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { mutate: logout } = useLogout({
     mutation: { onSuccess: () => { queryClient.clear(); setLocation("/login"); } }
   });
+
+  const { mutate: changePassword, isPending: isChangingPassword } = useChangePassword({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Password Berhasil Diubah", description: "Silakan gunakan password baru untuk login berikutnya." });
+        setChangePasswordOpen(false);
+        setCpForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      },
+      onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.response?.data?.error || "Gagal mengubah password" }),
+    },
+  });
+
+  const handleChangePassword = () => {
+    if (!cpForm.currentPassword || !cpForm.newPassword) {
+      toast({ variant: "destructive", title: "Error", description: "Semua field wajib diisi" }); return;
+    }
+    if (cpForm.newPassword !== cpForm.confirmPassword) {
+      toast({ variant: "destructive", title: "Error", description: "Konfirmasi password tidak cocok" }); return;
+    }
+    if (cpForm.newPassword.length < 6) {
+      toast({ variant: "destructive", title: "Error", description: "Password minimal 6 karakter" }); return;
+    }
+    changePassword({ data: { currentPassword: cpForm.currentPassword, newPassword: cpForm.newPassword } });
+  };
 
   useEffect(() => {
     if (error) setLocation("/login");
@@ -101,9 +134,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <p className="text-sm font-semibold text-foreground truncate">{user.name}</p>
               <p className="text-xs text-muted-foreground capitalize truncate">{user.role}</p>
             </div>
-            <button onClick={() => logout()} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors" title="Logout">
-              <LogOut className="h-4 w-4" />
-            </button>
+            <div className="flex gap-1">
+              <button onClick={() => setChangePasswordOpen(true)} className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg transition-colors" title="Ubah Password">
+                <KeyRound className="h-4 w-4" />
+              </button>
+              <button onClick={() => logout()} className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-red-50 rounded-lg transition-colors" title="Logout">
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -196,6 +234,43 @@ export function AppLayout({ children }: { children: ReactNode }) {
           })}
         </div>
       </main>
+
+      {/* Change Password Dialog */}
+      <Dialog open={changePasswordOpen} onOpenChange={open => { if (!open) { setChangePasswordOpen(false); setCpForm({ currentPassword: "", newPassword: "", confirmPassword: "" }); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" />
+              Ubah Password
+            </DialogTitle>
+            <DialogDescription>Masukkan password lama dan password baru Anda.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-sm">Password Lama *</Label>
+              <Input type="password" placeholder="••••••••" value={cpForm.currentPassword}
+                onChange={e => setCpForm(f => ({ ...f, currentPassword: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-sm">Password Baru *</Label>
+              <Input type="password" placeholder="Minimal 6 karakter" value={cpForm.newPassword}
+                onChange={e => setCpForm(f => ({ ...f, newPassword: e.target.value }))} />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-sm">Konfirmasi Password Baru *</Label>
+              <Input type="password" placeholder="Ulangi password baru" value={cpForm.confirmPassword}
+                onChange={e => setCpForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                onKeyDown={e => { if (e.key === "Enter") handleChangePassword(); }} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setChangePasswordOpen(false)}>Batal</Button>
+            <Button onClick={handleChangePassword} disabled={isChangingPassword}>
+              {isChangingPassword ? <><span className="animate-spin mr-2">⏳</span>Menyimpan...</> : "Ubah Password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

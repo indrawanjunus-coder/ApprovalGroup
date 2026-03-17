@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import {
   purchaseRequestsTable, prItemsTable, approvalsTable, approvalRulesTable,
   approvalRuleLevelsTable, usersTable, companiesTable, prVendorAttachmentsTable,
-  purchaseOrdersTable
+  purchaseOrdersTable, prReceivingItemsTable
 } from "@workspace/db/schema";
 import { eq, desc, ilike, and, inArray, count, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
@@ -44,12 +44,31 @@ async function buildFullPR(pr: any, items: any[], approvals: any[], vendorAttach
     const [u] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.vendorSelectedBy));
     vendorSelectedByName = u?.name || null;
   }
+
+  // Load receiving records
+  const receivingRecords = await db
+    .select({
+      id: prReceivingItemsTable.id,
+      prId: prReceivingItemsTable.prId,
+      prItemId: prReceivingItemsTable.prItemId,
+      receivedQty: prReceivingItemsTable.receivedQty,
+      receivedAt: prReceivingItemsTable.receivedAt,
+      receivedBy: prReceivingItemsTable.receivedBy,
+      receivedByName: usersTable.name,
+      notes: prReceivingItemsTable.notes,
+    })
+    .from(prReceivingItemsTable)
+    .leftJoin(usersTable, eq(prReceivingItemsTable.receivedBy, usersTable.id))
+    .where(eq(prReceivingItemsTable.prId, pr.id));
+
   return {
     ...parsePRRow(pr),
     companyName,
     leaveRequesterName,
     selectedVendorName,
     vendorSelectedByName,
+    receivingStatus: pr.receivingStatus || "none",
+    receivingRecords: receivingRecords.map(r => ({ ...r, receivedQty: parseFloat(r.receivedQty) })),
     items: items.map(i => ({
       ...i,
       qty: parseFloat(i.qty),
@@ -425,14 +444,112 @@ router.post("/:id/receive", async (req, res) => {
     if (pr.requesterId !== user.id && user.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
 
     const [updated] = await db.update(purchaseRequestsTable).set({
-      status: "completed", notes: notes || pr.notes, updatedAt: new Date(),
+      status: "completed", receivingStatus: "closed", notes: notes || pr.notes, updatedAt: new Date(),
     }).where(eq(purchaseRequestsTable.id, id)).returning();
     await createAuditLog(user.id, "receive_pr", "pr", id);
     await createNotification(pr.requesterId, "PR Selesai", `PR ${pr.prNumber} telah diterima`, "info", id);
 
-    const [items] = await Promise.all([db.select().from(prItemsTable).where(eq(prItemsTable.prId, id))]);
+    const items = await db.select().from(prItemsTable).where(eq(prItemsTable.prId, id));
+    const vas = await db.select().from(prVendorAttachmentsTable).where(eq(prVendorAttachmentsTable.prId, id));
     const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
-    res.json(await buildFullPR({ ...updated, requesterName: requester?.name || "Unknown" }, items, [], []));
+    res.json(await buildFullPR({ ...updated, requesterName: requester?.name || "Unknown" }, items, [], vas));
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// Partial receiving: submit received quantities per item
+router.post("/:id/receive-items", async (req, res) => {
+  const user = req.user!;
+  const id = parseInt(req.params.id);
+  const { items, notes } = req.body; // items: [{prItemId, receivedQty}]
+  try {
+    const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
+    if (!pr) { res.status(404).json({ error: "Not Found" }); return; }
+    if (!["approved", "vendor_selected", "completed"].includes(pr.status)) {
+      res.status(400).json({ error: "PR belum siap untuk penerimaan barang" }); return;
+    }
+    if (pr.receivingStatus === "closed") {
+      res.status(400).json({ error: "Penerimaan sudah ditutup" }); return;
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      res.status(400).json({ error: "Items wajib diisi" }); return;
+    }
+
+    const now = new Date();
+    await db.insert(prReceivingItemsTable).values(
+      items.map((it: any) => ({
+        prId: id,
+        prItemId: parseInt(it.prItemId),
+        receivedQty: String(it.receivedQty),
+        receivedBy: user.id,
+        receivedAt: now,
+        notes: notes || null,
+      }))
+    );
+
+    // Calculate total received vs target
+    const prItems = await db.select().from(prItemsTable).where(eq(prItemsTable.prId, id));
+    const allReceiving = await db.select().from(prReceivingItemsTable).where(eq(prReceivingItemsTable.prId, id));
+
+    const totalByItem = new Map<number, number>();
+    for (const r of allReceiving) {
+      const curr = totalByItem.get(r.prItemId) || 0;
+      totalByItem.set(r.prItemId, curr + parseFloat(r.receivedQty));
+    }
+
+    const allComplete = prItems.every(item => {
+      const received = totalByItem.get(item.id) || 0;
+      return received >= parseFloat(item.qty);
+    });
+
+    const newReceivingStatus = allComplete ? "closed" : "partial";
+    const newStatus = (allComplete || pr.status === "completed") ? "completed" : pr.status;
+
+    const [updated] = await db.update(purchaseRequestsTable).set({
+      receivingStatus: newReceivingStatus,
+      status: newStatus,
+      updatedAt: now,
+    }).where(eq(purchaseRequestsTable.id, id)).returning();
+
+    await createAuditLog(user.id, "receive_items", "pr", id);
+
+    const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
+    const vas = await db.select().from(prVendorAttachmentsTable).where(eq(prVendorAttachmentsTable.prId, id));
+    res.json(await buildFullPR({ ...updated, requesterName: requester?.name || "Unknown" }, prItems, [], vas));
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
+// Close receiving manually (even if not all qty received)
+router.post("/:id/close-receiving", async (req, res) => {
+  const user = req.user!;
+  const id = parseInt(req.params.id);
+  try {
+    const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
+    if (!pr) { res.status(404).json({ error: "Not Found" }); return; }
+    if (pr.receivingStatus === "none") {
+      res.status(400).json({ error: "Belum ada penerimaan untuk ditutup" }); return;
+    }
+    if (pr.receivingStatus === "closed") {
+      res.status(400).json({ error: "Penerimaan sudah ditutup" }); return;
+    }
+    if (pr.requesterId !== user.id && !["admin", "approver"].includes(user.role)) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+
+    const [updated] = await db.update(purchaseRequestsTable).set({
+      receivingStatus: "closed",
+      status: "completed",
+      updatedAt: new Date(),
+    }).where(eq(purchaseRequestsTable.id, id)).returning();
+
+    await createAuditLog(user.id, "close_receiving", "pr", id);
+    await createNotification(pr.requesterId, "Penerimaan Ditutup", `Penerimaan barang PR ${pr.prNumber} telah ditutup`, "info", id);
+
+    const [items, vas, requester] = await Promise.all([
+      db.select().from(prItemsTable).where(eq(prItemsTable.prId, id)),
+      db.select().from(prVendorAttachmentsTable).where(eq(prVendorAttachmentsTable.prId, id)),
+      db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId)),
+    ]);
+    res.json(await buildFullPR({ ...updated, requesterName: requester[0]?.name || "Unknown" }, items, [], vas));
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 });
 

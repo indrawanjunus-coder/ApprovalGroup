@@ -30,6 +30,8 @@ export const LoginResponse = zod.object({
     role: zod.enum(["admin", "user", "approver", "purchasing"]),
     superiorId: zod.number().nullish(),
     superiorName: zod.string().nullish(),
+    hiredCompanyId: zod.number().nullish(),
+    hiredCompanyName: zod.string().nullish(),
     isActive: zod.boolean(),
     companies: zod
       .array(
@@ -62,6 +64,8 @@ export const GetMeResponse = zod.object({
   role: zod.enum(["admin", "user", "approver", "purchasing"]),
   superiorId: zod.number().nullish(),
   superiorName: zod.string().nullish(),
+  hiredCompanyId: zod.number().nullish(),
+  hiredCompanyName: zod.string().nullish(),
   isActive: zod.boolean(),
   companies: zod
     .array(
@@ -75,6 +79,16 @@ export const GetMeResponse = zod.object({
     )
     .optional(),
   createdAt: zod.date(),
+});
+
+export const ChangePasswordBody = zod.object({
+  currentPassword: zod.string(),
+  newPassword: zod.string(),
+});
+
+export const ChangePasswordResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string().optional(),
 });
 
 export const getUsersQueryPageDefault = 1;
@@ -99,6 +113,8 @@ export const GetUsersResponse = zod.object({
       role: zod.enum(["admin", "user", "approver", "purchasing"]),
       superiorId: zod.number().nullish(),
       superiorName: zod.string().nullish(),
+      hiredCompanyId: zod.number().nullish(),
+      hiredCompanyName: zod.string().nullish(),
       isActive: zod.boolean(),
       companies: zod
         .array(
@@ -120,6 +136,7 @@ export const GetUsersResponse = zod.object({
 });
 
 export const CreateUserBody = zod.object({
+  hiredCompanyId: zod.number().nullish(),
   username: zod.string(),
   password: zod.string(),
   name: zod.string(),
@@ -152,6 +169,8 @@ export const GetUserByIdResponse = zod.object({
   role: zod.enum(["admin", "user", "approver", "purchasing"]),
   superiorId: zod.number().nullish(),
   superiorName: zod.string().nullish(),
+  hiredCompanyId: zod.number().nullish(),
+  hiredCompanyName: zod.string().nullish(),
   isActive: zod.boolean(),
   companies: zod
     .array(
@@ -178,6 +197,7 @@ export const UpdateUserBody = zod.object({
   position: zod.string().optional(),
   role: zod.enum(["admin", "user", "approver", "purchasing"]).optional(),
   superiorId: zod.number().nullish(),
+  hiredCompanyId: zod.number().nullish(),
   isActive: zod.boolean().optional(),
   password: zod.string().optional(),
   companies: zod
@@ -200,6 +220,8 @@ export const UpdateUserResponse = zod.object({
   role: zod.enum(["admin", "user", "approver", "purchasing"]),
   superiorId: zod.number().nullish(),
   superiorName: zod.string().nullish(),
+  hiredCompanyId: zod.number().nullish(),
+  hiredCompanyName: zod.string().nullish(),
   isActive: zod.boolean(),
   companies: zod
     .array(
@@ -222,6 +244,51 @@ export const DeleteUserParams = zod.object({
 export const DeleteUserResponse = zod.object({
   success: zod.boolean(),
   message: zod.string().optional(),
+});
+
+export const GetUserLeaveBalanceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetUserLeaveBalanceQueryParams = zod.object({
+  year: zod.coerce.number().optional(),
+});
+
+export const GetUserLeaveBalanceResponse = zod.object({
+  id: zod.number().optional(),
+  userId: zod.number(),
+  year: zod.number(),
+  balanceDays: zod.number(),
+  carriedOverDays: zod.number(),
+  carriedOverExpiry: zod.string().nullish(),
+  usedDays: zod.number(),
+  availableDays: zod.number(),
+  lastAccumulatedMonth: zod.number(),
+  updatedAt: zod.string().optional(),
+});
+
+export const UpdateUserLeaveBalanceParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateUserLeaveBalanceBody = zod.object({
+  year: zod.number(),
+  balanceDays: zod.number().nullish(),
+  carriedOverDays: zod.number().nullish(),
+  usedDays: zod.number().nullish(),
+});
+
+export const UpdateUserLeaveBalanceResponse = zod.object({
+  id: zod.number().optional(),
+  userId: zod.number(),
+  year: zod.number(),
+  balanceDays: zod.number(),
+  carriedOverDays: zod.number(),
+  carriedOverExpiry: zod.string().nullish(),
+  usedDays: zod.number(),
+  availableDays: zod.number(),
+  lastAccumulatedMonth: zod.number(),
+  updatedAt: zod.string().optional(),
 });
 
 export const GetUserCompaniesParams = zod.object({
@@ -389,6 +456,20 @@ export const GetPurchaseRequestsResponse = zod.object({
       vendorFinalAmount: zod.number().nullish(),
       vendorSelectedByName: zod.string().nullish(),
       vendorSelectedAt: zod.string().nullish(),
+      receivingStatus: zod.enum(["none", "partial", "closed"]),
+      receivingRecords: zod.array(
+        zod.object({
+          id: zod.number(),
+          prId: zod.number(),
+          prItemId: zod.number(),
+          itemName: zod.string(),
+          receivedQty: zod.number(),
+          receivedAt: zod.string(),
+          receivedBy: zod.number(),
+          receivedByName: zod.string(),
+          notes: zod.string().nullish(),
+        }),
+      ),
       createdAt: zod.date(),
       updatedAt: zod.date(),
     }),
@@ -495,6 +576,20 @@ export const GetPurchaseRequestByIdResponse = zod.object({
   vendorFinalAmount: zod.number().nullish(),
   vendorSelectedByName: zod.string().nullish(),
   vendorSelectedAt: zod.string().nullish(),
+  receivingStatus: zod.enum(["none", "partial", "closed"]),
+  receivingRecords: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      prItemId: zod.number(),
+      itemName: zod.string(),
+      receivedQty: zod.number(),
+      receivedAt: zod.string(),
+      receivedBy: zod.number(),
+      receivedByName: zod.string(),
+      notes: zod.string().nullish(),
+    }),
+  ),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -595,6 +690,20 @@ export const UpdatePurchaseRequestResponse = zod.object({
   vendorFinalAmount: zod.number().nullish(),
   vendorSelectedByName: zod.string().nullish(),
   vendorSelectedAt: zod.string().nullish(),
+  receivingStatus: zod.enum(["none", "partial", "closed"]),
+  receivingRecords: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      prItemId: zod.number(),
+      itemName: zod.string(),
+      receivedQty: zod.number(),
+      receivedAt: zod.string(),
+      receivedBy: zod.number(),
+      receivedByName: zod.string(),
+      notes: zod.string().nullish(),
+    }),
+  ),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -674,6 +783,20 @@ export const SubmitPurchaseRequestResponse = zod.object({
   vendorFinalAmount: zod.number().nullish(),
   vendorSelectedByName: zod.string().nullish(),
   vendorSelectedAt: zod.string().nullish(),
+  receivingStatus: zod.enum(["none", "partial", "closed"]),
+  receivingRecords: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      prItemId: zod.number(),
+      itemName: zod.string(),
+      receivedQty: zod.number(),
+      receivedAt: zod.string(),
+      receivedBy: zod.number(),
+      receivedByName: zod.string(),
+      notes: zod.string().nullish(),
+    }),
+  ),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -757,8 +880,276 @@ export const ReceivePurchaseRequestResponse = zod.object({
   vendorFinalAmount: zod.number().nullish(),
   vendorSelectedByName: zod.string().nullish(),
   vendorSelectedAt: zod.string().nullish(),
+  receivingStatus: zod.enum(["none", "partial", "closed"]),
+  receivingRecords: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      prItemId: zod.number(),
+      itemName: zod.string(),
+      receivedQty: zod.number(),
+      receivedAt: zod.string(),
+      receivedBy: zod.number(),
+      receivedByName: zod.string(),
+      notes: zod.string().nullish(),
+    }),
+  ),
   createdAt: zod.date(),
   updatedAt: zod.date(),
+});
+
+export const ReceivePartialItemsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ReceivePartialItemsBody = zod.object({
+  items: zod.array(
+    zod.object({
+      prItemId: zod.number(),
+      receivedQty: zod.number(),
+      notes: zod.string().nullish(),
+    }),
+  ),
+  notes: zod.string().nullish(),
+});
+
+export const ReceivePartialItemsResponse = zod.object({
+  id: zod.number(),
+  prNumber: zod.string(),
+  date: zod.date(),
+  requesterId: zod.number(),
+  requesterName: zod.string(),
+  department: zod.string(),
+  companyId: zod.number().nullish(),
+  companyName: zod.string().nullish(),
+  type: zod.enum(["purchase", "repair", "leave"]),
+  description: zod.string(),
+  status: zod.enum([
+    "draft",
+    "waiting_approval",
+    "approved",
+    "vendor_selected",
+    "rejected",
+    "completed",
+  ]),
+  totalAmount: zod.number(),
+  attachmentUrl: zod.string().nullish(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      name: zod.string(),
+      description: zod.string().nullish(),
+      qty: zod.number(),
+      unit: zod.string(),
+      estimatedPrice: zod.number(),
+      totalPrice: zod.number(),
+    }),
+  ),
+  approvals: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      approverId: zod.number(),
+      approverName: zod.string(),
+      level: zod.number(),
+      status: zod.enum(["pending", "approved", "rejected"]),
+      notes: zod.string().nullish(),
+      actionAt: zod.date().nullish(),
+      createdAt: zod.date(),
+    }),
+  ),
+  vendorAttachments: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      vendorName: zod.string(),
+      fileUrl: zod.string(),
+      quotedPrice: zod.number().nullish(),
+      notes: zod.string().nullish(),
+      uploadedBy: zod.number(),
+      uploaderName: zod.string(),
+      createdAt: zod.date(),
+    }),
+  ),
+  currentApprovalLevel: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  leaveStartDate: zod.string().nullish(),
+  leaveEndDate: zod.string().nullish(),
+  leaveRequesterId: zod.number().nullish(),
+  leaveRequesterName: zod.string().nullish(),
+  selectedVendorId: zod.number().nullish(),
+  selectedVendorName: zod.string().nullish(),
+  vendorFinalQty: zod.number().nullish(),
+  vendorFinalAmount: zod.number().nullish(),
+  vendorSelectedByName: zod.string().nullish(),
+  vendorSelectedAt: zod.string().nullish(),
+  receivingStatus: zod.enum(["none", "partial", "closed"]),
+  receivingRecords: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      prItemId: zod.number(),
+      itemName: zod.string(),
+      receivedQty: zod.number(),
+      receivedAt: zod.string(),
+      receivedBy: zod.number(),
+      receivedByName: zod.string(),
+      notes: zod.string().nullish(),
+    }),
+  ),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+
+export const CloseReceivingParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CloseReceivingBody = zod.object({
+  notes: zod.string().nullish(),
+});
+
+export const CloseReceivingResponse = zod.object({
+  id: zod.number(),
+  prNumber: zod.string(),
+  date: zod.date(),
+  requesterId: zod.number(),
+  requesterName: zod.string(),
+  department: zod.string(),
+  companyId: zod.number().nullish(),
+  companyName: zod.string().nullish(),
+  type: zod.enum(["purchase", "repair", "leave"]),
+  description: zod.string(),
+  status: zod.enum([
+    "draft",
+    "waiting_approval",
+    "approved",
+    "vendor_selected",
+    "rejected",
+    "completed",
+  ]),
+  totalAmount: zod.number(),
+  attachmentUrl: zod.string().nullish(),
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      name: zod.string(),
+      description: zod.string().nullish(),
+      qty: zod.number(),
+      unit: zod.string(),
+      estimatedPrice: zod.number(),
+      totalPrice: zod.number(),
+    }),
+  ),
+  approvals: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      approverId: zod.number(),
+      approverName: zod.string(),
+      level: zod.number(),
+      status: zod.enum(["pending", "approved", "rejected"]),
+      notes: zod.string().nullish(),
+      actionAt: zod.date().nullish(),
+      createdAt: zod.date(),
+    }),
+  ),
+  vendorAttachments: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      vendorName: zod.string(),
+      fileUrl: zod.string(),
+      quotedPrice: zod.number().nullish(),
+      notes: zod.string().nullish(),
+      uploadedBy: zod.number(),
+      uploaderName: zod.string(),
+      createdAt: zod.date(),
+    }),
+  ),
+  currentApprovalLevel: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  leaveStartDate: zod.string().nullish(),
+  leaveEndDate: zod.string().nullish(),
+  leaveRequesterId: zod.number().nullish(),
+  leaveRequesterName: zod.string().nullish(),
+  selectedVendorId: zod.number().nullish(),
+  selectedVendorName: zod.string().nullish(),
+  vendorFinalQty: zod.number().nullish(),
+  vendorFinalAmount: zod.number().nullish(),
+  vendorSelectedByName: zod.string().nullish(),
+  vendorSelectedAt: zod.string().nullish(),
+  receivingStatus: zod.enum(["none", "partial", "closed"]),
+  receivingRecords: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      prItemId: zod.number(),
+      itemName: zod.string(),
+      receivedQty: zod.number(),
+      receivedAt: zod.string(),
+      receivedBy: zod.number(),
+      receivedByName: zod.string(),
+      notes: zod.string().nullish(),
+    }),
+  ),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+
+export const GetReceivingRecordsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetReceivingRecordsResponseItem = zod.object({
+  id: zod.number(),
+  prId: zod.number(),
+  prItemId: zod.number(),
+  itemName: zod.string(),
+  receivedQty: zod.number(),
+  receivedAt: zod.string(),
+  receivedBy: zod.number(),
+  receivedByName: zod.string(),
+  notes: zod.string().nullish(),
+});
+export const GetReceivingRecordsResponse = zod.array(
+  GetReceivingRecordsResponseItem,
+);
+
+export const GetCompanyLeaveSettingsResponseItem = zod.object({
+  id: zod.number().optional(),
+  companyId: zod.number(),
+  companyName: zod.string().optional(),
+  carryoverExpiryMonth: zod.number(),
+  carryoverExpiryDay: zod.number(),
+  maxCarryoverDays: zod.number(),
+  accrualDaysPerMonth: zod.number(),
+});
+export const GetCompanyLeaveSettingsResponse = zod.array(
+  GetCompanyLeaveSettingsResponseItem,
+);
+
+export const UpdateCompanyLeaveSettingParams = zod.object({
+  companyId: zod.coerce.number(),
+});
+
+export const UpdateCompanyLeaveSettingBody = zod.object({
+  carryoverExpiryMonth: zod.number(),
+  carryoverExpiryDay: zod.number(),
+  maxCarryoverDays: zod.number(),
+  accrualDaysPerMonth: zod.number(),
+});
+
+export const UpdateCompanyLeaveSettingResponse = zod.object({
+  id: zod.number().optional(),
+  companyId: zod.number(),
+  companyName: zod.string().optional(),
+  carryoverExpiryMonth: zod.number(),
+  carryoverExpiryDay: zod.number(),
+  maxCarryoverDays: zod.number(),
+  accrualDaysPerMonth: zod.number(),
 });
 
 export const GetPRVendorAttachmentsParams = zod.object({
@@ -882,6 +1273,20 @@ export const SelectPRVendorResponse = zod.object({
   vendorFinalAmount: zod.number().nullish(),
   vendorSelectedByName: zod.string().nullish(),
   vendorSelectedAt: zod.string().nullish(),
+  receivingStatus: zod.enum(["none", "partial", "closed"]),
+  receivingRecords: zod.array(
+    zod.object({
+      id: zod.number(),
+      prId: zod.number(),
+      prItemId: zod.number(),
+      itemName: zod.string(),
+      receivedQty: zod.number(),
+      receivedAt: zod.string(),
+      receivedBy: zod.number(),
+      receivedByName: zod.string(),
+      notes: zod.string().nullish(),
+    }),
+  ),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -1435,6 +1840,20 @@ export const GetDashboardResponse = zod.object({
       vendorFinalAmount: zod.number().nullish(),
       vendorSelectedByName: zod.string().nullish(),
       vendorSelectedAt: zod.string().nullish(),
+      receivingStatus: zod.enum(["none", "partial", "closed"]),
+      receivingRecords: zod.array(
+        zod.object({
+          id: zod.number(),
+          prId: zod.number(),
+          prItemId: zod.number(),
+          itemName: zod.string(),
+          receivedQty: zod.number(),
+          receivedAt: zod.string(),
+          receivedBy: zod.number(),
+          receivedByName: zod.string(),
+          notes: zod.string().nullish(),
+        }),
+      ),
       createdAt: zod.date(),
       updatedAt: zod.date(),
     }),

@@ -4,7 +4,7 @@ import {
   useGetPurchaseRequestById, useSubmitPurchaseRequest, useReceivePurchaseRequest,
   useApprovePR, useRejectPR, useGetMe, useGetSettings,
   useGetPRVendorAttachments, useAddPRVendorAttachment, useDeletePRVendorAttachment,
-  useSelectPRVendor,
+  useSelectPRVendor, useReceivePartialItems, useCloseReceiving,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -72,6 +72,35 @@ export default function PRDetail() {
   const { mutate: receive, isPending: isReceiving } = useReceivePurchaseRequest({
     mutation: { onSuccess: () => { toast({ title: "Barang Diterima!" }); invalidate(); } }
   });
+  const [showReceivingForm, setShowReceivingForm] = useState(false);
+  const [receivingQtyInputs, setReceivingQtyInputs] = useState<Record<number, string>>({});
+  const [receivingNotes, setReceivingNotes] = useState("");
+  const { mutate: receiveItems, isPending: isReceivingItems } = useReceivePartialItems({
+    mutation: {
+      onSuccess: (data) => {
+        toast({ title: "Penerimaan Disimpan", description: "Penerimaan barang berhasil dicatat." });
+        setReceivingQtyInputs({}); setReceivingNotes(""); invalidate();
+        if ((data as any)?.receivingStatus === "closed") setShowReceivingForm(false);
+      },
+      onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.response?.data?.error || "Gagal menyimpan" }),
+    },
+  });
+  const { mutate: closePRReceiving, isPending: isClosingReceiving } = useCloseReceiving({
+    mutation: {
+      onSuccess: () => { toast({ title: "Penerimaan Ditutup" }); setShowReceivingForm(false); invalidate(); },
+      onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.response?.data?.error || "Gagal menutup" }),
+    },
+  });
+
+  const handleReceiveItems = () => {
+    const items = pr?.items?.map((item: any) => ({
+      prItemId: item.id, receivedQty: parseFloat(receivingQtyInputs[item.id] || "0"),
+    })).filter((x: any) => x.receivedQty > 0) || [];
+    if (items.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Masukkan qty untuk minimal 1 item" }); return;
+    }
+    receiveItems({ id: prId, data: { items, notes: receivingNotes } });
+  };
   const { mutate: addAttachment, isPending: isAddingAttachment } = useAddPRVendorAttachment({
     mutation: {
       onSuccess: () => {
@@ -118,8 +147,10 @@ export default function PRDetail() {
     (poEnabled && (user?.role === "purchasing" || user?.role === "admin"))
   );
 
-  // Can receive: PO-off: requestor when vendor_selected, PO-on: handled via PO route
-  const canReceive = !poEnabled && pr.status === "vendor_selected" && isRequester;
+  // Can receive: PO-off: requestor when vendor_selected or approved with partial receiving
+  const receivingStatus = (pr as any).receivingStatus || "none";
+  const canReceive = !poEnabled && ["vendor_selected", "approved"].includes(pr.status) && isRequester && receivingStatus !== "closed";
+  const canReceiveItems = !poEnabled && ["vendor_selected", "approved", "completed"].includes(pr.status) && (isRequester || user?.role === "admin") && receivingStatus !== "closed";
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -159,9 +190,16 @@ export default function PRDetail() {
               <Receipt className="mr-2 h-4 w-4" /> Buat PO
             </Button>
           )}
-          {canReceive && (
+          {canReceiveItems && pr.type !== "leave" && (
+            <Button onClick={() => setShowReceivingForm(!showReceivingForm)} variant="outline" className="border-teal-300 text-teal-700 hover:bg-teal-50">
+              <PackageCheck className="mr-2 h-4 w-4" />
+              {showReceivingForm ? "Tutup Form" : "Input Penerimaan"}
+            </Button>
+          )}
+          {canReceive && pr.type !== "leave" && (
             <Button onClick={() => receive({ id: prId, data: { notes: "" } })} disabled={isReceiving} className="bg-teal-600 hover:bg-teal-700">
-              <PackageCheck className="mr-2 h-4 w-4" /> Terima Barang
+              {isReceiving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PackageCheck className="mr-2 h-4 w-4" />}
+              Terima Semua
             </Button>
           )}
         </div>
@@ -252,6 +290,113 @@ export default function PRDetail() {
                   <span className="font-medium text-slate-600">Total Estimasi:</span>
                   <span className="text-xl font-bold text-primary">{formatIDR(pr.totalAmount)}</span>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Inline Partial Receiving Form */}
+          {showReceivingForm && pr.type !== "leave" && (
+            <Card className="border-0 shadow-sm border-l-4 border-teal-500">
+              <CardHeader className="bg-teal-50/50 border-b py-4">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <PackageCheck className="h-5 w-5 text-teal-600" /> Input Penerimaan Barang
+                </CardTitle>
+                <CardDescription>Masukkan jumlah yang diterima per item. Bisa bertahap (parsial).</CardDescription>
+              </CardHeader>
+              <CardContent className="p-5 space-y-4">
+                {(() => {
+                  const receivedByItem: Record<number, number> = {};
+                  for (const r of (pr as any).receivingRecords || []) {
+                    receivedByItem[r.prItemId] = (receivedByItem[r.prItemId] || 0) + r.receivedQty;
+                  }
+                  return (
+                    <div className="border rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-medium text-muted-foreground">Barang</th>
+                            <th className="text-right px-3 py-2 font-medium text-muted-foreground">Target</th>
+                            <th className="text-right px-3 py-2 font-medium text-muted-foreground">Diterima</th>
+                            <th className="text-right px-3 py-2 font-medium text-muted-foreground">Terima Skrg</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pr.items.map((item: any, idx: number) => {
+                            const recv = receivedByItem[item.id] || 0;
+                            const remaining = Math.max(0, item.qty - recv);
+                            const isDone = recv >= item.qty;
+                            return (
+                              <tr key={item.id} className={`border-t ${idx % 2 === 0 ? "" : "bg-muted/20"}`}>
+                                <td className="px-3 py-2">
+                                  <p className="font-medium text-xs">{item.name}</p>
+                                  <p className="text-xs text-muted-foreground">{item.unit}</p>
+                                </td>
+                                <td className="px-3 py-2 text-right text-xs">{item.qty}</td>
+                                <td className="px-3 py-2 text-right text-xs">
+                                  <span className={isDone ? "text-green-600 font-semibold" : recv > 0 ? "text-amber-600 font-semibold" : "text-muted-foreground"}>{recv}</span>
+                                </td>
+                                <td className="px-3 py-2 text-right">
+                                  {isDone ? <span className="text-xs text-green-600">✓ Selesai</span> : (
+                                    <Input type="number" min="0" max={remaining} step="0.01" placeholder={`Max ${remaining}`}
+                                      value={receivingQtyInputs[item.id] || ""}
+                                      onChange={e => setReceivingQtyInputs(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                      className="h-7 text-right w-20 text-xs ml-auto" />
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()}
+                <div className="space-y-1">
+                  <Label className="text-xs">Catatan</Label>
+                  <Textarea placeholder="Catatan penerimaan..." value={receivingNotes} onChange={e => setReceivingNotes(e.target.value)} className="text-sm resize-none" rows={2} />
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={handleReceiveItems} disabled={isReceivingItems} className="bg-teal-600 hover:bg-teal-700">
+                    {isReceivingItems ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <PackageCheck className="h-4 w-4 mr-2" />}
+                    Simpan Penerimaan
+                  </Button>
+                  {receivingStatus === "partial" && (
+                    <Button variant="outline" onClick={() => closePRReceiving({ id: prId, data: {} })} disabled={isClosingReceiving}
+                      className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                      {isClosingReceiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckSquare className="h-4 w-4" />}
+                      <span className="ml-1.5">Tutup Penerimaan</span>
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Receiving Records History */}
+          {(pr as any).receivingRecords?.length > 0 && pr.type !== "leave" && (
+            <Card className="border-0 shadow-sm">
+              <CardHeader className="py-4 border-b">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <PackageCheck className="h-5 w-5 text-teal-600" /> Riwayat Penerimaan
+                  <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+                    receivingStatus === "closed" ? "bg-green-100 text-green-700"
+                    : receivingStatus === "partial" ? "bg-amber-100 text-amber-700"
+                    : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {receivingStatus === "closed" ? "Selesai" : receivingStatus === "partial" ? "Parsial" : "Belum Ada"}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-2">
+                {(pr as any).receivingRecords.map((r: any) => (
+                  <div key={r.id} className="flex items-center gap-3 text-sm p-2.5 bg-muted/30 rounded-lg">
+                    <PackageCheck className="h-4 w-4 text-teal-500 shrink-0" />
+                    <span className="text-muted-foreground text-xs">{formatDate(r.receivedAt)}</span>
+                    <span>Item #{r.prItemId}: <strong>{r.receivedQty}</strong> diterima</span>
+                    <span className="text-xs text-muted-foreground">oleh {r.receivedByName}</span>
+                    {r.notes && <span className="text-xs text-muted-foreground italic">— {r.notes}</span>}
+                  </div>
+                ))}
               </CardContent>
             </Card>
           )}

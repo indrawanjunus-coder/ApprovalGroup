@@ -8,8 +8,10 @@
 import type { Approval } from "./approval";
 import type { PrItem } from "./prItem";
 import type { PrVendorAttachment } from "./prVendorAttachment";
+import type { PurchaseRequestReceivingStatus } from "./purchaseRequestReceivingStatus";
 import type { PurchaseRequestStatus } from "./purchaseRequestStatus";
 import type { PurchaseRequestType } from "./purchaseRequestType";
+import type { ReceivingRecord } from "./receivingRecord";
 
 export interface PurchaseRequest {
   id: number;
@@ -40,6 +42,8 @@ export interface PurchaseRequest {
   vendorFinalAmount?: number | null;
   vendorSelectedByName?: string | null;
   vendorSelectedAt?: string | null;
+  receivingStatus: PurchaseRequestReceivingStatus;
+  receivingRecords: ReceivingRecord[];
   createdAt: Date;
   updatedAt: Date;
 }

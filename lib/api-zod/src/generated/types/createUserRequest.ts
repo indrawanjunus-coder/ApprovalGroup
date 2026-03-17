@@ -9,6 +9,7 @@ import type { CreateUserRequestRole } from "./createUserRequestRole";
 import type { UserCompanyInput } from "./userCompanyInput";
 
 export interface CreateUserRequest {
+  hiredCompanyId?: number | null;
   username: string;
   password: string;
   name: string;

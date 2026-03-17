@@ -1,38 +1,246 @@
-import { useGetReceivingList, useReceivePurchaseRequest, useGetSettings, useGetMe } from "@workspace/api-client-react";
+import {
+  useGetReceivingList, useReceivePurchaseRequest, useReceivePartialItems, useCloseReceiving,
+  useGetSettings, useGetMe, useGetPurchaseRequestById,
+} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { formatIDR, formatDate } from "@/lib/utils";
-import { PackageCheck, Building, FileText, Loader2 } from "lucide-react";
+import { PackageCheck, Building, FileText, Loader2, ChevronRight, X, Package, CheckCircle2, Clock } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState } from "react";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+
+// Sub-component: PR detail for receiving dialog
+function PRReceivingDetail({ prId, onClose }: { prId: number; onClose: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [notes, setNotes] = useState("");
+  const [qtyInputs, setQtyInputs] = useState<Record<number, string>>({});
+
+  const { data: pr, isLoading } = useGetPurchaseRequestById(prId);
+
+  const { mutate: receiveItems, isPending: isSubmitting } = useReceivePartialItems({
+    mutation: {
+      onSuccess: (data) => {
+        toast({ title: "Penerimaan Disimpan", description: `Penerimaan barang berhasil dicatat.` });
+        queryClient.invalidateQueries({ queryKey: ["/api/receiving"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
+        queryClient.invalidateQueries({ queryKey: [`/api/purchase-requests/${prId}`] });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+        setQtyInputs({});
+        setNotes("");
+        if ((data as any)?.receivingStatus === "closed") {
+          onClose();
+        }
+      },
+      onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.response?.data?.error || "Gagal menyimpan penerimaan" }),
+    },
+  });
+
+  const { mutate: closePR, isPending: isClosing } = useCloseReceiving({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Penerimaan Ditutup", description: "Penerimaan barang telah ditutup." });
+        queryClient.invalidateQueries({ queryKey: ["/api/receiving"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+        onClose();
+      },
+      onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.response?.data?.error || "Gagal menutup penerimaan" }),
+    },
+  });
+
+  if (isLoading) return (
+    <div className="flex items-center justify-center py-12">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
+  if (!pr) return null;
+
+  // Calculate already received per item
+  const receivedByItem: Record<number, number> = {};
+  for (const r of (pr as any).receivingRecords || []) {
+    receivedByItem[r.prItemId] = (receivedByItem[r.prItemId] || 0) + r.receivedQty;
+  }
+
+  const items: any[] = pr.items || [];
+  const receivingStatus = (pr as any).receivingStatus || "none";
+
+  const handleSubmit = () => {
+    const itemInputs = items
+      .map(item => ({
+        prItemId: item.id,
+        receivedQty: parseFloat(qtyInputs[item.id] || "0"),
+      }))
+      .filter(x => x.receivedQty > 0);
+
+    if (itemInputs.length === 0) {
+      toast({ variant: "destructive", title: "Error", description: "Masukkan qty yang diterima untuk minimal 1 item" });
+      return;
+    }
+    receiveItems({ id: prId, data: { items: itemInputs, notes } });
+  };
+
+  const isClosed = receivingStatus === "closed";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
+        <div>
+          <p className="font-semibold text-sm">{pr.prNumber}</p>
+          <p className="text-xs text-muted-foreground">{pr.description}</p>
+          <p className="text-xs text-muted-foreground">Pemohon: {pr.requesterName}</p>
+        </div>
+        <Badge className={`ml-auto text-xs border-none shadow-none ${
+          isClosed ? "bg-green-100 text-green-700"
+          : receivingStatus === "partial" ? "bg-amber-100 text-amber-700"
+          : "bg-blue-100 text-blue-700"
+        }`}>
+          {isClosed ? "Selesai" : receivingStatus === "partial" ? "Parsial" : "Belum Ada"}
+        </Badge>
+      </div>
+
+      {/* Items table */}
+      <div className="space-y-2">
+        <p className="text-sm font-semibold text-foreground">Detail Barang</p>
+        <div className="border rounded-lg overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Nama Barang</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">Target</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">Diterima</th>
+                {!isClosed && <th className="text-right px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">Terima Sekarang</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((item: any, idx: number) => {
+                const received = receivedByItem[item.id] || 0;
+                const remaining = Math.max(0, item.qty - received);
+                const isDone = received >= item.qty;
+                return (
+                  <tr key={item.id} className={`border-t ${idx % 2 === 0 ? "" : "bg-muted/20"}`}>
+                    <td className="px-3 py-2.5">
+                      <p className="font-medium">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">{item.unit}</p>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">{item.qty}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums">
+                      <span className={isDone ? "text-green-600 font-semibold" : received > 0 ? "text-amber-600 font-semibold" : "text-muted-foreground"}>
+                        {received}
+                      </span>
+                    </td>
+                    {!isClosed && (
+                      <td className="px-3 py-2.5 text-right">
+                        {isDone ? (
+                          <span className="text-xs text-green-600 flex items-center justify-end gap-1">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Selesai
+                          </span>
+                        ) : (
+                          <Input
+                            type="number" min="0" max={remaining} step="0.01"
+                            placeholder={`Max ${remaining}`}
+                            value={qtyInputs[item.id] || ""}
+                            onChange={e => setQtyInputs(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            className="h-7 text-right w-24 text-xs ml-auto"
+                          />
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Receiving history */}
+      {(pr as any).receivingRecords?.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-sm font-semibold text-foreground">Riwayat Penerimaan</p>
+          <div className="space-y-1.5 max-h-36 overflow-y-auto">
+            {(pr as any).receivingRecords.map((r: any) => (
+              <div key={r.id} className="flex items-center gap-2 text-xs p-2 bg-muted/30 rounded">
+                <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="text-muted-foreground">{formatDate(r.receivedAt)}</span>
+                <span className="font-medium">Item #{r.prItemId}: {r.receivedQty} diterima</span>
+                <span className="text-muted-foreground">oleh {r.receivedByName}</span>
+                {r.notes && <span className="text-muted-foreground">— {r.notes}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!isClosed && (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-sm">Catatan</Label>
+            <Textarea
+              placeholder="Catatan penerimaan (opsional)..."
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              className="text-sm resize-none h-18"
+              rows={2}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="flex-1 bg-teal-600 hover:bg-teal-700"
+            >
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Package className="h-4 w-4 mr-2" />}
+              Simpan Penerimaan
+            </Button>
+            {receivingStatus === "partial" && (
+              <Button
+                variant="outline"
+                onClick={() => closePR({ id: prId, data: {} })}
+                disabled={isClosing}
+                className="border-amber-300 text-amber-700 hover:bg-amber-50"
+              >
+                {isClosing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                <span className="ml-1.5">Tutup</span>
+              </Button>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 export default function Receiving() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [, setLocation] = useLocation();
-  const [receivingId, setReceivingId] = useState<number | null>(null);
+  const [selectedPRId, setSelectedPRId] = useState<number | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const { data: receivingData, isLoading } = useGetReceivingList();
   const { data: settings } = useGetSettings();
   const { data: user } = useGetMe();
 
-  const { mutate: receivePR, isPending: isReceiving } = useReceivePurchaseRequest({
-    mutation: {
-      onSuccess: () => {
-        toast({ title: "Barang Diterima!", description: "PR telah ditandai sebagai selesai." });
-        setReceivingId(null);
-        queryClient.invalidateQueries({ queryKey: ["/api/receiving"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
-      },
-      onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.response?.data?.message }),
-    }
-  });
-
   const items = receivingData?.items || [];
+
+  const receivingStatusLabel = (status: string) => {
+    switch (status) {
+      case "partial": return { label: "Parsial", cls: "bg-amber-100 text-amber-700" };
+      case "closed": return { label: "Selesai", cls: "bg-green-100 text-green-700" };
+      default: return { label: "Belum", cls: "bg-gray-100 text-gray-500" };
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -61,80 +269,108 @@ export default function Receiving() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {items.map((item: any) => (
-            <Card key={`${item.type}-${item.id}`} className="border-0 shadow-sm hover:shadow-md transition-shadow">
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <div className="h-9 w-9 rounded-xl bg-teal-100 flex items-center justify-center">
-                      <PackageCheck className="h-5 w-5 text-teal-600" />
+          {items.map((item: any) => {
+            const recvStatus = item.receivingStatus || "none";
+            const recvLabel = receivingStatusLabel(recvStatus);
+            return (
+              <Card key={`${item.type}-${item.id}`} className="border-0 shadow-sm hover:shadow-md transition-shadow">
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-9 w-9 rounded-xl bg-teal-100 flex items-center justify-center">
+                        <PackageCheck className="h-5 w-5 text-teal-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-sm">{item.prNumber}</p>
+                        {item.poNumber && (
+                          <p className="text-xs text-muted-foreground">PO: {item.poNumber}</p>
+                        )}
+                      </div>
                     </div>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge className={`text-xs border-none shadow-none ${item.type === "po" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
+                        {item.type === "po" ? "Via PO" : "Direct"}
+                      </Badge>
+                      <Badge className={`text-xs border-none shadow-none ${recvLabel.cls}`}>
+                        {recvLabel.label}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <p className="text-sm font-medium text-foreground line-clamp-2 mb-3">{item.prDescription}</p>
+
+                  <div className="space-y-1.5 text-sm text-muted-foreground mb-4">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-3.5 w-3.5" />
+                      <span>Pemohon: <strong className="text-foreground">{item.requesterName}</strong></span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Building className="h-3.5 w-3.5" />
+                      <span>{item.department}</span>
+                    </div>
+                    {item.vendorName && (
+                      <div className="flex items-center gap-2 text-emerald-700">
+                        <PackageCheck className="h-3.5 w-3.5" />
+                        <span>Vendor: <strong>{item.vendorName}</strong></span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between border-t pt-3">
                     <div>
-                      <p className="font-semibold text-sm">{item.prNumber}</p>
-                      {item.poNumber && (
-                        <p className="text-xs text-muted-foreground">PO: {item.poNumber}</p>
+                      <p className="text-xs text-muted-foreground">Nilai</p>
+                      <p className="font-bold text-primary">{formatIDR(item.totalAmount)}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" className="h-8 text-xs"
+                        onClick={() => setLocation(`/purchase-requests/${item.prId}`)}>
+                        Detail
+                      </Button>
+                      {item.type === "pr" && recvStatus !== "closed" && (
+                        <Button size="sm" className="h-8 text-xs bg-teal-600 hover:bg-teal-700"
+                          onClick={() => {
+                            setSelectedPRId(item.prId);
+                            setDialogOpen(true);
+                          }}>
+                          <Package className="h-3.5 w-3.5 mr-1" />
+                          Input
+                        </Button>
+                      )}
+                      {item.type === "po" && (
+                        <Button size="sm" variant="outline" className="h-8 text-xs"
+                          onClick={() => setLocation(`/purchase-orders/${item.poId}`)}>
+                          Lihat PO
+                        </Button>
                       )}
                     </div>
                   </div>
-                  <Badge className={`text-xs border-none shadow-none ${item.type === "po" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
-                    {item.type === "po" ? "Via PO" : "Direct"}
-                  </Badge>
-                </div>
-
-                <p className="text-sm font-medium text-foreground line-clamp-2 mb-3">{item.prDescription}</p>
-
-                <div className="space-y-1.5 text-sm text-muted-foreground mb-4">
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-3.5 w-3.5" />
-                    <span>Pemohon: <strong className="text-foreground">{item.requesterName}</strong></span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Building className="h-3.5 w-3.5" />
-                    <span>{item.department}</span>
-                  </div>
-                  {item.vendorName && (
-                    <div className="flex items-center gap-2 text-emerald-700">
-                      <PackageCheck className="h-3.5 w-3.5" />
-                      <span>Vendor: <strong>{item.vendorName}</strong></span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between border-t pt-3">
-                  <div>
-                    <p className="text-xs text-muted-foreground">Nilai</p>
-                    <p className="font-bold text-primary">{formatIDR(item.totalAmount)}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="h-8 text-xs"
-                      onClick={() => setLocation(`/purchase-requests/${item.prId}`)}>
-                      Detail
-                    </Button>
-                    {/* Only requester can confirm receipt */}
-                    {item.type === "pr" && (
-                      <Button size="sm" className="h-8 text-xs bg-teal-600 hover:bg-teal-700"
-                        disabled={isReceiving && receivingId === item.prId}
-                        onClick={() => {
-                          setReceivingId(item.prId);
-                          receivePR({ id: item.prId, data: { notes: "" } });
-                        }}>
-                        {isReceiving && receivingId === item.prId ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PackageCheck className="h-3.5 w-3.5" />}
-                        <span className="ml-1">Terima</span>
-                      </Button>
-                    )}
-                    {item.type === "po" && (
-                      <Button size="sm" variant="outline" className="h-8 text-xs"
-                        onClick={() => setLocation(`/purchase-orders/${item.poId}`)}>
-                        Lihat PO
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
+
+      {/* Partial receiving dialog */}
+      <Dialog open={dialogOpen} onOpenChange={open => { if (!open) { setDialogOpen(false); setSelectedPRId(null); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5 text-teal-600" />
+              Input Penerimaan Barang
+            </DialogTitle>
+            <DialogDescription>
+              Masukkan jumlah barang yang diterima per item. Bisa bertahap (parsial).
+            </DialogDescription>
+          </DialogHeader>
+          {selectedPRId && (
+            <PRReceivingDetail
+              prId={selectedPRId}
+              onClose={() => { setDialogOpen(false); setSelectedPRId(null); }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import {
   useGetSettings, useUpdateSettings, useGetCompanies, useCreateCompany,
   useUpdateCompany, useDeleteCompany, useGetApprovalRules,
   useCreateApprovalRule, useUpdateApprovalRule, useDeleteApprovalRule,
-  useGetUsers,
+  useGetUsers, useGetCompanyLeaveSettings, useUpdateCompanyLeaveSetting,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -148,6 +148,133 @@ function CompanyManager() {
               </div>
             ))}
           </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Company Leave Settings Manager
+function CompanyLeaveManager() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: settings, isLoading } = useGetCompanyLeaveSettings();
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({
+    carryoverExpiryMonth: 3, carryoverExpiryDay: 31,
+    maxCarryoverDays: 12, accrualDaysPerMonth: 1,
+  });
+
+  const { mutate: updateSetting, isPending: saving } = useUpdateCompanyLeaveSetting({
+    mutation: {
+      onSuccess: () => {
+        toast({ title: "Berhasil", description: "Pengaturan cuti berhasil disimpan." });
+        queryClient.invalidateQueries({ queryKey: ["/api/settings/company-leave"] });
+        setEditId(null);
+      },
+      onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.response?.data?.error || "Error" }),
+    },
+  });
+
+  const startEdit = (s: any) => {
+    setEditId(s.companyId);
+    setEditForm({
+      carryoverExpiryMonth: s.carryoverExpiryMonth,
+      carryoverExpiryDay: s.carryoverExpiryDay,
+      maxCarryoverDays: s.maxCarryoverDays,
+      accrualDaysPerMonth: s.accrualDaysPerMonth,
+    });
+  };
+
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
+    "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
+  ];
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Building2 className="h-5 w-5" /> Pengaturan Cuti Per Perusahaan
+        </CardTitle>
+        <CardDescription>Konfigurasi akumulasi dan pembawaan sisa cuti tahunan per perusahaan</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading ? (
+          <div className="text-center py-8 text-muted-foreground animate-pulse">Memuat...</div>
+        ) : !settings?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-4">Belum ada perusahaan. Tambahkan perusahaan terlebih dahulu.</p>
+        ) : (
+          settings.map((s: any) => (
+            <div key={s.companyId} className="border rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-4 w-4 text-primary" />
+                  <span className="font-semibold text-sm">{s.companyName}</span>
+                </div>
+                {editId !== s.companyId ? (
+                  <Button size="sm" variant="outline" onClick={() => startEdit(s)} className="h-7 text-xs">
+                    <Pencil className="h-3 w-3 mr-1" /> Edit
+                  </Button>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => setEditId(null)} className="h-7 text-xs">
+                      <X className="h-3 w-3 mr-1" /> Batal
+                    </Button>
+                    <Button size="sm" onClick={() => updateSetting({ companyId: s.companyId, data: editForm })} disabled={saving} className="h-7 text-xs">
+                      {saving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Check className="h-3 w-3 mr-1" />} Simpan
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {editId !== s.companyId ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-slate-50 rounded-lg p-2.5">
+                    <p className="text-muted-foreground">Akrual/Bulan</p>
+                    <p className="font-semibold text-base">{s.accrualDaysPerMonth} hari</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2.5">
+                    <p className="text-muted-foreground">Max Bawa Sisa</p>
+                    <p className="font-semibold text-base">{s.maxCarryoverDays} hari</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-lg p-2.5 md:col-span-2">
+                    <p className="text-muted-foreground">Kadaluarsa Sisa Bawa</p>
+                    <p className="font-semibold">{months[s.carryoverExpiryMonth - 1]} {s.carryoverExpiryDay} tahun berikutnya</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Hari Akrual / Bulan</Label>
+                    <Input type="number" min="0" max="5" step="0.25"
+                      value={editForm.accrualDaysPerMonth}
+                      onChange={e => setEditForm(f => ({ ...f, accrualDaysPerMonth: parseFloat(e.target.value) || 0 }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Max Hari Dibawa ke Tahun Depan</Label>
+                    <Input type="number" min="0" max="60"
+                      value={editForm.maxCarryoverDays}
+                      onChange={e => setEditForm(f => ({ ...f, maxCarryoverDays: parseInt(e.target.value) || 0 }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Bulan Kadaluarsa Sisa Bawa</Label>
+                    <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      value={editForm.carryoverExpiryMonth}
+                      onChange={e => setEditForm(f => ({ ...f, carryoverExpiryMonth: parseInt(e.target.value) }))}>
+                      {months.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Tanggal Kadaluarsa Sisa Bawa</Label>
+                    <Input type="number" min="1" max="31"
+                      value={editForm.carryoverExpiryDay}
+                      onChange={e => setEditForm(f => ({ ...f, carryoverExpiryDay: parseInt(e.target.value) || 1 }))} />
+                  </div>
+                </div>
+              )}
+            </div>
+          ))
         )}
       </CardContent>
     </Card>
@@ -500,6 +627,7 @@ export default function Settings() {
       </Card>
 
       <CompanyManager />
+      <CompanyLeaveManager />
       <ApprovalRuleManager />
     </div>
   );

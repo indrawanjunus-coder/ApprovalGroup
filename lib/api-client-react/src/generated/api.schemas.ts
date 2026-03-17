@@ -51,6 +51,8 @@ export interface User {
   role: UserRole;
   superiorId?: number | null;
   superiorName?: string | null;
+  hiredCompanyId?: number | null;
+  hiredCompanyName?: string | null;
   isActive: boolean;
   companies?: UserCompanyAssignment[];
   createdAt: string;
@@ -85,6 +87,71 @@ export interface UpdateUserCompaniesRequest {
   assignments: UserCompanyInput[];
 }
 
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface LeaveBalance {
+  id?: number;
+  userId: number;
+  year: number;
+  balanceDays: number;
+  carriedOverDays: number;
+  carriedOverExpiry?: string | null;
+  usedDays: number;
+  availableDays: number;
+  lastAccumulatedMonth: number;
+  updatedAt?: string;
+}
+
+export interface UpdateLeaveBalanceRequest {
+  year: number;
+  balanceDays?: number | null;
+  carriedOverDays?: number | null;
+  usedDays?: number | null;
+}
+
+export interface CompanyLeaveSetting {
+  id?: number;
+  companyId: number;
+  companyName?: string;
+  carryoverExpiryMonth: number;
+  carryoverExpiryDay: number;
+  maxCarryoverDays: number;
+  accrualDaysPerMonth: number;
+}
+
+export interface UpdateCompanyLeaveSettingRequest {
+  carryoverExpiryMonth: number;
+  carryoverExpiryDay: number;
+  maxCarryoverDays: number;
+  accrualDaysPerMonth: number;
+}
+
+export type ReceiveItemsRequestItemsItem = {
+  prItemId: number;
+  receivedQty: number;
+  notes?: string | null;
+};
+
+export interface ReceiveItemsRequest {
+  items: ReceiveItemsRequestItemsItem[];
+  notes?: string | null;
+}
+
+export interface ReceivingRecord {
+  id: number;
+  prId: number;
+  prItemId: number;
+  itemName: string;
+  receivedQty: number;
+  receivedAt: string;
+  receivedBy: number;
+  receivedByName: string;
+  notes?: string | null;
+}
+
 export interface UserListResponse {
   users: User[];
   total: number;
@@ -103,6 +170,7 @@ export const CreateUserRequestRole = {
 } as const;
 
 export interface CreateUserRequest {
+  hiredCompanyId?: number | null;
   username: string;
   password: string;
   name: string;
@@ -131,6 +199,7 @@ export interface UpdateUserRequest {
   position?: string;
   role?: UpdateUserRequestRole;
   superiorId?: number | null;
+  hiredCompanyId?: number | null;
   isActive?: boolean;
   password?: string;
   companies?: UserCompanyInput[];
@@ -229,6 +298,15 @@ export const PurchaseRequestStatus = {
   completed: "completed",
 } as const;
 
+export type PurchaseRequestReceivingStatus =
+  (typeof PurchaseRequestReceivingStatus)[keyof typeof PurchaseRequestReceivingStatus];
+
+export const PurchaseRequestReceivingStatus = {
+  none: "none",
+  partial: "partial",
+  closed: "closed",
+} as const;
+
 export type ApprovalStatus =
   (typeof ApprovalStatus)[keyof typeof ApprovalStatus];
 
@@ -279,6 +357,8 @@ export interface PurchaseRequest {
   vendorFinalAmount?: number | null;
   vendorSelectedByName?: string | null;
   vendorSelectedAt?: string | null;
+  receivingStatus: PurchaseRequestReceivingStatus;
+  receivingRecords: ReceivingRecord[];
   createdAt: string;
   updatedAt: string;
 }
@@ -572,12 +652,20 @@ export type GetUsersParams = {
   role?: string;
 };
 
+export type GetUserLeaveBalanceParams = {
+  year?: number;
+};
+
 export type GetPurchaseRequestsParams = {
   page?: number;
   limit?: number;
   status?: string;
   type?: string;
   search?: string;
+};
+
+export type CloseReceivingBody = {
+  notes?: string | null;
 };
 
 export type GetApprovalRulesParams = {

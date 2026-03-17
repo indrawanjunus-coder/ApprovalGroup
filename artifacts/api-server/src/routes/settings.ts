@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { settingsTable } from "@workspace/db/schema";
+import { settingsTable, companiesTable, companyLeaveSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 
@@ -57,6 +57,65 @@ router.put("/", requireRole("admin"), async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }
+});
+
+// Company leave settings
+router.get("/company-leave", async (req, res) => {
+  try {
+    const companies = await db.select().from(companiesTable);
+    const settings = await db.select().from(companyLeaveSettingsTable);
+    const settingMap = new Map(settings.map(s => [s.companyId, s]));
+    const result = companies.map(c => {
+      const s = settingMap.get(c.id);
+      return {
+        companyId: c.id,
+        companyName: c.name,
+        carryoverExpiryMonth: s?.carryoverExpiryMonth ?? 3,
+        carryoverExpiryDay: s?.carryoverExpiryDay ?? 31,
+        maxCarryoverDays: s?.maxCarryoverDays ?? 12,
+        accrualDaysPerMonth: s ? parseFloat(s.accrualDaysPerMonth) : 1,
+        settingId: s?.id || null,
+      };
+    });
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+router.put("/company-leave/:companyId", requireRole("admin"), async (req, res) => {
+  const companyId = parseInt(req.params.companyId);
+  const { carryoverExpiryMonth, carryoverExpiryDay, maxCarryoverDays, accrualDaysPerMonth } = req.body;
+  try {
+    const [company] = await db.select({ id: companiesTable.id, name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, companyId));
+    if (!company) { res.status(404).json({ error: "Company not found" }); return; }
+
+    const existing = await db.select().from(companyLeaveSettingsTable).where(eq(companyLeaveSettingsTable.companyId, companyId));
+    let result: any;
+    if (existing.length > 0) {
+      const update: any = { updatedAt: new Date() };
+      if (carryoverExpiryMonth !== undefined) update.carryoverExpiryMonth = carryoverExpiryMonth;
+      if (carryoverExpiryDay !== undefined) update.carryoverExpiryDay = carryoverExpiryDay;
+      if (maxCarryoverDays !== undefined) update.maxCarryoverDays = maxCarryoverDays;
+      if (accrualDaysPerMonth !== undefined) update.accrualDaysPerMonth = String(accrualDaysPerMonth);
+      [result] = await db.update(companyLeaveSettingsTable).set(update).where(eq(companyLeaveSettingsTable.companyId, companyId)).returning();
+    } else {
+      [result] = await db.insert(companyLeaveSettingsTable).values({
+        companyId,
+        carryoverExpiryMonth: carryoverExpiryMonth ?? 3,
+        carryoverExpiryDay: carryoverExpiryDay ?? 31,
+        maxCarryoverDays: maxCarryoverDays ?? 12,
+        accrualDaysPerMonth: String(accrualDaysPerMonth ?? 1),
+      }).returning();
+    }
+    res.json({
+      companyId: result.companyId,
+      companyName: company.name,
+      carryoverExpiryMonth: result.carryoverExpiryMonth,
+      carryoverExpiryDay: result.carryoverExpiryDay,
+      maxCarryoverDays: result.maxCarryoverDays,
+      accrualDaysPerMonth: parseFloat(result.accrualDaysPerMonth),
+      settingId: result.id,
+    });
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 });
 
 export default router;

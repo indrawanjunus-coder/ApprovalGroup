@@ -20,7 +20,7 @@ const ROLES = [
 
 const emptyForm = {
   username: "", password: "", name: "", email: "", department: "",
-  position: "", role: "user" as any, superiorId: "" as any, isActive: true,
+  position: "", role: "user" as any, superiorId: "" as any, hiredCompanyId: "" as any, isActive: true,
 };
 
 export default function UserList() {
@@ -84,6 +84,7 @@ export default function UserList() {
       position: u.position,
       role: u.role,
       superiorId: u.superiorId || "",
+      hiredCompanyId: u.hiredCompanyId || "",
       isActive: u.isActive,
     });
     setCompanies((u.companies || []).map((c: any) => ({ companyId: Number(c.companyId), department: c.department })));
@@ -106,11 +107,12 @@ export default function UserList() {
       toast({ variant: "destructive", title: "Validasi", description: "Username wajib diisi." });
       return;
     }
-    const validCompanies = companies.filter(c => c.companyId && c.department);
+    const validCompanies = companies.filter(c => c.companyId);
     const payload: any = {
       ...form,
       superiorId: form.superiorId ? Number(form.superiorId) : null,
-      companies: validCompanies.map(c => ({ companyId: Number(c.companyId), department: c.department })),
+      hiredCompanyId: form.hiredCompanyId ? Number(form.hiredCompanyId) : null,
+      companies: validCompanies.map(c => ({ companyId: Number(c.companyId), department: c.department || form.department || "" })),
     };
     if (editUser) {
       if (!payload.password) delete payload.password;
@@ -124,7 +126,7 @@ export default function UserList() {
     }
   };
 
-  const addCompany = () => setCompanies(c => [...c, { companyId: "", department: "" }]);
+  const addCompany = () => setCompanies(c => [...c, { companyId: "", department: form.department || "" }]);
   const removeCompany = (idx: number) => setCompanies(c => c.filter((_, i) => i !== idx));
   const updateCompanyRow = (idx: number, field: string, value: any) => {
     setCompanies(c => c.map((row, i) => i === idx ? { ...row, [field]: value } : row));
@@ -283,6 +285,16 @@ export default function UserList() {
                   ))}
                 </select>
               </div>
+              {companyList.length > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Perusahaan Asal (Hired Company)</Label>
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={form.hiredCompanyId} onChange={e => setForm(f => ({ ...f, hiredCompanyId: e.target.value }))}>
+                    <option value="">-- Tidak dipilih --</option>
+                    {companyList.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              )}
               {editUser && (
                 <div className="flex items-center gap-3 md:col-span-2">
                   <Label className="text-xs">Status Aktif</Label>
