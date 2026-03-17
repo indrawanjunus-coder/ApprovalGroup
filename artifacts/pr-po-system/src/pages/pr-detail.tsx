@@ -6,7 +6,7 @@ import {
   useGetPRVendorAttachments, useAddPRVendorAttachment, useDeletePRVendorAttachment,
   useSelectPRVendor, useReceivePartialItems, useCloseReceiving,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,22 @@ export default function PRDetail() {
   const { data: user } = useGetMe();
   const { data: settings } = useGetSettings();
   const { data: pr, isLoading } = useGetPurchaseRequestById(prId);
+
+  const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  const { data: prTypesData } = useQuery<any[]>({
+    queryKey: ["/api/pr-types"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE_URL}/api/pr-types`, { credentials: "include" });
+      return res.ok ? res.json() : [];
+    },
+  });
+
+  const getTypeLabel = (typeCode: string) => {
+    const custom = (prTypesData || []).find((t: any) => t.code === typeCode);
+    if (custom) return custom.label;
+    const builtins: Record<string, string> = { purchase: "Pembelian", repair: "Perbaikan", leave: "Cuti" };
+    return builtins[typeCode] || typeCode;
+  };
 
   // Approval dialog
   const [approvalNotes, setApprovalNotes] = useState("");
@@ -220,7 +236,7 @@ export default function PRDetail() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Tipe Request</p>
-                <p className="font-medium capitalize">{pr.type === "purchase" ? "Pembelian" : pr.type === "repair" ? "Perbaikan" : "Cuti"}</p>
+                <p className="font-medium capitalize">{getTypeLabel(pr.type)}</p>
               </div>
               {pr.companyName && (
                 <div>

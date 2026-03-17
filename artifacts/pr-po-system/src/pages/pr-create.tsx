@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useCreatePurchaseRequest, useGetCompanies, useGetUsers, useGetMe } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,7 +16,7 @@ export default function PRCreate() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [type, setType] = useState<"purchase" | "repair" | "leave">("purchase");
+  const [type, setType] = useState<string>("purchase");
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [companyId, setCompanyId] = useState<number | "">("");
@@ -51,6 +51,16 @@ export default function PRCreate() {
 
   const activeTypes = (prTypesData || []).filter((t: any) => t.isActive);
   const activeDepts = (departmentsData || []).filter((d: any) => d.isActive);
+
+  // Auto-sync type to first available custom type when the list loads
+  useEffect(() => {
+    if (activeTypes.length > 0) {
+      const codes = activeTypes.map((t: any) => t.code);
+      if (!codes.includes(type)) {
+        setType(activeTypes[0].code);
+      }
+    }
+  }, [activeTypes.length]);
 
   // Fetch leave balance when type is "leave"
   const leaveTargetUserId = leaveRequesterId || me?.id;
