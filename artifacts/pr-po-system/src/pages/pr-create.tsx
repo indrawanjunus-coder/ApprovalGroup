@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useCreatePurchaseRequest, useGetCompanies, useGetUsers, useGetMe } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,25 @@ export default function PRCreate() {
   const { data: me } = useGetMe();
   const { data: companiesData } = useGetCompanies();
   const { data: usersData } = useGetUsers({ limit: 200 });
+
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  const { data: prTypesData } = useQuery<any[]>({
+    queryKey: ["/api/pr-types"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/pr-types`, { credentials: "include" });
+      return res.ok ? res.json() : [];
+    },
+  });
+  const { data: departmentsData } = useQuery<any[]>({
+    queryKey: ["/api/departments"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/departments`, { credentials: "include" });
+      return res.ok ? res.json() : [];
+    },
+  });
+
+  const activeTypes = (prTypesData || []).filter((t: any) => t.isActive);
+  const activeDepts = (departmentsData || []).filter((d: any) => d.isActive);
 
   const { mutate: createPR, isPending } = useCreatePurchaseRequest({
     mutation: {
@@ -126,9 +145,15 @@ export default function PRCreate() {
                 value={type}
                 onChange={(e) => setType(e.target.value as any)}
               >
-                <option value="purchase">Pembelian Barang</option>
-                <option value="repair">Perbaikan</option>
-                <option value="leave">Permintaan Cuti</option>
+                {activeTypes.length > 0 ? activeTypes.map((t: any) => (
+                  <option key={t.code} value={t.code}>{t.label}</option>
+                )) : (
+                  <>
+                    <option value="purchase">Pembelian Barang</option>
+                    <option value="repair">Perbaikan</option>
+                    <option value="leave">Permintaan Cuti</option>
+                  </>
+                )}
               </select>
             </div>
 

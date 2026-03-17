@@ -12,6 +12,8 @@ import auditLogsRouter from "./audit-logs.js";
 import settingsRouter from "./settings.js";
 import dashboardRouter from "./dashboard.js";
 import receivingRouter from "./receiving.js";
+import departmentsRouter from "./departments.js";
+import prTypesRouter from "./pr-types.js";
 
 const router = Router();
 
@@ -28,5 +30,7 @@ router.use("/audit-logs", auditLogsRouter);
 router.use("/settings", settingsRouter);
 router.use("/dashboard", dashboardRouter);
 router.use("/receiving", receivingRouter);
+router.use("/departments", departmentsRouter);
+router.use("/pr-types", prTypesRouter);
 
 export default router;

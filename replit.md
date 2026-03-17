@@ -41,6 +41,11 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (Pr
 
 ## Features
 
+### Master Data (Settings Page)
+- **Master Departemen**: CRUD for departments — `GET/POST/PUT/DELETE /api/departments` (write: admin only). Used in user create/edit and approval rules dropdowns.
+- **Master Jenis Request (PR Types)**: CRUD for PR types — `GET/POST/PUT/DELETE /api/pr-types` (write: admin only). System types (purchase/repair/leave) have `isSystem=true` and cannot be deleted. Type dropdown in PR Create and Approval Rules forms fetches from this master.
+- **SMTP**: `GET/PUT /api/settings/smtp`, test email `POST /api/settings/smtp/test`
+
 ### Authentication
 - Session-based auth (SHA-256 + salt)
 - Change Password: `POST /api/auth/change-password` — UI: key icon in sidebar profile
@@ -48,6 +53,7 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (Pr
 ### User Management
 - Roles: admin, user, approver, purchasing
 - `hiredCompanyId` — determines which company's leave settings apply
+- Department field uses dropdown from Master Departemen when departments exist
 - Multi-company assignment (user can work in multiple companies/departments)
 - Leave balance: `GET /api/users/:id/leave-balance`, `PUT /api/users/:id/leave-balance`
   - Auto-accrues based on company's `accrualDaysPerMonth` setting from hire month

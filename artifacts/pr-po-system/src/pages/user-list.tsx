@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useGetUsers, useCreateUser, useUpdateUser, useDeleteUser, useGetCompanies } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -41,6 +41,16 @@ export default function UserList() {
   const handleSearch = (val: string) => { setSearch(val); setPage(1); };
   const { data: companiesData } = useGetCompanies();
   const companyList = companiesData || [];
+
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  const { data: departmentsData } = useQuery<any[]>({
+    queryKey: ["/api/departments"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/departments`, { credentials: "include" });
+      return res.ok ? res.json() : [];
+    },
+  });
+  const activeDepts = (departmentsData || []).filter((d: any) => d.isActive);
 
   const { mutate: createUser, isPending: creating } = useCreateUser({
     mutation: {
@@ -274,7 +284,15 @@ export default function UserList() {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Departemen *</Label>
-                <Input value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} placeholder="IT, Finance, HR, ..." />
+                {activeDepts.length > 0 ? (
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))}>
+                    <option value="">-- Pilih Departemen --</option>
+                    {activeDepts.map((d: any) => <option key={d.id} value={d.name}>{d.name}</option>)}
+                  </select>
+                ) : (
+                  <Input value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} placeholder="IT, Finance, HR, ..." />
+                )}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Jabatan *</Label>

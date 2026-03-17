@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { settingsTable, companiesTable, companyLeaveSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
+import nodemailer from "nodemailer";
 
 const router = Router();
 router.use(requireAuth);
@@ -98,6 +99,59 @@ router.put("/smtp", requireRole("admin"), async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// SMTP test email
+router.post("/smtp/test", requireRole("admin"), async (req, res) => {
+  try {
+    const keys = ["smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_security", "smtp_from"];
+    const rows = await Promise.all(keys.map(k => getSettingValue(k)));
+    const host = rows[0];
+    const port = rows[1] ? parseInt(rows[1]) : 587;
+    const user = rows[2];
+    const pass = rows[3];
+    const security = rows[4] || "STARTTLS";
+    const from = rows[5] || user;
+
+    if (!host || !user || !pass) {
+      return res.status(400).json({ error: "SMTP belum dikonfigurasi. Simpan pengaturan SMTP terlebih dahulu." });
+    }
+
+    const { to } = req.body;
+    const recipient = to || user;
+
+    const secure = security === "SSL";
+    const transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      tls: security === "STARTTLS" ? { rejectUnauthorized: false } : undefined,
+    });
+
+    await transporter.sendMail({
+      from: `"ProcureFlow System" <${from}>`,
+      to: recipient,
+      subject: "Test Email — ProcureFlow",
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;border:1px solid #e2e8f0;border-radius:12px">
+          <h2 style="color:#2563eb;margin-top:0">✅ Konfigurasi Email Berhasil</h2>
+          <p>Email ini dikirim sebagai pengujian konfigurasi SMTP ProcureFlow.</p>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+            <tr><td style="padding:6px 12px;background:#f8fafc;font-weight:600;border-radius:4px">Host</td><td style="padding:6px 12px">${host}:${port}</td></tr>
+            <tr><td style="padding:6px 12px;background:#f8fafc;font-weight:600;border-radius:4px">Enkripsi</td><td style="padding:6px 12px">${security}</td></tr>
+            <tr><td style="padding:6px 12px;background:#f8fafc;font-weight:600;border-radius:4px">Pengirim</td><td style="padding:6px 12px">${from}</td></tr>
+          </table>
+          <p style="color:#64748b;font-size:13px">Waktu: ${new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })} WIB</p>
+        </div>
+      `,
+    });
+
+    res.json({ success: true, message: `Email test berhasil dikirim ke ${recipient}` });
+  } catch (err: any) {
+    console.error("[SMTP Test]", err);
+    res.status(500).json({ error: `Gagal kirim email: ${err.message || "Unknown error"}` });
   }
 });
 

@@ -292,6 +292,24 @@ function ApprovalRuleManager() {
   const [editRule, setEditRule] = useState<any>(null);
   const [expandedRule, setExpandedRule] = useState<number | null>(null);
 
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  const { data: prTypesData } = useQuery<any[]>({
+    queryKey: ["/api/pr-types"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/pr-types`, { credentials: "include" });
+      return res.ok ? res.json() : [];
+    },
+  });
+  const { data: departmentsData } = useQuery<any[]>({
+    queryKey: ["/api/departments"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/departments`, { credentials: "include" });
+      return res.ok ? res.json() : [];
+    },
+  });
+  const activeTypes = (prTypesData || []).filter((t: any) => t.isActive);
+  const activeDepts = (departmentsData || []).filter((d: any) => d.isActive);
+
   const emptyForm = { name: "", companyId: "" as any, department: "", type: "purchase" as any, levels: [] as any[] };
   const [form, setForm] = useState({ ...emptyForm });
 
@@ -416,9 +434,15 @@ function ApprovalRuleManager() {
                 <Label className="text-xs">Tipe Request *</Label>
                 <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                   value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value as any }))}>
-                  <option value="purchase">Pembelian</option>
-                  <option value="repair">Perbaikan</option>
-                  <option value="leave">Cuti</option>
+                  {activeTypes.length > 0 ? activeTypes.map((t: any) => (
+                    <option key={t.code} value={t.code}>{t.label}</option>
+                  )) : (
+                    <>
+                      <option value="purchase">Pembelian</option>
+                      <option value="repair">Perbaikan</option>
+                      <option value="leave">Cuti</option>
+                    </>
+                  )}
                 </select>
               </div>
               {companyList.length > 0 && (
@@ -433,7 +457,15 @@ function ApprovalRuleManager() {
               )}
               <div className="space-y-1">
                 <Label className="text-xs">Departemen (Opsional)</Label>
-                <Input placeholder="Misal: IT, Finance (kosong = semua)" value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} />
+                {activeDepts.length > 0 ? (
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))}>
+                    <option value="">-- Semua departemen --</option>
+                    {activeDepts.map((d: any) => <option key={d.id} value={d.name}>{d.name}</option>)}
+                  </select>
+                ) : (
+                  <Input placeholder="Misal: IT, Finance (kosong = semua)" value={form.department} onChange={e => setForm(f => ({ ...f, department: e.target.value }))} />
+                )}
               </div>
             </div>
 
@@ -552,6 +584,293 @@ function ApprovalRuleManager() {
   );
 }
 
+// Department Manager Component
+function DepartmentManager() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
+  const { data: depts, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/departments"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/departments`, { credentials: "include" });
+      if (!res.ok) throw new Error("Gagal");
+      return res.json();
+    },
+  });
+
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState({ name: "", description: "", isActive: true });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/departments"] });
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const url = editId ? `${BASE}/api/departments/${editId}` : `${BASE}/api/departments`;
+      const res = await fetch(url, {
+        method: editId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Gagal"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Berhasil", description: editId ? "Departemen diperbarui." : "Departemen ditambahkan." });
+      invalidate();
+      setShowForm(false);
+      setEditId(null);
+      setForm({ name: "", description: "", isActive: true });
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.message }),
+  });
+
+  const deleteDept = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${BASE}/api/departments/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Gagal menghapus");
+    },
+    onSuccess: () => { toast({ title: "Berhasil", description: "Departemen dihapus." }); invalidate(); },
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.message }),
+  });
+
+  const startEdit = (d: any) => {
+    setEditId(d.id);
+    setForm({ name: d.name, description: d.description || "", isActive: d.isActive });
+    setShowForm(true);
+  };
+
+  const cancelForm = () => { setShowForm(false); setEditId(null); setForm({ name: "", description: "", isActive: true }); };
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Building2 className="h-5 w-5" /> Master Departemen
+          </CardTitle>
+          <CardDescription>Kelola daftar departemen yang tersedia di seluruh sistem</CardDescription>
+        </div>
+        <Button size="sm" onClick={() => { cancelForm(); setShowForm(true); }}>
+          <Plus className="mr-2 h-4 w-4" /> Tambah
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {showForm && (
+          <div className="border rounded-xl p-4 space-y-3 bg-slate-50">
+            <h4 className="font-semibold text-sm">{editId ? "Edit Departemen" : "Tambah Departemen"}</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Nama Departemen *</Label>
+                <Input placeholder="Contoh: Finance, IT, HR" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Deskripsi</Label>
+                <Input placeholder="Opsional" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+              </div>
+              {editId && (
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="dept-active" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} className="w-4 h-4" />
+                  <Label htmlFor="dept-active" className="text-sm">Aktif</Label>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="ghost" onClick={cancelForm}>Batal</Button>
+              <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !form.name.trim()}>
+                {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />} Simpan
+              </Button>
+            </div>
+          </div>
+        )}
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground text-center py-4 animate-pulse">Memuat...</p>
+        ) : !depts?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-4">Belum ada departemen. Klik "Tambah".</p>
+        ) : (
+          <div className="space-y-2">
+            {depts.map((d: any) => (
+              <div key={d.id} className="border rounded-xl p-3 bg-white flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-sm">{d.name}</p>
+                    {!d.isActive && <Badge variant="outline" className="text-xs text-muted-foreground">Non-aktif</Badge>}
+                  </div>
+                  {d.description && <p className="text-xs text-muted-foreground mt-0.5">{d.description}</p>}
+                </div>
+                <div className="flex gap-1">
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(d)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => { if (confirm(`Hapus departemen "${d.name}"?`)) deleteDept.mutate(d.id); }}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Request Type (Jenis Request) Manager Component
+function PrTypeManager() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
+  const { data: types, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/pr-types"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/pr-types`, { credentials: "include" });
+      if (!res.ok) throw new Error("Gagal");
+      return res.json();
+    },
+  });
+
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState({ code: "", label: "", description: "", isActive: true });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/pr-types"] });
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const url = editId ? `${BASE}/api/pr-types/${editId}` : `${BASE}/api/pr-types`;
+      const res = await fetch(url, {
+        method: editId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Gagal"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Berhasil", description: editId ? "Jenis request diperbarui." : "Jenis request ditambahkan." });
+      invalidate();
+      setShowForm(false);
+      setEditId(null);
+      setForm({ code: "", label: "", description: "", isActive: true });
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.message }),
+  });
+
+  const deleteType = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${BASE}/api/pr-types/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Gagal menghapus"); }
+    },
+    onSuccess: () => { toast({ title: "Berhasil", description: "Jenis request dihapus." }); invalidate(); },
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.message }),
+  });
+
+  const startEdit = (t: any) => {
+    setEditId(t.id);
+    setForm({ code: t.code, label: t.label, description: t.description || "", isActive: t.isActive });
+    setShowForm(true);
+  };
+
+  const cancelForm = () => { setShowForm(false); setEditId(null); setForm({ code: "", label: "", description: "", isActive: true }); };
+
+  const TYPE_COLORS: Record<string, string> = {
+    purchase: "bg-blue-100 text-blue-700",
+    repair: "bg-amber-100 text-amber-700",
+    leave: "bg-emerald-100 text-emerald-700",
+  };
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Settings2 className="h-5 w-5" /> Master Jenis Request
+          </CardTitle>
+          <CardDescription>Kelola jenis Purchase Request yang tersedia. Jenis bawaan sistem tidak dapat dihapus.</CardDescription>
+        </div>
+        <Button size="sm" onClick={() => { cancelForm(); setShowForm(true); }}>
+          <Plus className="mr-2 h-4 w-4" /> Tambah
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {showForm && (
+          <div className="border rounded-xl p-4 space-y-3 bg-slate-50">
+            <h4 className="font-semibold text-sm">{editId ? "Edit Jenis Request" : "Tambah Jenis Request"}</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {!editId && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Kode * <span className="text-muted-foreground">(huruf kecil, tanpa spasi)</span></Label>
+                  <Input placeholder="cth: custom_purchase" value={form.code}
+                    onChange={e => setForm(f => ({ ...f, code: e.target.value.toLowerCase().replace(/\s+/g, "_") }))} />
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label className="text-xs">Label / Nama Tampilan *</Label>
+                <Input placeholder="cth: Pembelian Aset" value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} />
+              </div>
+              <div className={`space-y-1 ${!editId ? "" : "md:col-span-2"}`}>
+                <Label className="text-xs">Deskripsi</Label>
+                <Input placeholder="Opsional" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+              </div>
+              {editId && (
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="type-active" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} className="w-4 h-4" />
+                  <Label htmlFor="type-active" className="text-sm">Aktif</Label>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="ghost" onClick={cancelForm}>Batal</Button>
+              <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || !form.label.trim() || (!editId && !form.code.trim())}>
+                {save.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />} Simpan
+              </Button>
+            </div>
+          </div>
+        )}
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground text-center py-4 animate-pulse">Memuat...</p>
+        ) : !types?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-4">Belum ada jenis request.</p>
+        ) : (
+          <div className="space-y-2">
+            {types.map((t: any) => (
+              <div key={t.id} className="border rounded-xl p-3 bg-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Badge className={`border-none shadow-none text-xs ${TYPE_COLORS[t.code] || "bg-slate-100 text-slate-700"}`}>{t.code}</Badge>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-sm">{t.label}</p>
+                      {t.isSystem && <Badge variant="outline" className="text-[10px] text-muted-foreground">Sistem</Badge>}
+                      {!t.isActive && <Badge variant="outline" className="text-[10px] text-muted-foreground">Non-aktif</Badge>}
+                    </div>
+                    {t.description && <p className="text-xs text-muted-foreground mt-0.5">{t.description}</p>}
+                  </div>
+                </div>
+                <div className="flex gap-1">
+                  <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => startEdit(t)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  {!t.isSystem && (
+                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => { if (confirm(`Hapus jenis "${t.label}"?`)) deleteType.mutate(t.id); }}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // SMTP Settings Component
 function SmtpSettings() {
   const { toast } = useToast();
@@ -572,6 +891,7 @@ function SmtpSettings() {
     smtpHost: "", smtpPort: 587, smtpUser: "", smtpPassword: "",
     smtpSecurity: "STARTTLS", smtpFrom: "",
   });
+  const [testTo, setTestTo] = useState("");
 
   useEffect(() => {
     if (smtp) {
@@ -602,6 +922,22 @@ function SmtpSettings() {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/smtp"] });
     },
     onError: () => toast({ variant: "destructive", title: "Gagal", description: "Tidak dapat menyimpan SMTP." }),
+  });
+
+  const { mutate: testSMTP, isPending: testing } = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${BASE}/api/settings/smtp/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ to: testTo || undefined }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Gagal kirim test email");
+      return d;
+    },
+    onSuccess: (d) => toast({ title: "Test Email Terkirim ✅", description: d.message }),
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal Kirim Email ❌", description: e.message }),
   });
 
   if (isLoading) return <div className="animate-pulse text-sm text-center py-4 text-muted-foreground">Memuat...</div>;
@@ -646,13 +982,41 @@ function SmtpSettings() {
             <Input placeholder="ProcureFlow System" value={form.smtpFrom} onChange={e => setForm(f => ({ ...f, smtpFrom: e.target.value }))} />
           </div>
         </div>
+
         <p className="text-xs text-muted-foreground">
           Kosongkan semua field jika tidak ingin menggunakan notifikasi email. Sistem akan tetap berjalan tanpa email.
         </p>
-        <Button onClick={() => saveSMTP(form)} disabled={saving} className="shadow-md">
-          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-          Simpan SMTP
-        </Button>
+
+        <div className="flex gap-2 flex-wrap">
+          <Button onClick={() => saveSMTP(form)} disabled={saving} className="shadow-md">
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Simpan SMTP
+          </Button>
+        </div>
+
+        {/* Test Email Section */}
+        <div className="border rounded-xl p-4 bg-slate-50 space-y-3">
+          <p className="text-sm font-semibold text-slate-700">Uji Coba Pengiriman Email</p>
+          <p className="text-xs text-muted-foreground">Kirim email test untuk memverifikasi konfigurasi SMTP. Kosongkan tujuan untuk mengirim ke email pengirim (username SMTP).</p>
+          <div className="flex gap-2 items-center">
+            <Input
+              type="email"
+              placeholder="Tujuan email (kosong = ke username SMTP)"
+              value={testTo}
+              onChange={e => setTestTo(e.target.value)}
+              className="bg-white flex-1"
+            />
+            <Button
+              variant="outline"
+              onClick={() => testSMTP()}
+              disabled={testing}
+              className="whitespace-nowrap border-blue-300 text-blue-700 hover:bg-blue-50"
+            >
+              {testing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Mail className="mr-2 h-4 w-4" />}
+              Kirim Test
+            </Button>
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -732,6 +1096,8 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      <DepartmentManager />
+      <PrTypeManager />
       <CompanyManager />
       <CompanyLeaveManager />
       <ApprovalRuleManager />
