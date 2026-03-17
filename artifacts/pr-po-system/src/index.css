@@ -92,3 +92,26 @@
 .table-scrollbar::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
 }
+
+/* ===== Print Styles ===== */
+@media print {
+  [data-print-hide] {
+    display: none !important;
+  }
+  .md\:pl-64 {
+    padding-left: 0 !important;
+  }
+  header.sticky {
+    position: static !important;
+    backdrop-filter: none !important;
+  }
+  .shadow-sm, .shadow-md, .shadow-lg {
+    box-shadow: none !important;
+  }
+  .rounded-2xl, .rounded-xl {
+    border-radius: 0 !important;
+  }
+  body {
+    background: white !important;
+  }
+}

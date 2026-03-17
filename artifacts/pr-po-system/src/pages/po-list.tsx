@@ -6,12 +6,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatIDR, formatDate } from "@/lib/utils";
 import { PaginationControls } from "@/components/PaginationControls";
+import { Button } from "@/components/ui/button";
+import { Download, Loader2 } from "lucide-react";
+import { exportToExcel, formatCurrency, formatDateStr } from "@/lib/exportExcel";
+import { useToast } from "@/hooks/use-toast";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 export default function POList() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const [status, setStatus] = useState<any>("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data, isLoading } = useGetPurchaseOrders({
     status: status || undefined,
@@ -21,6 +29,31 @@ export default function POList() {
 
   const handleStatus = (val: string) => { setStatus(val); setPage(1); };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams({ page: "1", limit: "9999", ...(status ? { status } : {}) });
+      const res = await fetch(`${BASE}/api/purchase-orders?${params}`, { credentials: "include" });
+      const json = await res.json();
+      const rows = json.purchaseOrders ?? [];
+      exportToExcel(rows, [
+        { key: "poNumber", label: "No. PO" },
+        { key: "prNumber", label: "Ref. PR" },
+        { key: "supplier", label: "Supplier" },
+        { key: "createdAt", label: "Tanggal", format: formatDateStr },
+        { key: "createdByName", label: "Dibuat Oleh" },
+        { key: "status", label: "Status" },
+        { key: "totalAmount", label: "Total", format: formatCurrency },
+        { key: "notes", label: "Catatan" },
+      ], `List_PO_${new Date().toISOString().slice(0, 10)}`);
+      toast({ title: "Berhasil", description: `${rows.length} data PO diexport ke Excel.` });
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Gagal export data." });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -28,6 +61,10 @@ export default function POList() {
           <h2 className="text-2xl font-display font-bold text-foreground">Purchase Orders</h2>
           <p className="text-sm text-muted-foreground">Kelola daftar pemesanan ke supplier</p>
         </div>
+        <Button variant="outline" onClick={handleExport} disabled={isExporting} className="gap-2">
+          {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          Export Excel
+        </Button>
       </div>
 
       <Card className="border-0 shadow-sm">

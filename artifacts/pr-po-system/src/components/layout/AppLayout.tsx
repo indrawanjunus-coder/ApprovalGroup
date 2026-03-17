@@ -127,7 +127,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen flex bg-background">
       {/* Desktop Sidebar */}
-      <aside className="hidden md:flex w-64 flex-col fixed inset-y-0 z-50 border-r bg-card shadow-sm">
+      <aside data-print-hide className="hidden md:flex w-64 flex-col fixed inset-y-0 z-50 border-r bg-card shadow-sm">
         <div className="h-16 flex items-center px-6 border-b">
           <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="Logo" className="h-8 w-8 mr-3 rounded-md" />
           <span className="font-display font-bold text-lg tracking-tight text-foreground">ProcureFlow</span>
@@ -162,7 +162,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       {/* Main Content */}
       <main className="flex-1 md:pl-64 flex flex-col min-h-screen">
         {/* Header */}
-        <header className="h-16 sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b flex items-center justify-between px-4 md:px-8">
+        <header data-print-hide className="h-16 sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b flex items-center justify-between px-4 md:px-8">
           <div className="flex items-center md:hidden">
             <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="Logo" className="h-8 w-8 mr-3 rounded-md" />
             <span className="font-display font-bold text-lg">ProcureFlow</span>

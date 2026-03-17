@@ -2,11 +2,15 @@ import { useState } from "react";
 import { useGetAuditLogs } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ShieldAlert, Search } from "lucide-react";
+import { ShieldAlert, Search, Download, Loader2 } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 import { PaginationControls } from "@/components/PaginationControls";
+import { exportToExcel, formatDateStr } from "@/lib/exportExcel";
+import { useToast } from "@/hooks/use-toast";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 const ACTION_LABELS: Record<string, string> = {
   create_pr: "Buat PR",
@@ -43,18 +47,51 @@ const ACTION_COLORS: Record<string, string> = {
 };
 
 export default function AuditLogs() {
+  const { toast } = useToast();
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data, isLoading } = useGetAuditLogs({ page, limit });
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const res = await fetch(`${BASE}/api/audit-logs?page=1&limit=9999`, { credentials: "include" });
+      const json = await res.json();
+      const rows = json.auditLogs ?? [];
+      exportToExcel(rows.map((log: any) => ({
+        ...log,
+        actionLabel: ACTION_LABELS[log.action] || log.action,
+      })), [
+        { key: "createdAt", label: "Waktu", format: formatDateStr },
+        { key: "userName", label: "Pengguna" },
+        { key: "actionLabel", label: "Aksi" },
+        { key: "entityType", label: "Entitas" },
+        { key: "entityId", label: "ID Entitas" },
+        { key: "details", label: "Detail" },
+      ], `Audit_Log_${new Date().toISOString().slice(0, 10)}`);
+      toast({ title: "Berhasil", description: `${rows.length} data audit log diexport ke Excel.` });
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Gagal export data." });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-display font-bold text-foreground flex items-center gap-2">
-          <ShieldAlert className="h-6 w-6" /> Audit Log
-        </h2>
-        <p className="text-sm text-muted-foreground">Rekam jejak semua aktivitas sistem</p>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-display font-bold text-foreground flex items-center gap-2">
+            <ShieldAlert className="h-6 w-6" /> Audit Log
+          </h2>
+          <p className="text-sm text-muted-foreground">Rekam jejak semua aktivitas sistem</p>
+        </div>
+        <Button variant="outline" onClick={handleExport} disabled={isExporting} className="gap-2">
+          {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          Export Excel
+        </Button>
       </div>
 
       <Card className="border-0 shadow-sm">

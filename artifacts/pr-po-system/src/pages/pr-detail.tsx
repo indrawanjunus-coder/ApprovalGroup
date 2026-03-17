@@ -17,7 +17,7 @@ import { formatIDR, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Send, CheckCircle2, XCircle, PackageCheck, Receipt,
-  Paperclip, Plus, Trash2, Building, ExternalLink, ChevronDown, Loader2, CheckSquare
+  Paperclip, Plus, Trash2, Building, ExternalLink, ChevronDown, Loader2, CheckSquare, Printer
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -170,6 +170,9 @@ export default function PRDetail() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="shadow-sm" onClick={() => window.print()}>
+            <Printer className="mr-2 h-4 w-4" /> Cetak
+          </Button>
           {pr.status === "draft" && isRequester && (
             <Button onClick={() => submitPR({ id: prId })} disabled={isSubmitting} className="shadow-md shadow-primary/20">
               <Send className="mr-2 h-4 w-4" /> Kirim untuk Approval

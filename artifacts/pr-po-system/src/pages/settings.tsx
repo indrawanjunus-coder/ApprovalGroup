@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon } from "lucide-react";
 
 // Company Management
 function CompanyManager() {
@@ -871,6 +871,98 @@ function PrTypeManager() {
   );
 }
 
+// Appearance Settings Component
+function AppearanceSettings() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  const [imageUrl, setImageUrl] = useState("");
+  const [previewError, setPreviewError] = useState(false);
+
+  const { isLoading } = useQuery({
+    queryKey: ["/api/settings/appearance"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/settings/appearance`, { credentials: "include" });
+      if (!res.ok) throw new Error("Gagal memuat");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      setImageUrl(data.landingPageImageUrl || "");
+    },
+  } as any);
+
+  const { mutate: save, isPending: saving } = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${BASE}/api/settings/appearance`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ landingPageImageUrl: imageUrl }),
+      });
+      if (!res.ok) throw new Error("Gagal menyimpan");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Berhasil", description: "Tampilan halaman login berhasil diperbarui." });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/appearance"] });
+    },
+    onError: () => toast({ variant: "destructive", title: "Gagal", description: "Tidak dapat menyimpan tampilan." }),
+  });
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <ImageIcon className="h-5 w-5" /> Tampilan Halaman Login
+        </CardTitle>
+        <CardDescription>Ganti gambar background di sisi kiri halaman login</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Memuat...</div>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Label>URL Gambar Background</Label>
+              <Input
+                placeholder="https://example.com/gambar.jpg"
+                value={imageUrl}
+                onChange={e => { setImageUrl(e.target.value); setPreviewError(false); }}
+              />
+              <p className="text-xs text-muted-foreground">
+                Masukkan URL gambar (JPG, PNG, WebP). Kosongkan untuk menggunakan gambar default.
+              </p>
+            </div>
+            {imageUrl && !previewError && (
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Preview</Label>
+                <div className="relative h-48 rounded-xl overflow-hidden border bg-primary">
+                  <img
+                    src={imageUrl}
+                    alt="Preview"
+                    className="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-overlay"
+                    onError={() => setPreviewError(true)}
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/40 flex items-end p-4 text-white">
+                    <p className="font-bold text-lg">Enterprise Procurement Simplified.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {previewError && (
+              <p className="text-sm text-destructive">URL gambar tidak valid atau tidak dapat dimuat.</p>
+            )}
+            <Button onClick={() => save()} disabled={saving} className="shadow-md">
+              {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Simpan Tampilan
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // SMTP Settings Component
 function SmtpSettings() {
   const { toast } = useToast();
@@ -1101,6 +1193,7 @@ export default function Settings() {
       <CompanyManager />
       <CompanyLeaveManager />
       <ApprovalRuleManager />
+      <AppearanceSettings />
       <SmtpSettings />
     </div>
   );

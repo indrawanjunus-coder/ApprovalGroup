@@ -8,15 +8,21 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatIDR, formatDate } from "@/lib/utils";
 import { PaginationControls } from "@/components/PaginationControls";
-import { Search, Plus, Filter } from "lucide-react";
+import { Search, Plus, Filter, Download, Loader2 } from "lucide-react";
+import { exportToExcel, formatCurrency, formatDateStr } from "@/lib/exportExcel";
+import { useToast } from "@/hooks/use-toast";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 export default function PRList() {
   const [, setLocation] = useLocation();
   const { data: user } = useGetMe();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<any>("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data, isLoading } = useGetPurchaseRequests({
     search: search || undefined,
@@ -28,6 +34,32 @@ export default function PRList() {
   const handleSearch = (val: string) => { setSearch(val); setPage(1); };
   const handleStatus = (val: string) => { setStatus(val); setPage(1); };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams({ page: "1", limit: "9999", ...(search ? { search } : {}), ...(status ? { status } : {}) });
+      const res = await fetch(`${BASE}/api/purchase-requests?${params}`, { credentials: "include" });
+      const json = await res.json();
+      const rows = json.purchaseRequests ?? [];
+      exportToExcel(rows, [
+        { key: "prNumber", label: "No. PR" },
+        { key: "createdAt", label: "Tanggal", format: formatDateStr },
+        { key: "requesterName", label: "Pemohon" },
+        { key: "department", label: "Departemen" },
+        { key: "type", label: "Tipe" },
+        { key: "description", label: "Deskripsi" },
+        { key: "status", label: "Status" },
+        { key: "totalAmount", label: "Total", format: formatCurrency },
+        { key: "notes", label: "Catatan" },
+      ], `List_PR_${new Date().toISOString().slice(0, 10)}`);
+      toast({ title: "Berhasil", description: `${rows.length} data PR diexport ke Excel.` });
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Gagal export data." });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -35,9 +67,15 @@ export default function PRList() {
           <h2 className="text-2xl font-display font-bold text-foreground">Purchase Requests</h2>
           <p className="text-sm text-muted-foreground">Kelola semua daftar pengajuan pembelian</p>
         </div>
-        <Button onClick={() => setLocation("/purchase-requests/new")} className="rounded-xl shadow-md hover:-translate-y-0.5 transition-all">
-          <Plus className="mr-2 h-4 w-4" /> Buat PR Baru
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExport} disabled={isExporting} className="gap-2">
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Export Excel
+          </Button>
+          <Button onClick={() => setLocation("/purchase-requests/new")} className="rounded-xl shadow-md hover:-translate-y-0.5 transition-all">
+            <Plus className="mr-2 h-4 w-4" /> Buat PR Baru
+          </Button>
+        </div>
       </div>
 
       <Card className="border-0 shadow-sm">

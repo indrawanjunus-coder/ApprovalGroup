@@ -55,7 +55,7 @@ export default function PODetail() {
         </div>
 
         <div className="flex gap-2">
-          <Button variant="outline" className="shadow-sm">
+          <Button variant="outline" className="shadow-sm" onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" /> Cetak
           </Button>
           {po.status === 'draft' && user?.role === 'purchasing' && (

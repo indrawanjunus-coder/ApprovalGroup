@@ -7,9 +7,10 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useGetMe } from "@workspace/api-client-react";
 import { formatDate } from "@/lib/utils";
+import { exportToExcel, formatDateStr } from "@/lib/exportExcel";
 import {
   CalendarDays, Search, ChevronLeft, ChevronRight, Loader2,
-  Pencil, X, Check, Users, FileText, Filter, Building2,
+  Pencil, X, Check, Users, FileText, Filter, Building2, Download,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -150,6 +151,63 @@ export default function LeaveManagement() {
   }
 
   const isAdmin = me?.role === "admin";
+  const [isExportingReport, setIsExportingReport] = useState(false);
+  const [isExportingSaldo, setIsExportingSaldo] = useState(false);
+
+  const handleExportReport = async () => {
+    setIsExportingReport(true);
+    try {
+      const params = new URLSearchParams({ year: String(reportYear), limit: "9999", ...(reportDept ? { department: reportDept } : {}), ...(reportStatus ? { status: reportStatus } : {}) });
+      const res = await fetch(`${apiBase}/api/leave/report?${params}`, { credentials: "include" });
+      const json = await res.json();
+      const rows = json.data ?? [];
+      exportToExcel(rows, [
+        { key: "prNumber", label: "No. PR" },
+        { key: "leaveRequesterName", label: "Karyawan Cuti" },
+        { key: "department", label: "Departemen" },
+        { key: "companyName", label: "Perusahaan" },
+        { key: "leaveStartDate", label: "Tgl Mulai", format: formatDateStr },
+        { key: "leaveEndDate", label: "Tgl Akhir", format: formatDateStr },
+        { key: "days", label: "Jumlah Hari" },
+        { key: "status", label: "Status" },
+        { key: "description", label: "Deskripsi" },
+        { key: "requesterName", label: "Pengaju" },
+        { key: "createdAt", label: "Tgl Dibuat", format: formatDateStr },
+      ], `Laporan_Cuti_${reportYear}`);
+      toast({ title: "Berhasil", description: `${rows.length} data laporan cuti diexport.` });
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Gagal export data." });
+    } finally {
+      setIsExportingReport(false);
+    }
+  };
+
+  const handleExportSaldo = async () => {
+    setIsExportingSaldo(true);
+    try {
+      const params = new URLSearchParams({ year: String(saldoYear), limit: "9999", ...(saldoDept ? { department: saldoDept } : {}) });
+      const res = await fetch(`${apiBase}/api/leave/balances?${params}`, { credentials: "include" });
+      const json = await res.json();
+      const rows = json.data ?? [];
+      exportToExcel(rows, [
+        { key: "name", label: "Nama Karyawan" },
+        { key: "username", label: "Username" },
+        { key: "department", label: "Departemen" },
+        { key: "position", label: "Jabatan" },
+        { key: "companyName", label: "Perusahaan" },
+        { key: "year", label: "Tahun" },
+        { key: "balanceDays", label: "Jatah Cuti (Hari)" },
+        { key: "carriedOverDays", label: "Carry Over (Hari)" },
+        { key: "usedDays", label: "Terpakai (Hari)" },
+        { key: "availableDays", label: "Sisa Cuti (Hari)" },
+      ], `Saldo_Cuti_${saldoYear}`);
+      toast({ title: "Berhasil", description: `${rows.length} data saldo cuti diexport.` });
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Gagal export data." });
+    } finally {
+      setIsExportingSaldo(false);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -248,9 +306,15 @@ export default function LeaveManagement() {
             <CardHeader className="bg-slate-50/50 border-b py-3">
               <CardTitle className="text-base flex items-center justify-between">
                 <span>Daftar Pengajuan Cuti {reportYear}</span>
-                <span className="text-sm font-normal text-muted-foreground">
-                  {reportLoading ? "..." : `${reportData?.total ?? 0} data`}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-normal text-muted-foreground">
+                    {reportLoading ? "..." : `${reportData?.total ?? 0} data`}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={handleExportReport} disabled={isExportingReport} className="h-8 gap-1.5">
+                    {isExportingReport ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    Export Excel
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
@@ -459,9 +523,15 @@ export default function LeaveManagement() {
             <CardHeader className="bg-slate-50/50 border-b py-3">
               <CardTitle className="text-base flex items-center justify-between">
                 <span>Saldo Cuti Karyawan {saldoYear}</span>
-                <span className="text-sm font-normal text-muted-foreground">
-                  {saldoLoading ? "..." : `${saldoData?.total ?? 0} karyawan`}
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-normal text-muted-foreground">
+                    {saldoLoading ? "..." : `${saldoData?.total ?? 0} karyawan`}
+                  </span>
+                  <Button size="sm" variant="outline" onClick={handleExportSaldo} disabled={isExportingSaldo} className="h-8 gap-1.5">
+                    {isExportingSaldo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                    Export Excel
+                  </Button>
+                </div>
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useLogin } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -7,11 +7,23 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ArrowRight } from "lucide-react";
 
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [bgImageUrl, setBgImageUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${BASE}/api/settings/public`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.landingPageImageUrl) setBgImageUrl(data.landingPageImageUrl);
+      })
+      .catch(() => {});
+  }, []);
 
   const { mutate: login, isPending } = useLogin({
     mutation: {
@@ -23,7 +35,7 @@ export default function Login() {
         toast({ 
           variant: "destructive", 
           title: "Login Gagal", 
-          description: error.response?.data?.message || "Periksa kembali username dan password Anda." 
+          description: (error as any).response?.data?.message || "Periksa kembali username dan password Anda." 
         });
       }
     }
@@ -35,6 +47,8 @@ export default function Login() {
     login({ data: { username, password } });
   };
 
+  const effectiveBg = bgImageUrl || `${import.meta.env.BASE_URL}images/auth-bg.png`;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="max-w-5xl w-full grid grid-cols-1 md:grid-cols-2 bg-card rounded-3xl shadow-2xl overflow-hidden border border-slate-100">
@@ -42,9 +56,10 @@ export default function Login() {
         {/* Left Side - Visual */}
         <div className="relative hidden md:block bg-primary overflow-hidden">
           <img 
-            src={`${import.meta.env.BASE_URL}images/auth-bg.png`}
+            src={effectiveBg}
             alt="Corporate background" 
             className="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-overlay"
+            onError={(e) => { (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}images/auth-bg.png`; }}
           />
           <div className="absolute inset-0 bg-gradient-to-t from-primary/90 to-primary/40 p-12 flex flex-col justify-between text-white">
             <div>

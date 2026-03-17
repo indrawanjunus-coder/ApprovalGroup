@@ -6,6 +6,23 @@ import { requireAuth, requireRole } from "../lib/auth.js";
 import nodemailer from "nodemailer";
 
 const router = Router();
+
+// Public endpoint - no auth required (must be before requireAuth middleware)
+router.get("/public", async (req, res) => {
+  try {
+    const [landingPageImageUrl, landingPageStyle] = await Promise.all([
+      getSettingValue("landing_page_image_url"),
+      getSettingValue("landing_page_style"),
+    ]);
+    res.json({
+      landingPageImageUrl: landingPageImageUrl || null,
+      landingPageStyle: landingPageStyle || "image",
+    });
+  } catch {
+    res.json({ landingPageImageUrl: null, landingPageStyle: "image" });
+  }
+});
+
 router.use(requireAuth);
 
 const DEFAULT_SETTINGS = {
@@ -212,6 +229,30 @@ router.put("/company-leave/:companyId", requireRole("admin"), async (req, res) =
       settingId: result.id,
     });
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// Appearance settings
+router.get("/appearance", requireRole("admin"), async (req, res) => {
+  try {
+    const [landingPageImageUrl, landingPageStyle] = await Promise.all([
+      getSettingValue("landing_page_image_url"),
+      getSettingValue("landing_page_style"),
+    ]);
+    res.json({ landingPageImageUrl: landingPageImageUrl || "", landingPageStyle: landingPageStyle || "image" });
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
+router.put("/appearance", requireRole("admin"), async (req, res) => {
+  const { landingPageImageUrl, landingPageStyle } = req.body;
+  try {
+    if (landingPageImageUrl !== undefined) await upsertSetting("landing_page_image_url", landingPageImageUrl || "");
+    if (landingPageStyle !== undefined) await upsertSetting("landing_page_style", landingPageStyle || "image");
+    const [url, style] = await Promise.all([
+      getSettingValue("landing_page_image_url"),
+      getSettingValue("landing_page_style"),
+    ]);
+    res.json({ landingPageImageUrl: url || "", landingPageStyle: style || "image" });
+  } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
 export default router;
