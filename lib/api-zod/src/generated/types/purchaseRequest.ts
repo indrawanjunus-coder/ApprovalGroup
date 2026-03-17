@@ -7,6 +7,7 @@
  */
 import type { Approval } from "./approval";
 import type { PrItem } from "./prItem";
+import type { PrVendorAttachment } from "./prVendorAttachment";
 import type { PurchaseRequestStatus } from "./purchaseRequestStatus";
 import type { PurchaseRequestType } from "./purchaseRequestType";
 
@@ -26,12 +27,19 @@ export interface PurchaseRequest {
   attachmentUrl?: string | null;
   items: PrItem[];
   approvals: Approval[];
+  vendorAttachments: PrVendorAttachment[];
   currentApprovalLevel?: number | null;
   notes?: string | null;
   leaveStartDate?: string | null;
   leaveEndDate?: string | null;
   leaveRequesterId?: number | null;
   leaveRequesterName?: string | null;
+  selectedVendorId?: number | null;
+  selectedVendorName?: string | null;
+  vendorFinalQty?: number | null;
+  vendorFinalAmount?: number | null;
+  vendorSelectedByName?: string | null;
+  vendorSelectedAt?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

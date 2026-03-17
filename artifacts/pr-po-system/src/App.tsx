@@ -15,6 +15,7 @@ import POCreate from "./pages/po-create";
 import PODetail from "./pages/po-detail";
 import UserList from "./pages/user-list";
 import Settings from "./pages/settings";
+import Receiving from "./pages/receiving";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ function Router() {
       <ProtectedRoute path="/purchase-orders/new" component={POCreate} />
       <ProtectedRoute path="/purchase-orders/:id" component={PODetail} />
       
+      <ProtectedRoute path="/receiving" component={Receiving} />
       <ProtectedRoute path="/users" component={UserList} />
       <ProtectedRoute path="/settings" component={Settings} />
       

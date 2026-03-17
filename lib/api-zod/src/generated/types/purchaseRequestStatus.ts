@@ -13,6 +13,7 @@ export const PurchaseRequestStatus = {
   draft: "draft",
   waiting_approval: "waiting_approval",
   approved: "approved",
+  vendor_selected: "vendor_selected",
   rejected: "rejected",
   completed: "completed",
 } as const;

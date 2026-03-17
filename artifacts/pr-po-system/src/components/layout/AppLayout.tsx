@@ -1,21 +1,17 @@
 import { ReactNode, useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useGetMe, useLogout, useGetNotifications } from "@workspace/api-client-react";
+import { useGetMe, useLogout, useGetNotifications, useGetReceivingList, useGetSettings } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { 
-  LayoutDashboard, FileText, CheckSquare, ShoppingCart, 
-  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert
+import {
+  LayoutDashboard, FileText, CheckSquare, ShoppingCart,
+  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -23,27 +19,17 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const { data: user, isLoading, error } = useGetMe({
-    query: { retry: false, refetchOnWindowFocus: false }
-  });
-
-  const { data: notifications } = useGetNotifications({ unread: true }, {
-    query: { enabled: !!user }
-  });
+  const { data: user, isLoading, error } = useGetMe({ query: { retry: false, refetchOnWindowFocus: false } });
+  const { data: notifications } = useGetNotifications({ unread: true }, { query: { enabled: !!user } });
+  const { data: receivingData } = useGetReceivingList({ query: { enabled: !!user } });
+  const { data: settings } = useGetSettings({ query: { enabled: !!user } });
 
   const { mutate: logout } = useLogout({
-    mutation: {
-      onSuccess: () => {
-        queryClient.clear();
-        setLocation("/login");
-      }
-    }
+    mutation: { onSuccess: () => { queryClient.clear(); setLocation("/login"); } }
   });
 
   useEffect(() => {
-    if (error) {
-      setLocation("/login");
-    }
+    if (error) setLocation("/login");
   }, [error, setLocation]);
 
   if (isLoading) {
@@ -59,15 +45,38 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   if (!user) return null;
 
+  const receivingCount = receivingData?.total || 0;
+
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "user", "approver", "purchasing"] },
     { name: "Purchase Request", href: "/purchase-requests", icon: FileText, roles: ["admin", "user", "approver", "purchasing"] },
-    { name: "Approval", href: "/approvals", icon: CheckSquare, roles: ["admin", "approver"] },
+    { name: "Approval", href: "/approvals", icon: CheckSquare, roles: ["admin", "approver"], badge: null },
     { name: "Purchase Order", href: "/purchase-orders", icon: ShoppingCart, roles: ["admin", "purchasing"] },
+    { name: "Penerimaan Barang", href: "/receiving", icon: PackageCheck, roles: ["admin", "user", "purchasing"], badge: receivingCount > 0 ? receivingCount : null },
     { name: "User Management", href: "/users", icon: Users, roles: ["admin"] },
     { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"] },
     { name: "Settings", href: "/settings", icon: Settings, roles: ["admin"] },
   ].filter(item => item.roles.includes(user.role));
+
+  const NavLink = ({ item, mobile = false, onClick }: { item: typeof navItems[0], mobile?: boolean, onClick?: () => void }) => {
+    const isActive = location.startsWith(item.href);
+    return (
+      <Link href={item.href} onClick={onClick}
+        className={cn(
+          "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 relative",
+          mobile ? "text-base" : "",
+          isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-slate-100 hover:text-foreground"
+        )}>
+        <item.icon className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground")} />
+        {item.name}
+        {item.badge ? (
+          <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-teal-500 text-[10px] font-bold text-white px-1">
+            {item.badge}
+          </span>
+        ) : null}
+      </Link>
+    );
+  };
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -77,25 +86,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="Logo" className="h-8 w-8 mr-3 rounded-md" />
           <span className="font-display font-bold text-lg tracking-tight text-foreground">ProcureFlow</span>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto py-6 px-4 space-y-1 table-scrollbar">
           <p className="px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-4">Menu Utama</p>
-          {navItems.map((item) => {
-            const isActive = location.startsWith(item.href);
-            return (
-              <Link key={item.href} href={item.href} 
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
-                  isActive 
-                    ? "bg-primary/10 text-primary" 
-                    : "text-muted-foreground hover:bg-slate-100 hover:text-foreground"
-                )}
-              >
-                <item.icon className={cn("h-5 w-5", isActive ? "text-primary" : "text-muted-foreground")} />
-                {item.name}
-              </Link>
-            );
-          })}
+          {navItems.map(item => <NavLink key={item.href} item={item} />)}
         </div>
 
         <div className="p-4 border-t">
@@ -122,10 +116,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="Logo" className="h-8 w-8 mr-3 rounded-md" />
             <span className="font-display font-bold text-lg">ProcureFlow</span>
           </div>
-          
           <div className="hidden md:flex items-center">
             <h1 className="text-xl font-display font-bold text-foreground capitalize">
-              {location.split('/')[1]?.replace('-', ' ') || 'Dashboard'}
+              {location.split("/")[1]?.replace(/-/g, " ") || "Dashboard"}
             </h1>
           </div>
 
@@ -163,24 +156,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        {/* Mobile Menu Dropdown */}
+        {/* Mobile Menu */}
         {mobileMenuOpen && (
           <div className="md:hidden fixed inset-x-0 top-16 bottom-16 z-40 bg-background border-b overflow-y-auto animate-in slide-in-from-top-2">
             <div className="p-4 space-y-2">
-              {navItems.map((item) => {
-                const isActive = location.startsWith(item.href);
-                return (
-                  <Link key={item.href} href={item.href} onClick={() => setMobileMenuOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all",
-                      isActive ? "bg-primary/10 text-primary" : "text-muted-foreground"
-                    )}
-                  >
-                    <item.icon className="h-5 w-5" />
-                    {item.name}
-                  </Link>
-                );
-              })}
+              {navItems.map(item => <NavLink key={item.href} item={item} mobile onClick={() => setMobileMenuOpen(false)} />)}
               <div className="border-t pt-4 mt-4">
                 <Button variant="outline" className="w-full justify-start text-destructive border-destructive/20 hover:bg-destructive/10" onClick={() => logout()}>
                   <LogOut className="h-4 w-4 mr-2" /> Logout
@@ -190,7 +170,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        {/* Page Content */}
         <div className="flex-1 p-4 md:p-8 overflow-x-hidden">
           <div className="mx-auto max-w-7xl animate-in fade-in slide-in-from-bottom-4 duration-500">
             {children}
@@ -202,10 +181,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
           {navItems.slice(0, 4).map((item) => {
             const isActive = location.startsWith(item.href);
             return (
-              <Link key={item.href} href={item.href} className="flex flex-col items-center justify-center w-full h-full space-y-1">
+              <Link key={item.href} href={item.href} className="flex flex-col items-center justify-center w-full h-full space-y-1 relative">
                 <item.icon className={cn("h-5 w-5 transition-transform duration-200", isActive ? "text-primary scale-110" : "text-muted-foreground")} />
+                {item.badge ? (
+                  <span className="absolute top-1 right-2 flex h-4 w-4 items-center justify-center rounded-full bg-teal-500 text-[9px] font-bold text-white">
+                    {item.badge}
+                  </span>
+                ) : null}
                 <span className={cn("text-[10px] font-medium", isActive ? "text-primary" : "text-muted-foreground")}>
-                  {item.name.split(' ')[0]}
+                  {item.name.split(" ")[0]}
                 </span>
               </Link>
             );

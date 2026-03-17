@@ -457,6 +457,108 @@ paths:
               schema:
                 $ref: "#/components/schemas/PurchaseRequest"
 
+  /purchase-requests/{id}/vendor-attachments:
+    get:
+      operationId: getPRVendorAttachments
+      tags: [purchase-requests]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PrVendorAttachment"
+
+    post:
+      operationId: addPRVendorAttachment
+      tags: [purchase-requests]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddVendorAttachmentRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PrVendorAttachment"
+
+  /purchase-requests/{id}/vendor-attachments/{attachmentId}:
+    delete:
+      operationId: deletePRVendorAttachment
+      tags: [purchase-requests]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: attachmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+
+  /purchase-requests/{id}/select-vendor:
+    post:
+      operationId: selectPRVendor
+      tags: [purchase-requests]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelectVendorRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+
+  /receiving:
+    get:
+      operationId: getReceivingList
+      tags: [purchase-requests]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceivingListResponse"
+
   /approvals:
     get:
       operationId: getApprovals
@@ -1084,6 +1186,103 @@ components:
           type: number
       required: [name, qty, unit, estimatedPrice]
 
+    PrVendorAttachment:
+      type: object
+      properties:
+        id:
+          type: integer
+        prId:
+          type: integer
+        vendorName:
+          type: string
+        fileUrl:
+          type: string
+        quotedPrice:
+          type: number
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        uploadedBy:
+          type: integer
+        uploaderName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, prId, vendorName, fileUrl, uploadedBy, uploaderName, createdAt]
+
+    AddVendorAttachmentRequest:
+      type: object
+      properties:
+        vendorName:
+          type: string
+        fileUrl:
+          type: string
+        quotedPrice:
+          type: number
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+      required: [vendorName, fileUrl]
+
+    SelectVendorRequest:
+      type: object
+      properties:
+        vendorAttachmentId:
+          type: integer
+        finalQty:
+          type: number
+          nullable: true
+        finalAmount:
+          type: number
+      required: [vendorAttachmentId, finalAmount]
+
+    ReceivingItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [pr, po]
+        prId:
+          type: integer
+        prNumber:
+          type: string
+        prDescription:
+          type: string
+        requesterName:
+          type: string
+        department:
+          type: string
+        vendorName:
+          type: string
+          nullable: true
+        totalAmount:
+          type: number
+        status:
+          type: string
+        poId:
+          type: integer
+          nullable: true
+        poNumber:
+          type: string
+          nullable: true
+      required: [id, type, prId, prNumber, prDescription, requesterName, department, totalAmount, status]
+
+    ReceivingListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReceivingItem"
+        total:
+          type: integer
+      required: [items, total]
+
     PurchaseRequest:
       type: object
       properties:
@@ -1113,7 +1312,7 @@ components:
           type: string
         status:
           type: string
-          enum: [draft, waiting_approval, approved, rejected, completed]
+          enum: [draft, waiting_approval, approved, vendor_selected, rejected, completed]
         totalAmount:
           type: number
         attachmentUrl:
@@ -1127,6 +1326,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Approval"
+        vendorAttachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/PrVendorAttachment"
         currentApprovalLevel:
           type: integer
           nullable: true
@@ -1145,13 +1348,31 @@ components:
         leaveRequesterName:
           type: string
           nullable: true
+        selectedVendorId:
+          type: integer
+          nullable: true
+        selectedVendorName:
+          type: string
+          nullable: true
+        vendorFinalQty:
+          type: number
+          nullable: true
+        vendorFinalAmount:
+          type: number
+          nullable: true
+        vendorSelectedByName:
+          type: string
+          nullable: true
+        vendorSelectedAt:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-      required: [id, prNumber, date, requesterId, requesterName, department, type, description, status, totalAmount, items, approvals, createdAt, updatedAt]
+      required: [id, prNumber, date, requesterId, requesterName, department, type, description, status, totalAmount, items, approvals, vendorAttachments, createdAt, updatedAt]
 
     PurchaseRequestListResponse:
       type: object

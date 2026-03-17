@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.2.0
  */
 
+export * from "./addVendorAttachmentRequest";
 export * from "./approval";
 export * from "./approvalActionRequest";
 export * from "./approvalListResponse";
@@ -46,6 +47,7 @@ export * from "./poItem";
 export * from "./poItemInput";
 export * from "./prItem";
 export * from "./prItemInput";
+export * from "./prVendorAttachment";
 export * from "./purchaseOrder";
 export * from "./purchaseOrderListResponse";
 export * from "./purchaseOrderStatus";
@@ -54,6 +56,10 @@ export * from "./purchaseRequestListResponse";
 export * from "./purchaseRequestStatus";
 export * from "./purchaseRequestType";
 export * from "./receivePRRequest";
+export * from "./receivingItem";
+export * from "./receivingItemType";
+export * from "./receivingListResponse";
+export * from "./selectVendorRequest";
 export * from "./settings";
 export * from "./statusCount";
 export * from "./successResponse";

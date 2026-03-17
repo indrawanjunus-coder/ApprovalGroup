@@ -155,6 +155,59 @@ export interface PrItemInput {
   estimatedPrice: number;
 }
 
+export interface PrVendorAttachment {
+  id: number;
+  prId: number;
+  vendorName: string;
+  fileUrl: string;
+  quotedPrice?: number | null;
+  notes?: string | null;
+  uploadedBy: number;
+  uploaderName: string;
+  createdAt: string;
+}
+
+export interface AddVendorAttachmentRequest {
+  vendorName: string;
+  fileUrl: string;
+  quotedPrice?: number | null;
+  notes?: string | null;
+}
+
+export interface SelectVendorRequest {
+  vendorAttachmentId: number;
+  finalQty?: number | null;
+  finalAmount: number;
+}
+
+export type ReceivingItemType =
+  (typeof ReceivingItemType)[keyof typeof ReceivingItemType];
+
+export const ReceivingItemType = {
+  pr: "pr",
+  po: "po",
+} as const;
+
+export interface ReceivingItem {
+  id: number;
+  type: ReceivingItemType;
+  prId: number;
+  prNumber: string;
+  prDescription: string;
+  requesterName: string;
+  department: string;
+  vendorName?: string | null;
+  totalAmount: number;
+  status: string;
+  poId?: number | null;
+  poNumber?: string | null;
+}
+
+export interface ReceivingListResponse {
+  items: ReceivingItem[];
+  total: number;
+}
+
 export type PurchaseRequestType =
   (typeof PurchaseRequestType)[keyof typeof PurchaseRequestType];
 
@@ -171,6 +224,7 @@ export const PurchaseRequestStatus = {
   draft: "draft",
   waiting_approval: "waiting_approval",
   approved: "approved",
+  vendor_selected: "vendor_selected",
   rejected: "rejected",
   completed: "completed",
 } as const;
@@ -212,12 +266,19 @@ export interface PurchaseRequest {
   attachmentUrl?: string | null;
   items: PrItem[];
   approvals: Approval[];
+  vendorAttachments: PrVendorAttachment[];
   currentApprovalLevel?: number | null;
   notes?: string | null;
   leaveStartDate?: string | null;
   leaveEndDate?: string | null;
   leaveRequesterId?: number | null;
   leaveRequesterName?: string | null;
+  selectedVendorId?: number | null;
+  selectedVendorName?: string | null;
+  vendorFinalQty?: number | null;
+  vendorFinalAmount?: number | null;
+  vendorSelectedByName?: string | null;
+  vendorSelectedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

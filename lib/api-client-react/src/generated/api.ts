@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  AddVendorAttachmentRequest,
   Approval,
   ApprovalActionRequest,
   ApprovalListResponse,
@@ -41,11 +42,14 @@ import type {
   LoginResponse,
   Notification,
   NotificationListResponse,
+  PrVendorAttachment,
   PurchaseOrder,
   PurchaseOrderListResponse,
   PurchaseRequest,
   PurchaseRequestListResponse,
   ReceivePRRequest,
+  ReceivingListResponse,
+  SelectVendorRequest,
   Settings,
   SuccessResponse,
   UpdatePurchaseOrderRequest,
@@ -1726,6 +1730,403 @@ export const useReceivePurchaseRequest = <
 > => {
   return useMutation(getReceivePurchaseRequestMutationOptions(options));
 };
+
+export const getGetPRVendorAttachmentsUrl = (id: number) => {
+  return `/api/purchase-requests/${id}/vendor-attachments`;
+};
+
+export const getPRVendorAttachments = async (
+  id: number,
+  options?: RequestInit,
+): Promise<PrVendorAttachment[]> => {
+  return customFetch<PrVendorAttachment[]>(getGetPRVendorAttachmentsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPRVendorAttachmentsQueryKey = (id: number) => {
+  return [`/api/purchase-requests/${id}/vendor-attachments`] as const;
+};
+
+export const getGetPRVendorAttachmentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPRVendorAttachments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPRVendorAttachments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPRVendorAttachmentsQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPRVendorAttachments>>
+  > = ({ signal }) => getPRVendorAttachments(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPRVendorAttachments>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPRVendorAttachmentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPRVendorAttachments>>
+>;
+export type GetPRVendorAttachmentsQueryError = ErrorType<unknown>;
+
+export function useGetPRVendorAttachments<
+  TData = Awaited<ReturnType<typeof getPRVendorAttachments>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPRVendorAttachments>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPRVendorAttachmentsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getAddPRVendorAttachmentUrl = (id: number) => {
+  return `/api/purchase-requests/${id}/vendor-attachments`;
+};
+
+export const addPRVendorAttachment = async (
+  id: number,
+  addVendorAttachmentRequest: AddVendorAttachmentRequest,
+  options?: RequestInit,
+): Promise<PrVendorAttachment> => {
+  return customFetch<PrVendorAttachment>(getAddPRVendorAttachmentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(addVendorAttachmentRequest),
+  });
+};
+
+export const getAddPRVendorAttachmentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addPRVendorAttachment>>,
+    TError,
+    { id: number; data: BodyType<AddVendorAttachmentRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addPRVendorAttachment>>,
+  TError,
+  { id: number; data: BodyType<AddVendorAttachmentRequest> },
+  TContext
+> => {
+  const mutationKey = ["addPRVendorAttachment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addPRVendorAttachment>>,
+    { id: number; data: BodyType<AddVendorAttachmentRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return addPRVendorAttachment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddPRVendorAttachmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addPRVendorAttachment>>
+>;
+export type AddPRVendorAttachmentMutationBody =
+  BodyType<AddVendorAttachmentRequest>;
+export type AddPRVendorAttachmentMutationError = ErrorType<unknown>;
+
+export const useAddPRVendorAttachment = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addPRVendorAttachment>>,
+    TError,
+    { id: number; data: BodyType<AddVendorAttachmentRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addPRVendorAttachment>>,
+  TError,
+  { id: number; data: BodyType<AddVendorAttachmentRequest> },
+  TContext
+> => {
+  return useMutation(getAddPRVendorAttachmentMutationOptions(options));
+};
+
+export const getDeletePRVendorAttachmentUrl = (
+  id: number,
+  attachmentId: number,
+) => {
+  return `/api/purchase-requests/${id}/vendor-attachments/${attachmentId}`;
+};
+
+export const deletePRVendorAttachment = async (
+  id: number,
+  attachmentId: number,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(
+    getDeletePRVendorAttachmentUrl(id, attachmentId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeletePRVendorAttachmentMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePRVendorAttachment>>,
+    TError,
+    { id: number; attachmentId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePRVendorAttachment>>,
+  TError,
+  { id: number; attachmentId: number },
+  TContext
+> => {
+  const mutationKey = ["deletePRVendorAttachment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deletePRVendorAttachment>>,
+    { id: number; attachmentId: number }
+  > = (props) => {
+    const { id, attachmentId } = props ?? {};
+
+    return deletePRVendorAttachment(id, attachmentId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeletePRVendorAttachmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deletePRVendorAttachment>>
+>;
+
+export type DeletePRVendorAttachmentMutationError = ErrorType<unknown>;
+
+export const useDeletePRVendorAttachment = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePRVendorAttachment>>,
+    TError,
+    { id: number; attachmentId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deletePRVendorAttachment>>,
+  TError,
+  { id: number; attachmentId: number },
+  TContext
+> => {
+  return useMutation(getDeletePRVendorAttachmentMutationOptions(options));
+};
+
+export const getSelectPRVendorUrl = (id: number) => {
+  return `/api/purchase-requests/${id}/select-vendor`;
+};
+
+export const selectPRVendor = async (
+  id: number,
+  selectVendorRequest: SelectVendorRequest,
+  options?: RequestInit,
+): Promise<PurchaseRequest> => {
+  return customFetch<PurchaseRequest>(getSelectPRVendorUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(selectVendorRequest),
+  });
+};
+
+export const getSelectPRVendorMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof selectPRVendor>>,
+    TError,
+    { id: number; data: BodyType<SelectVendorRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof selectPRVendor>>,
+  TError,
+  { id: number; data: BodyType<SelectVendorRequest> },
+  TContext
+> => {
+  const mutationKey = ["selectPRVendor"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof selectPRVendor>>,
+    { id: number; data: BodyType<SelectVendorRequest> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return selectPRVendor(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SelectPRVendorMutationResult = NonNullable<
+  Awaited<ReturnType<typeof selectPRVendor>>
+>;
+export type SelectPRVendorMutationBody = BodyType<SelectVendorRequest>;
+export type SelectPRVendorMutationError = ErrorType<unknown>;
+
+export const useSelectPRVendor = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof selectPRVendor>>,
+    TError,
+    { id: number; data: BodyType<SelectVendorRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof selectPRVendor>>,
+  TError,
+  { id: number; data: BodyType<SelectVendorRequest> },
+  TContext
+> => {
+  return useMutation(getSelectPRVendorMutationOptions(options));
+};
+
+export const getGetReceivingListUrl = () => {
+  return `/api/receiving`;
+};
+
+export const getReceivingList = async (
+  options?: RequestInit,
+): Promise<ReceivingListResponse> => {
+  return customFetch<ReceivingListResponse>(getGetReceivingListUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetReceivingListQueryKey = () => {
+  return [`/api/receiving`] as const;
+};
+
+export const getGetReceivingListQueryOptions = <
+  TData = Awaited<ReturnType<typeof getReceivingList>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getReceivingList>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetReceivingListQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getReceivingList>>
+  > = ({ signal }) => getReceivingList({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getReceivingList>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetReceivingListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getReceivingList>>
+>;
+export type GetReceivingListQueryError = ErrorType<unknown>;
+
+export function useGetReceivingList<
+  TData = Awaited<ReturnType<typeof getReceivingList>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getReceivingList>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetReceivingListQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getGetApprovalsUrl = () => {
   return `/api/approvals`;

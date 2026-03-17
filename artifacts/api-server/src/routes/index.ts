@@ -11,6 +11,7 @@ import notificationsRouter from "./notifications.js";
 import auditLogsRouter from "./audit-logs.js";
 import settingsRouter from "./settings.js";
 import dashboardRouter from "./dashboard.js";
+import receivingRouter from "./receiving.js";
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use("/notifications", notificationsRouter);
 router.use("/audit-logs", auditLogsRouter);
 router.use("/settings", settingsRouter);
 router.use("/dashboard", dashboardRouter);
+router.use("/receiving", receivingRouter);
 
 export default router;

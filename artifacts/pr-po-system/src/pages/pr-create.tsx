@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useCreatePurchaseRequest, useGetCompanies, useGetUsers } from "@workspace/api-client-react";
+import { useCreatePurchaseRequest, useGetCompanies, useGetUsers, useGetMe } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,7 @@ export default function PRCreate() {
   const [leaveEndDate, setLeaveEndDate] = useState("");
   const [leaveRequesterId, setLeaveRequesterId] = useState<number | "">("");
 
+  const { data: me } = useGetMe();
   const { data: companiesData } = useGetCompanies();
   const { data: usersData } = useGetUsers({ limit: 200 });
 
@@ -94,7 +95,11 @@ export default function PRCreate() {
   };
 
   const companies = companiesData || [];
-  const users = usersData?.users || [];
+  const allUsers = usersData?.users || [];
+  // For leave requester: only show users from the same department as logged-in user
+  const sameDeptUsers = me?.department
+    ? allUsers.filter((u: any) => u.department === me.department && u.id !== me.id)
+    : allUsers;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -216,8 +221,8 @@ export default function PRCreate() {
                   onChange={(e) => setLeaveRequesterId(e.target.value ? Number(e.target.value) : "")}
                 >
                   <option value="">-- Saya sendiri (default) --</option>
-                  {users.map((u: any) => (
-                    <option key={u.id} value={u.id}>{u.name} — {u.department}</option>
+                  {sameDeptUsers.map((u: any) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground">Biarkan kosong jika pengaju = yang cuti</p>
