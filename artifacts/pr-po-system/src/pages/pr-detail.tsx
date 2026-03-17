@@ -72,7 +72,14 @@ export default function PRDetail() {
   };
 
   const { mutate: submitPR, isPending: isSubmitting } = useSubmitPurchaseRequest({
-    mutation: { onSuccess: () => { toast({ title: "PR dikirim untuk approval" }); invalidate(); } }
+    mutation: {
+      onSuccess: () => { toast({ title: "PR dikirim untuk approval" }); invalidate(); },
+      onError: (e: any) => toast({
+        variant: "destructive",
+        title: "Gagal Mengirim PR",
+        description: e?.response?.data?.message || e?.message || "Terjadi kesalahan. Hubungi Admin.",
+      }),
+    }
   });
   const { mutate: approve, isPending: isApproving } = useApprovePR({
     mutation: {

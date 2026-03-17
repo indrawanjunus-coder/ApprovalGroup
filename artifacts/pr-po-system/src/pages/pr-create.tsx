@@ -20,6 +20,7 @@ export default function PRCreate() {
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [companyId, setCompanyId] = useState<number | "">("");
+  const [department, setDepartment] = useState("");
   const [items, setItems] = useState([
     { name: "", description: "", qty: 1, unit: "Pcs", estimatedPrice: 0 }
   ]);
@@ -61,6 +62,13 @@ export default function PRCreate() {
       }
     }
   }, [activeTypes.length]);
+
+  // Pre-populate department from user profile
+  useEffect(() => {
+    if (me?.department && !department) {
+      setDepartment(me.department);
+    }
+  }, [me?.department]);
 
   // Fetch leave balance when type is "leave"
   const leaveTargetUserId = leaveRequesterId || me?.id;
@@ -117,6 +125,10 @@ export default function PRCreate() {
       toast({ variant: "destructive", title: "Validasi", description: "Deskripsi wajib diisi." });
       return;
     }
+    if (!department) {
+      toast({ variant: "destructive", title: "Validasi", description: "Departemen wajib dipilih." });
+      return;
+    }
     if (type === "leave") {
       if (!leaveStartDate || !leaveEndDate) {
         toast({ variant: "destructive", title: "Validasi", description: "Tanggal cuti wajib diisi." });
@@ -131,6 +143,7 @@ export default function PRCreate() {
           type,
           description,
           notes,
+          department,
           companyId: companyId || null,
           leaveStartDate,
           leaveEndDate,
@@ -142,7 +155,7 @@ export default function PRCreate() {
         toast({ variant: "destructive", title: "Validasi", description: "Lengkapi semua item." });
         return;
       }
-      createPR({ data: { type, description, notes, companyId: companyId || null, items } as any });
+      createPR({ data: { type, description, notes, department, companyId: companyId || null, items } as any });
     }
   };
 
@@ -205,6 +218,30 @@ export default function PRCreate() {
                 </select>
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label>Departemen <span className="text-destructive">*</span></Label>
+              {activeDepts.length > 0 ? (
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  required
+                >
+                  <option value="">-- Pilih Departemen --</option>
+                  {activeDepts.map((d: any) => (
+                    <option key={d.name} value={d.name}>{d.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <Input
+                  placeholder="Masukkan nama departemen"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  required
+                />
+              )}
+            </div>
 
             <div className="space-y-2 md:col-span-2">
               <Label>Deskripsi / Tujuan <span className="text-destructive">*</span></Label>
