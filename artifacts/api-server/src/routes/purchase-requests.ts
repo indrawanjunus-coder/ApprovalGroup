@@ -291,15 +291,16 @@ router.get("/:id", async (req, res) => {
     const uploaderIds = [...new Set(vendorAttachments.map((v: any) => v.uploadedBy))];
     const allIds = [...new Set([...approverIds, ...uploaderIds])];
     const allUsers = allIds.length > 0
-      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, allIds))
+      ? await db.select({ id: usersTable.id, name: usersTable.name, signature: usersTable.signature }).from(usersTable).where(inArray(usersTable.id, allIds))
       : [];
     const userMap = new Map(allUsers.map(u => [u.id, u.name]));
+    const signatureMap = new Map(allUsers.map(u => [u.id, u.signature]));
     const enrichedVendors = vendorAttachments.map((v: any) => ({
       ...v,
       quotedPrice: v.quotedPrice ? parseFloat(v.quotedPrice) : null,
       uploaderName: userMap.get(v.uploadedBy) || "Unknown",
     }));
-    const approvalsWithNames = approvalsData.map(a => ({ ...a, approverName: userMap.get(a.approverId) || "Unknown" }));
+    const approvalsWithNames = approvalsData.map(a => ({ ...a, approverName: userMap.get(a.approverId) || "Unknown", approverSignature: signatureMap.get(a.approverId) || null }));
     res.json(await buildFullPR({ ...pr, requesterName: requester[0]?.name || "Unknown" }, items, approvalsWithNames, enrichedVendors));
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });

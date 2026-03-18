@@ -4,7 +4,7 @@ import { useGetMe, useLogout, useGetNotifications, useGetReceivingList, useGetSe
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, FileText, CheckSquare, ShoppingCart,
-  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound, Wallet, CalendarDays, History
+  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound, Wallet, CalendarDays, History, UserCircle
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -152,6 +152,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <p className="text-xs text-muted-foreground capitalize truncate">{user.role}</p>
             </div>
             <div className="flex gap-1">
+              <Link href="/profile">
+                <button className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg transition-colors" title="Profil & Tanda Tangan">
+                  <UserCircle className="h-4 w-4" />
+                </button>
+              </Link>
               <button onClick={() => setChangePasswordOpen(true)} className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/5 rounded-lg transition-colors" title="Ubah Password">
                 <KeyRound className="h-4 w-4" />
               </button>

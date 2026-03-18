@@ -281,6 +281,7 @@ export default function PODetail() {
                   <th style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>Status</th>
                   <th style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>Tanggal</th>
                   <th style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "left" }}>Catatan</th>
+                  <th style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center", width: "15%" }}>Tanda Tangan</th>
                 </tr>
               </thead>
               <tbody>
@@ -293,6 +294,11 @@ export default function PODetail() {
                     </td>
                     <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center", color: "#555" }}>{app.actionAt ? new Date(app.actionAt).toLocaleDateString("id-ID") : "—"}</td>
                     <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", color: "#555" }}>{app.notes || "—"}</td>
+                    <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", height: 28, textAlign: "center" }}>
+                      {app.status === "approved" && app.approverSignature
+                        ? <img src={app.approverSignature} alt="ttd" style={{ maxHeight: 24, maxWidth: 80, objectFit: "contain" }} />
+                        : null}
+                    </td>
                   </tr>
                 ))}
               </tbody>

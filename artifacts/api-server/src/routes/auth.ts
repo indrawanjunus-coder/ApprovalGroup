@@ -52,6 +52,21 @@ router.get("/me", requireAuth, async (req, res) => {
   res.json({ ...userWithoutPassword, superiorName });
 });
 
+router.put("/me/signature", requireAuth, async (req, res) => {
+  const user = req.user!;
+  const { signature } = req.body;
+  if (typeof signature !== "string" && signature !== null) {
+    res.status(400).json({ error: "signature harus berupa string base64 atau null" }); return;
+  }
+  try {
+    await db.update(usersTable).set({ signature: signature || null, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.post("/change-password", requireAuth, async (req, res) => {
   const user = req.user!;
   const { currentPassword, newPassword } = req.body;

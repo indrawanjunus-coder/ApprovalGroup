@@ -142,10 +142,11 @@ router.get("/:id", async (req, res) => {
     }
     const approverIds = [...new Set(approvalsRaw.map((a: any) => a.approverId))];
     const approverUsers = approverIds.length > 0
-      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, approverIds as number[]))
+      ? await db.select({ id: usersTable.id, name: usersTable.name, signature: usersTable.signature }).from(usersTable).where(inArray(usersTable.id, approverIds as number[]))
       : [];
     const userMap = new Map(approverUsers.map(u => [u.id, u.name]));
-    const approvals = approvalsRaw.map((a: any) => ({ ...a, approverName: userMap.get(a.approverId) || "Unknown" }));
+    const signatureMap = new Map(approverUsers.map(u => [u.id, u.signature]));
+    const approvals = approvalsRaw.map((a: any) => ({ ...a, approverName: userMap.get(a.approverId) || "Unknown", approverSignature: signatureMap.get(a.approverId) || null }));
     const enrichedPR = {
       prNumber: prRow?.prNumber || "Unknown",
       requesterName: creator[0]?.name || "Unknown",

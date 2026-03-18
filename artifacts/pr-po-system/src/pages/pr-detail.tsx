@@ -916,7 +916,11 @@ export default function PRDetail() {
                       </td>
                       <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center", color: "#555" }}>{app.actionAt ? formatDate(app.actionAt) : "—"}</td>
                       <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", color: "#555" }}>{app.notes || "—"}</td>
-                      <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", height: 22 }}></td>
+                      <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", height: 28, textAlign: "center" }}>
+                        {app.status === "approved" && app.approverSignature
+                          ? <img src={app.approverSignature} alt="ttd" style={{ maxHeight: 24, maxWidth: 80, objectFit: "contain" }} />
+                          : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

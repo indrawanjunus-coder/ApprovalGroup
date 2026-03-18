@@ -20,6 +20,7 @@ import Pembayaran from "./pages/pembayaran";
 import History from "./pages/history";
 import LeaveManagement from "./pages/leave-management";
 import AuditLogs from "./pages/audit-logs";
+import Profile from "./pages/profile";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient();
@@ -60,6 +61,7 @@ function Router() {
       <ProtectedRoute path="/users" component={UserList} />
       <ProtectedRoute path="/settings" component={Settings} />
       <ProtectedRoute path="/audit-logs" component={AuditLogs} />
+      <ProtectedRoute path="/profile" component={Profile} />
       
       <Route path="/">
         {() => {
