@@ -31,6 +31,8 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${info.color}`}>{info.label}</span>;
 }
 
+const MONTH_NAMES = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+
 interface BalanceEditState {
   userId: number;
   name: string;
@@ -38,6 +40,7 @@ interface BalanceEditState {
   carriedOverDays: number;
   usedDays: number;
   carriedOverExpiry: string;
+  leaveAccrualStartMonth: number | null;
 }
 
 export default function LeaveManagement() {
@@ -126,6 +129,7 @@ export default function LeaveManagement() {
           carriedOverDays: data.carriedOverDays,
           usedDays: data.usedDays,
           carriedOverExpiry: data.carriedOverExpiry || null,
+          leaveAccrualStartMonth: data.leaveAccrualStartMonth,
         }),
       });
       if (!res.ok) throw new Error("Gagal menyimpan saldo");
@@ -147,6 +151,7 @@ export default function LeaveManagement() {
       carriedOverDays: row.carriedOverDays,
       usedDays: row.usedDays,
       carriedOverExpiry: row.carriedOverExpiry ?? "",
+      leaveAccrualStartMonth: row.leaveAccrualStartMonth ?? null,
     });
   }
 
@@ -497,6 +502,20 @@ export default function LeaveManagement() {
                     />
                   </div>
                 </div>
+                <div className="col-span-2 space-y-1.5">
+                  <Label className="text-xs">Mulai Akrual Cuti (Bulan ke-)</Label>
+                  <select
+                    className="w-full border rounded-md px-3 py-2 text-sm bg-background"
+                    value={editState.leaveAccrualStartMonth ?? ""}
+                    onChange={e => setEditState(s => s ? { ...s, leaveAccrualStartMonth: e.target.value ? parseInt(e.target.value) : null } : s)}
+                  >
+                    <option value="">— Belum diset —</option>
+                    {MONTH_NAMES.map((m, i) => (
+                      <option key={i + 1} value={i + 1}>{m} (Bulan {i + 1})</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">Setiap bulan setelah bulan ini, jatah cuti bertambah 1 hari</p>
+                </div>
                 <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-700 flex justify-between items-center">
                   <span>Sisa Cuti</span>
                   <strong className="text-lg">
@@ -553,6 +572,7 @@ export default function LeaveManagement() {
                           <th className="text-left p-3 font-medium text-muted-foreground">Karyawan</th>
                           <th className="text-left p-3 font-medium text-muted-foreground hidden md:table-cell">Departemen</th>
                           <th className="text-left p-3 font-medium text-muted-foreground hidden lg:table-cell">Perusahaan</th>
+                          <th className="text-center p-3 font-medium text-muted-foreground hidden xl:table-cell">Mulai Akrual</th>
                           <th className="text-center p-3 font-medium text-muted-foreground">Jatah</th>
                           <th className="text-center p-3 font-medium text-muted-foreground">Carry Over</th>
                           <th className="text-center p-3 font-medium text-muted-foreground">Terpakai</th>
@@ -575,6 +595,15 @@ export default function LeaveManagement() {
                               {row.companyName ? (
                                 <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{row.companyName}</span>
                               ) : "-"}
+                            </td>
+                            <td className="p-3 text-center hidden xl:table-cell">
+                              {row.leaveAccrualStartMonth ? (
+                                <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                                  {MONTH_NAMES[row.leaveAccrualStartMonth - 1]}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">—</span>
+                              )}
                             </td>
                             <td className="p-3 text-center font-mono">{row.balanceDays}</td>
                             <td className="p-3 text-center font-mono">{row.carriedOverDays}</td>

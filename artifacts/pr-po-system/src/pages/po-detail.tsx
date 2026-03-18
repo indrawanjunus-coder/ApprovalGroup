@@ -1,3 +1,4 @@
+import React, { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { 
   useGetPurchaseOrderById, 
@@ -5,13 +6,16 @@ import {
   useReceivePurchaseOrder,
   useGetMe
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatIDR, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Send, PackageCheck, Printer } from "lucide-react";
+import { ArrowLeft, Send, PackageCheck, Printer, Trash2, Loader2 } from "lucide-react";
+
+const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 export default function PODetail() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +39,24 @@ export default function PODetail() {
     mutation: { onSuccess: () => { toast({ title: "Barang Diterima" }); invalidate(); } }
   });
 
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const { mutate: deletePO, isPending: isDeleting } = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${BASE_URL}/api/purchase-orders/${poId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Gagal menghapus PO");
+      return d;
+    },
+    onSuccess: () => {
+      toast({ title: "PO Dihapus", description: "PO berhasil dihapus dari sistem." });
+      setLocation("/purchase-orders");
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal Hapus", description: e.message }),
+  });
+
   if (isLoading) return <div className="p-8 text-center animate-pulse">Memuat detail PO...</div>;
   if (!po) return <div className="p-8 text-center text-destructive">PO tidak ditemukan</div>;
 
@@ -54,11 +76,20 @@ export default function PODetail() {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="shadow-sm" onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" /> Cetak
           </Button>
-          {po.status === 'draft' && user?.role === 'purchasing' && (
+          {user?.role === "admin" && (
+            <Button
+              variant="outline"
+              className="border-destructive text-destructive hover:bg-destructive/10"
+              onClick={() => setShowDeleteDialog(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" /> Hapus PO
+            </Button>
+          )}
+          {po.status === 'draft' && (user?.role === 'purchasing' || user?.role === 'admin') && (
             <Button onClick={() => issuePO({ id: poId })} disabled={isIssuing} className="bg-purple-600 hover:bg-purple-700 shadow-md">
               <Send className="mr-2 h-4 w-4" /> Issue PO
             </Button>
@@ -118,21 +149,51 @@ export default function PODetail() {
                 {po.items.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/50">
                     <td className="px-4 py-3 font-medium">{item.name}</td>
-                    <td className="px-4 py-3 text-right">{item.qty}</td>
-                    <td className="px-4 py-3">{item.unit}</td>
-                    <td className="px-4 py-3 text-right font-medium text-purple-700">{formatIDR(item.negotiatedPrice)}</td>
-                    <td className="px-4 py-3 text-right font-bold text-slate-800">{formatIDR(item.totalPrice)}</td>
+                    <td className="px-4 py-3 text-right">{item.quantity}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{item.unit}</td>
+                    <td className="px-4 py-3 text-right">{formatIDR(item.finalPrice)}</td>
+                    <td className="px-4 py-3 text-right font-semibold">{formatIDR(item.quantity * item.finalPrice)}</td>
                   </tr>
                 ))}
               </tbody>
+              <tfoot className="bg-slate-50 border-t">
+                <tr>
+                  <td colSpan={4} className="px-4 py-3 text-right font-semibold">Total</td>
+                  <td className="px-4 py-3 text-right font-bold text-lg">{formatIDR(po.totalAmount)}</td>
+                </tr>
+              </tfoot>
             </table>
-          </div>
-          <div className="p-4 bg-purple-50 border-t flex justify-end items-center gap-4">
-            <span className="font-medium text-purple-900">Total PO:</span>
-            <span className="text-2xl font-bold text-purple-700">{formatIDR(po.totalAmount)}</span>
           </div>
         </CardContent>
       </Card>
+
+      {/* Delete PO Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" /> Hapus Purchase Order
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Anda akan <span className="font-semibold text-destructive">menghapus permanen</span> PO <span className="font-semibold text-foreground">{po.poNumber}</span> beserta semua item. Tindakan ini tidak dapat dibatalkan.
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setShowDeleteDialog(false)}>Batal</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deletePO()}
+              disabled={isDeleting}
+            >
+              {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Hapus Permanen
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+

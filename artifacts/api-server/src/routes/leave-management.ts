@@ -4,7 +4,7 @@ import { requireAuth } from "../lib/auth.js";
 import { purchaseRequestsTable } from "@workspace/db/schema";
 import { usersTable, userCompaniesTable } from "@workspace/db/schema";
 import { companiesTable, userLeaveBalancesTable } from "@workspace/db/schema";
-import { eq, and, or, ilike, sql, desc, inArray } from "drizzle-orm";
+import { eq, and, or, ilike, sql, desc, inArray, ne } from "drizzle-orm";
 
 const router = Router();
 
@@ -141,6 +141,7 @@ router.get("/balances", requireAuth, async (req, res) => {
         department: usersTable.department,
         position: usersTable.position,
         hiredCompanyId: usersTable.hiredCompanyId,
+        leaveAccrualStartMonth: (usersTable as any).leaveAccrualStartMonth,
       })
         .from(usersTable)
         .where(and(...conditions))
@@ -182,6 +183,7 @@ router.get("/balances", requireAuth, async (req, res) => {
         department: u.department,
         position: u.position,
         companyName: u.hiredCompanyId ? (companyMap.get(u.hiredCompanyId) || null) : null,
+        leaveAccrualStartMonth: (u as any).leaveAccrualStartMonth ?? null,
         year: currentYear,
         balanceDays: balDays,
         carriedOverDays: carryDays,
@@ -207,8 +209,16 @@ router.put("/balances/:userId", requireAuth, async (req, res) => {
 
   try {
     const userId = parseInt(req.params.userId);
-    const { year, balanceDays, carriedOverDays, usedDays, carriedOverExpiry } = req.body;
+    const { year, balanceDays, carriedOverDays, usedDays, carriedOverExpiry, leaveAccrualStartMonth } = req.body;
     const currentYear = year || new Date().getFullYear();
+
+    // Save leaveAccrualStartMonth to users table if provided
+    if (leaveAccrualStartMonth !== undefined) {
+      await db.update(usersTable).set({
+        leaveAccrualStartMonth: leaveAccrualStartMonth === null ? null : parseInt(leaveAccrualStartMonth),
+        updatedAt: new Date(),
+      } as any).where(eq(usersTable.id, userId));
+    }
 
     const existing = await db.select().from(userLeaveBalancesTable)
       .where(and(eq(userLeaveBalancesTable.userId, userId), eq(userLeaveBalancesTable.year, currentYear)))

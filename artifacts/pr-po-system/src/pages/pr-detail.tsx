@@ -156,6 +156,24 @@ export default function PRDetail() {
     }
   });
 
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const { mutate: deletePR, isPending: isDeleting } = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${BASE_URL}/api/purchase-requests/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Gagal menghapus PR");
+      return d;
+    },
+    onSuccess: () => {
+      toast({ title: "PR Dihapus", description: "PR berhasil dihapus dari sistem." });
+      setLocation("/purchase-requests");
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal Hapus", description: e.message }),
+  });
+
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelNotes, setCancelNotes] = useState("");
   const { mutate: cancelPR, isPending: isCancelling } = useMutation({
@@ -222,6 +240,15 @@ export default function PRDetail() {
           {pr.status === "draft" && isRequester && (
             <Button onClick={() => submitPR({ id: prId })} disabled={isSubmitting} className="shadow-md shadow-primary/20">
               <Send className="mr-2 h-4 w-4" /> Kirim untuk Approval
+            </Button>
+          )}
+          {user?.role === "admin" && (
+            <Button
+              variant="outline"
+              className="border-destructive text-destructive hover:bg-destructive/10"
+              onClick={() => setShowDeleteDialog(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" /> Hapus PR
             </Button>
           )}
           {pr.status === "draft" && (isRequester || user?.role === "admin" || (user?.role === "approver" && pr.department === user.department)) && (
@@ -685,6 +712,33 @@ export default function PRDetail() {
               Konfirmasi Pilihan
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete PR Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" /> Hapus Purchase Request
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Anda akan <span className="font-semibold text-destructive">menghapus permanen</span> PR <span className="font-semibold text-foreground">{pr.prNumber}</span> beserta semua data terkait (item, approval, PO, receiving). Tindakan ini tidak dapat dibatalkan.
+            </p>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setShowDeleteDialog(false)}>Batal</Button>
+            <Button
+              variant="destructive"
+              onClick={() => deletePR()}
+              disabled={isDeleting}
+            >
+              {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Hapus Permanen
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

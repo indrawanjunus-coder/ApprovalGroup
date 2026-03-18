@@ -233,4 +233,75 @@ router.get("/payment", async (req, res) => {
   }
 });
 
+// Leave History - filtered by company and department
+router.get("/leave", async (req, res) => {
+  const user = req.user!;
+  const page = Math.max(1, parseInt(req.query.page as string) || 1);
+  const limit = [20, 50].includes(parseInt(req.query.limit as string)) ? parseInt(req.query.limit as string) : 20;
+  const offset = (page - 1) * limit;
+  const status = req.query.status as string;
+  const search = req.query.search as string;
+  const dateFrom = req.query.dateFrom as string;
+  const dateTo = req.query.dateTo as string;
+
+  try {
+    const conditions: SQL[] = [eq(purchaseRequestsTable.type, "leave")];
+
+    if (user.role === "admin") {
+      // Admin: all leave PRs
+    } else if (user.role === "approver") {
+      conditions.push(eq(purchaseRequestsTable.department, user.department));
+      if (user.hiredCompanyId) conditions.push(eq(purchaseRequestsTable.companyId, user.hiredCompanyId));
+    } else {
+      // user / purchasing: own leaves within same company
+      conditions.push(eq(purchaseRequestsTable.requesterId, user.id));
+      if (user.hiredCompanyId) conditions.push(eq(purchaseRequestsTable.companyId, user.hiredCompanyId));
+    }
+
+    if (status) conditions.push(eq(purchaseRequestsTable.status, status));
+    if (search) conditions.push(like(purchaseRequestsTable.prNumber, `%${search}%`));
+    if (dateFrom) conditions.push(gte(purchaseRequestsTable.leaveStartDate, new Date(dateFrom) as any));
+    if (dateTo) {
+      const end = new Date(dateTo); end.setHours(23, 59, 59, 999);
+      conditions.push(lte(purchaseRequestsTable.leaveStartDate, end as any));
+    }
+
+    const whereClause = and(...conditions);
+
+    const [rows, totalResult] = await Promise.all([
+      db.select().from(purchaseRequestsTable)
+        .where(whereClause)
+        .orderBy(desc(purchaseRequestsTable.createdAt))
+        .limit(limit).offset(offset),
+      db.select({ count: count() }).from(purchaseRequestsTable).where(whereClause),
+    ]);
+
+    const requesterIds = [...new Set(rows.map(r => r.requesterId))];
+    const requesters = requesterIds.length > 0
+      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, requesterIds))
+      : [];
+    const requesterMap = new Map(requesters.map(r => [r.id, r.name]));
+
+    const result = rows.map(pr => {
+      const start = pr.leaveStartDate ? new Date(pr.leaveStartDate) : null;
+      const end = pr.leaveEndDate ? new Date(pr.leaveEndDate) : null;
+      const days = start && end ? Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1 : null;
+      return {
+        id: pr.id, prNumber: pr.prNumber, description: pr.description,
+        status: pr.status, department: pr.department,
+        leaveStartDate: pr.leaveStartDate,
+        leaveEndDate: pr.leaveEndDate,
+        days,
+        createdAt: pr.createdAt,
+        requesterName: requesterMap.get(pr.requesterId) || "Unknown",
+      };
+    });
+
+    res.json({ items: result, total: Number(totalResult[0]?.count) || 0, page, limit });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export default router;

@@ -101,6 +101,38 @@ export async function sendReceivingReadyEmail(requesterEmail: string, requesterN
   await sendEmail(requesterEmail, `[ProcureFlow] Barang Siap Diterima: ${prNumber}`, html);
 }
 
+export async function sendPRApprovedEmail(requesterEmail: string, requesterName: string, prNumber: string, description: string) {
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <h2 style="color:#16a34a">ProcureFlow — Purchase Request Disetujui</h2>
+      <p>Yth. <b>${requesterName}</b>,</p>
+      <p>Purchase Request Anda telah <b>disetujui</b> oleh semua level approver.</p>
+      <table style="border-collapse:collapse;width:100%;margin:16px 0">
+        <tr><td style="padding:8px;background:#f0fdf4;font-weight:bold">Nomor PR</td><td style="padding:8px">${prNumber}</td></tr>
+        <tr><td style="padding:8px;background:#f0fdf4;font-weight:bold">Deskripsi</td><td style="padding:8px">${description}</td></tr>
+      </table>
+      <p>Silakan login ke sistem ProcureFlow untuk memantau proses selanjutnya.</p>
+    </div>`;
+  await sendEmail(requesterEmail, `[ProcureFlow] PR ${prNumber} Telah Disetujui`, html);
+}
+
+export async function sendPOIssuedEmail(requesterEmail: string, requesterName: string, prNumber: string, poNumber: string, supplier: string, amount: number) {
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <h2 style="color:#2563eb">ProcureFlow — Purchase Order Diterbitkan</h2>
+      <p>Yth. <b>${requesterName}</b>,</p>
+      <p>Purchase Order untuk PR Anda telah <b>diterbitkan</b>.</p>
+      <table style="border-collapse:collapse;width:100%;margin:16px 0">
+        <tr><td style="padding:8px;background:#f1f5f9;font-weight:bold">Nomor PO</td><td style="padding:8px">${poNumber}</td></tr>
+        <tr><td style="padding:8px;background:#f1f5f9;font-weight:bold">Ref PR</td><td style="padding:8px">${prNumber}</td></tr>
+        <tr><td style="padding:8px;background:#f1f5f9;font-weight:bold">Supplier</td><td style="padding:8px">${supplier}</td></tr>
+        <tr><td style="padding:8px;background:#f1f5f9;font-weight:bold">Total</td><td style="padding:8px">Rp ${amount.toLocaleString("id-ID")}</td></tr>
+      </table>
+      <p>Barang akan segera diproses. Silakan login ke ProcureFlow untuk memantau perkembangan.</p>
+    </div>`;
+  await sendEmail(requesterEmail, `[ProcureFlow] PO ${poNumber} Diterbitkan`, html);
+}
+
 export async function sendNewUserEmail(userEmail: string, userName: string, username: string, password: string) {
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">

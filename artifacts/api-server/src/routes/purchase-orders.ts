@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { sendPOCreatedEmail, sendReceivingReadyEmail } from "../lib/email.js";
+import { sendPOCreatedEmail, sendReceivingReadyEmail, sendPOIssuedEmail } from "../lib/email.js";
 import { db } from "@workspace/db";
 import { purchaseOrdersTable, poItemsTable, purchaseRequestsTable, usersTable, settingsTable } from "@workspace/db/schema";
 import { eq, desc, count, inArray } from "drizzle-orm";
@@ -173,9 +173,10 @@ router.post("/:id/issue", requireRole("admin", "purchasing"), async (req, res) =
     const [updated] = await db.update(purchaseOrdersTable).set({ status: "issued", issuedAt, updatedAt: issuedAt }).where(eq(purchaseOrdersTable.id, id)).returning();
     const [pr] = await db.select({ prNumber: purchaseRequestsTable.prNumber, requesterId: purchaseRequestsTable.requesterId }).from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, po.prId));
     if (pr) {
-      await createNotification(pr.requesterId, "Barang Siap Diterima", `PO ${po.poNumber} telah diterbitkan, barang siap untuk receiving`, "received", po.prId, id);
+      await createNotification(pr.requesterId, "PO Diterbitkan", `PO ${po.poNumber} telah diterbitkan untuk PR ${pr.prNumber}`, "received", po.prId, id);
       const [requester] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
       if (requester?.email) {
+        sendPOIssuedEmail(requester.email, requester.name, pr.prNumber, po.poNumber, po.supplier || "—", parseFloat(po.totalAmount)).catch(() => {});
         sendReceivingReadyEmail(requester.email, requester.name, pr.prNumber, po.poNumber).catch(() => {});
       }
     }
@@ -207,6 +208,22 @@ router.post("/:id/receive", async (req, res) => {
     const [creator] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, po.createdById));
     res.json(formatPO({ ...updated, prNumber: pr?.prNumber || "Unknown", createdByName: creator?.name || "Unknown" }, items));
   } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+  const user = req.user!;
+  const id = parseInt(req.params.id);
+  try {
+    const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
+    if (!po) { res.status(404).json({ error: "Not Found" }); return; }
+    await db.delete(poItemsTable).where(eq(poItemsTable.poId, id));
+    await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
+    await createAuditLog(user.id, "delete_po", "po", id, `Deleted PO ${po.poNumber}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ error: "Internal server error" });
   }
 });

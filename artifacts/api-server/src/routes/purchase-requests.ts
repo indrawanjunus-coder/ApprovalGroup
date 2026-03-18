@@ -6,7 +6,7 @@ import {
   purchaseOrdersTable, prReceivingItemsTable, userLeaveBalancesTable
 } from "@workspace/db/schema";
 import { eq, desc, ilike, and, inArray, count, sql } from "drizzle-orm";
-import { requireAuth } from "../lib/auth.js";
+import { requireAuth, requireRole } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
 import { createNotification } from "../lib/notifications.js";
 import { generatePRNumber } from "../lib/prNumber.js";
@@ -723,6 +723,32 @@ router.get("/receiving-list", async (req, res) => {
     const items = [...poItems, ...prItems];
     res.json({ items, total: items.length });
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
+router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
+  const user = req.user!;
+  const id = parseInt(req.params.id);
+  try {
+    const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
+    if (!pr) { res.status(404).json({ error: "Not Found" }); return; }
+    // Delete all related records first
+    await db.delete(prReceivingItemsTable).where(eq(prReceivingItemsTable.prId, id));
+    await db.delete(prVendorAttachmentsTable).where(eq(prVendorAttachmentsTable.prId, id));
+    await db.delete(approvalsTable).where(eq(approvalsTable.prId, id));
+    await db.delete(prItemsTable).where(eq(prItemsTable.prId, id));
+    // Delete linked POs
+    const linkedPOs = await db.select({ id: purchaseOrdersTable.id }).from(purchaseOrdersTable).where(eq(purchaseOrdersTable.prId, id));
+    for (const po of linkedPOs) {
+      await db.delete(prReceivingItemsTable).where(eq(prReceivingItemsTable.poId, po.id));
+      await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, po.id));
+    }
+    await db.delete(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
+    await createAuditLog(user.id, "delete_pr", "pr", id, `Deleted PR ${pr.prNumber}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 export default router;

@@ -7,7 +7,7 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
 import { createNotification } from "../lib/notifications.js";
-import { sendApprovalRequestEmail, sendVendorAttachmentRequestEmail } from "../lib/email.js";
+import { sendApprovalRequestEmail, sendVendorAttachmentRequestEmail, sendPRApprovedEmail } from "../lib/email.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -111,10 +111,14 @@ async function processApprovalAction(req: any, res: any, action: "approved" | "r
         for (const pu of purchasingUsers) {
           await createNotification(pu.id, "PR Siap Diproses", `PR ${pr.prNumber} siap untuk diproses`, "info", pr.id);
         }
-        // Email: notify requester to upload vendor attachments (non-PO flow handled at select-vendor)
+        // Email: notify requester that PR is fully approved
         const [requester] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
         if (requester?.email) {
-          sendVendorAttachmentRequestEmail(requester.email, requester.name, pr.prNumber).catch(() => {});
+          sendPRApprovedEmail(requester.email, requester.name, pr.prNumber, pr.description).catch(() => {});
+          // For non-leave, non-pembayaran types: also ask to upload vendor attachments
+          if (pr.type !== "leave" && pr.type !== "pembayaran") {
+            sendVendorAttachmentRequestEmail(requester.email, requester.name, pr.prNumber).catch(() => {});
+          }
         }
       } else {
         await db.update(purchaseRequestsTable).set({ currentApprovalLevel: nextLevel, updatedAt: new Date() }).where(eq(purchaseRequestsTable.id, pr.id));
