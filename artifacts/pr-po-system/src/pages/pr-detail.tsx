@@ -32,6 +32,10 @@ export default function PRDetail() {
   const { data: user } = useGetMe();
   const { data: settings } = useGetSettings();
   const { data: pr, isLoading } = useGetPurchaseRequestById(prId);
+  const [printMode, setPrintMode] = useState<"pr" | "receiving">("pr");
+
+  const handlePrintPR = () => { setPrintMode("pr"); setTimeout(() => window.print(), 80); };
+  const handlePrintReceiving = () => { setPrintMode("receiving"); setTimeout(() => window.print(), 80); };
 
   const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
   const { data: prTypesData } = useQuery<any[]>({
@@ -234,8 +238,8 @@ export default function PRDetail() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" className="shadow-sm" onClick={() => window.print()}>
-            <Printer className="mr-2 h-4 w-4" /> Cetak
+          <Button variant="outline" className="shadow-sm" onClick={handlePrintPR}>
+            <Printer className="mr-2 h-4 w-4" /> Cetak PR
           </Button>
           {pr.status === "draft" && isRequester && (
             <Button onClick={() => submitPR({ id: prId })} disabled={isSubmitting} className="shadow-md shadow-primary/20">
@@ -468,7 +472,7 @@ export default function PRDetail() {
           {/* Receiving Records History */}
           {(pr as any).receivingRecords?.length > 0 && pr.type !== "leave" && (
             <Card className="border-0 shadow-sm">
-              <CardHeader className="py-4 border-b">
+              <CardHeader className="py-4 border-b flex flex-row items-center justify-between">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <PackageCheck className="h-5 w-5 text-teal-600" /> Riwayat Penerimaan
                   <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
@@ -479,6 +483,9 @@ export default function PRDetail() {
                     {receivingStatus === "closed" ? "Selesai" : receivingStatus === "partial" ? "Parsial" : "Belum Ada"}
                   </span>
                 </CardTitle>
+                <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={handlePrintReceiving}>
+                  <Printer className="h-3.5 w-3.5" /> Cetak Penerimaan
+                </Button>
               </CardHeader>
               <CardContent className="p-4 space-y-2">
                 {(pr as any).receivingRecords.map((r: any) => (
@@ -639,7 +646,9 @@ export default function PRDetail() {
                         </div>
                       </div>
                       <div className="flex-1 pb-2">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-0.5">Level {app.level}</p>
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-0.5">
+                          {app.level === 0 ? "Atasan Langsung" : `Level ${app.level}`}
+                        </p>
                         <p className="text-sm font-medium">{app.approverName}</p>
                         <span className={`text-xs px-2 py-0.5 rounded-md font-medium mt-1 inline-block
                           ${app.status === "approved" ? "bg-emerald-100 text-emerald-700" :
@@ -753,6 +762,312 @@ export default function PRDetail() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ===== PRINT-ONLY: PR Document ===== */}
+      {printMode === "pr" && (
+        <div data-print-only style={{ fontFamily: "Arial, sans-serif", color: "#111", lineHeight: 1.4 }}>
+          {/* Header */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #1a56db", paddingBottom: 12, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {(settings?.logoUrl || "") && (
+                <img src={settings.logoUrl!} alt="Logo" style={{ height: 40, width: 40, objectFit: "contain", borderRadius: 6 }} />
+              )}
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16, color: "#1a56db" }}>{settings?.appName || "ProcureFlow"}</div>
+                {pr.companyName && <div style={{ fontSize: 11, color: "#555" }}>{pr.companyName}</div>}
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>PURCHASE REQUEST</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#1a56db" }}>{pr.prNumber}</div>
+              <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>Dicetak: {new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })}</div>
+            </div>
+          </div>
+
+          {/* PR Info Grid */}
+          <table style={{ width: "100%", fontSize: 11, marginBottom: 14, borderCollapse: "collapse" }}>
+            <tbody>
+              <tr>
+                <td style={{ width: "16%", color: "#666", paddingBottom: 4 }}>Status</td>
+                <td style={{ width: "34%", fontWeight: 600, paddingBottom: 4 }}>{pr.status.replace(/_/g, " ").toUpperCase()}</td>
+                <td style={{ width: "16%", color: "#666", paddingBottom: 4 }}>Tipe</td>
+                <td style={{ width: "34%", fontWeight: 600, paddingBottom: 4 }}>{getTypeLabel(pr.type)}</td>
+              </tr>
+              <tr>
+                <td style={{ color: "#666", paddingBottom: 4 }}>Pemohon</td>
+                <td style={{ fontWeight: 600, paddingBottom: 4 }}>{pr.requesterName}</td>
+                <td style={{ color: "#666", paddingBottom: 4 }}>Departemen</td>
+                <td style={{ fontWeight: 600, paddingBottom: 4 }}>{pr.department}</td>
+              </tr>
+              <tr>
+                <td style={{ color: "#666", paddingBottom: 4 }}>Tanggal</td>
+                <td style={{ paddingBottom: 4 }}>{formatDate(pr.createdAt)}</td>
+                {pr.type === "leave" && (
+                  <>
+                    <td style={{ color: "#666", paddingBottom: 4 }}>Tgl Cuti</td>
+                    <td style={{ paddingBottom: 4 }}>{pr.leaveStartDate} — {pr.leaveEndDate}</td>
+                  </>
+                )}
+                {pr.type === "transfer" && (
+                  <>
+                    <td style={{ color: "#666", paddingBottom: 4 }}>Lokasi</td>
+                    <td style={{ paddingBottom: 4 }}>{(pr as any).fromLocationName} → {(pr as any).toLocationName}</td>
+                  </>
+                )}
+              </tr>
+              <tr>
+                <td style={{ color: "#666", paddingBottom: 4, verticalAlign: "top" }}>Deskripsi</td>
+                <td colSpan={3} style={{ paddingBottom: 4 }}>{pr.description}</td>
+              </tr>
+              {pr.notes && (
+                <tr>
+                  <td style={{ color: "#666", paddingBottom: 4, verticalAlign: "top" }}>Catatan</td>
+                  <td colSpan={3} style={{ paddingBottom: 4 }}>{pr.notes}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* Items Table */}
+          {pr.items.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6, paddingBottom: 4, borderBottom: "1px solid #ddd" }}>DAFTAR BARANG / ITEM</div>
+              <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#f1f5f9" }}>
+                    <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>No</th>
+                    <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Nama Barang</th>
+                    <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Keterangan</th>
+                    <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Qty</th>
+                    <th style={{ textAlign: "center", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Satuan</th>
+                    <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Est. Harga</th>
+                    <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pr.items.map((item: any, i: number) => (
+                    <tr key={item.id}>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0" }}>{i + 1}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", fontWeight: 500 }}>{item.name}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", color: "#555" }}>{item.description || "—"}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{item.qty}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "center" }}>{item.unit}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatIDR(item.estimatedPrice)}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 500 }}>{formatIDR(item.qty * item.estimatedPrice)}</td>
+                    </tr>
+                  ))}
+                  <tr style={{ background: "#f8fafc" }}>
+                    <td colSpan={6} style={{ padding: "6px 8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 700 }}>TOTAL ESTIMASI</td>
+                    <td style={{ padding: "6px 8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 700, color: "#1a56db" }}>{formatIDR(parseFloat(pr.totalAmount))}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Vendor Info */}
+          {(pr.vendorAttachments || []).length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6, paddingBottom: 4, borderBottom: "1px solid #ddd" }}>INFORMASI VENDOR</div>
+              <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#f1f5f9" }}>
+                    <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Vendor</th>
+                    <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Penawaran</th>
+                    <th style={{ textAlign: "center", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Status</th>
+                    <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Catatan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(pr.vendorAttachments || []).map((v: any) => (
+                    <tr key={v.id} style={{ background: v.id === pr.selectedVendorId ? "#f0fdf4" : undefined }}>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", fontWeight: v.id === pr.selectedVendorId ? 700 : 400 }}>
+                        {v.vendorName} {v.id === pr.selectedVendorId ? "✓ (Dipilih)" : ""}
+                      </td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right" }}>
+                        {v.quotedPrice ? formatIDR(parseFloat(v.quotedPrice)) : (v.totalAmount ? formatIDR(parseFloat(v.totalAmount)) : "—")}
+                      </td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "center" }}>
+                        {v.id === pr.selectedVendorId ? "Dipilih" : "Penawaran"}
+                      </td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", color: "#555" }}>{v.notes || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Approval Chain */}
+          {pr.approvals.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6, paddingBottom: 4, borderBottom: "1px solid #ddd" }}>ALUR PERSETUJUAN</div>
+              <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#f1f5f9" }}>
+                    <th style={{ textAlign: "center", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Level</th>
+                    <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Approver</th>
+                    <th style={{ textAlign: "center", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Status</th>
+                    <th style={{ textAlign: "center", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Tanggal</th>
+                    <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Catatan</th>
+                    <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Tanda Tangan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pr.approvals.map((app: any) => (
+                    <tr key={app.id}>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "center" }}>
+                        {app.level === 0 ? "Atasan" : `L${app.level}`}
+                      </td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", fontWeight: 500 }}>{app.approverName}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "center", color: app.status === "approved" ? "#15803d" : app.status === "rejected" ? "#dc2626" : "#555" }}>
+                        {app.status === "approved" ? "✓ Disetujui" : app.status === "rejected" ? "✗ Ditolak" : "Menunggu"}
+                      </td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "center", color: "#555" }}>{app.actionAt ? formatDate(app.actionAt) : "—"}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", color: "#555" }}>{app.notes || "—"}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", height: 32 }}></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{ borderTop: "1px solid #ddd", paddingTop: 8, marginTop: 8, fontSize: 10, color: "#888", display: "flex", justifyContent: "space-between" }}>
+            <span>Dokumen ini digenerate otomatis oleh {settings?.appName || "ProcureFlow"}</span>
+            <span>{pr.prNumber} | {new Date().toLocaleString("id-ID")}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ===== PRINT-ONLY: Receiving Document ===== */}
+      {printMode === "receiving" && (
+        <div data-print-only style={{ fontFamily: "Arial, sans-serif", color: "#111", lineHeight: 1.4 }}>
+          {/* Header */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #0d9488", paddingBottom: 12, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {(settings?.logoUrl || "") && (
+                <img src={settings.logoUrl!} alt="Logo" style={{ height: 40, width: 40, objectFit: "contain", borderRadius: 6 }} />
+              )}
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16, color: "#0d9488" }}>{settings?.appName || "ProcureFlow"}</div>
+                {pr.companyName && <div style={{ fontSize: 11, color: "#555" }}>{pr.companyName}</div>}
+              </div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>BUKTI PENERIMAAN BARANG</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "#0d9488" }}>Ref: {pr.prNumber}</div>
+              <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>Dicetak: {new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })}</div>
+            </div>
+          </div>
+
+          {/* PR Info */}
+          <table style={{ width: "100%", fontSize: 11, marginBottom: 14, borderCollapse: "collapse" }}>
+            <tbody>
+              <tr>
+                <td style={{ width: "16%", color: "#666", paddingBottom: 4 }}>Nomor PR</td>
+                <td style={{ width: "34%", fontWeight: 600, paddingBottom: 4 }}>{pr.prNumber}</td>
+                <td style={{ width: "16%", color: "#666", paddingBottom: 4 }}>Status</td>
+                <td style={{ width: "34%", fontWeight: 600, paddingBottom: 4, color: (pr as any).receivingStatus === "closed" ? "#15803d" : "#d97706" }}>
+                  {(pr as any).receivingStatus === "closed" ? "SELESAI" : (pr as any).receivingStatus === "partial" ? "PARSIAL" : "PENDING"}
+                </td>
+              </tr>
+              <tr>
+                <td style={{ color: "#666", paddingBottom: 4 }}>Pemohon</td>
+                <td style={{ paddingBottom: 4 }}>{pr.requesterName}</td>
+                <td style={{ color: "#666", paddingBottom: 4 }}>Departemen</td>
+                <td style={{ paddingBottom: 4 }}>{pr.department}</td>
+              </tr>
+              <tr>
+                <td style={{ color: "#666", paddingBottom: 4 }}>Deskripsi</td>
+                <td colSpan={3} style={{ paddingBottom: 4 }}>{pr.description}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* Items vs Received Table */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6, paddingBottom: 4, borderBottom: "1px solid #ddd" }}>DETAIL BARANG</div>
+            <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f1f5f9" }}>
+                  <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Nama Barang</th>
+                  <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Qty Order</th>
+                  <th style={{ textAlign: "center", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Satuan</th>
+                  <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Qty Diterima</th>
+                  <th style={{ textAlign: "center", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pr.items.map((item: any) => {
+                  const received = ((pr as any).receivingRecords || [])
+                    .filter((r: any) => r.prItemId === item.id)
+                    .reduce((sum: number, r: any) => sum + r.receivedQty, 0);
+                  const isDone = received >= item.qty;
+                  return (
+                    <tr key={item.id}>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", fontWeight: 500 }}>{item.name}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{item.qty}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "center" }}>{item.unit}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600, color: isDone ? "#15803d" : received > 0 ? "#d97706" : "#555" }}>{received}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "center", color: isDone ? "#15803d" : received > 0 ? "#d97706" : "#555" }}>
+                        {isDone ? "✓ Lengkap" : received > 0 ? "Sebagian" : "Belum"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Receiving Records */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6, paddingBottom: 4, borderBottom: "1px solid #ddd" }}>RIWAYAT PENERIMAAN</div>
+            <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f1f5f9" }}>
+                  <th style={{ textAlign: "center", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Tanggal</th>
+                  <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Item</th>
+                  <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Qty</th>
+                  <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Diterima Oleh</th>
+                  <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Catatan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {((pr as any).receivingRecords || []).map((r: any) => {
+                  const matchItem = pr.items.find((i: any) => i.id === r.prItemId);
+                  return (
+                    <tr key={r.id}>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "center" }}>{formatDate(r.receivedAt)}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0" }}>{matchItem?.name || `Item #${r.prItemId}`}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }}>{r.receivedQty}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0" }}>{r.receivedByName}</td>
+                      <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", color: "#555" }}>{r.notes || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Signature Section */}
+          <div style={{ display: "flex", gap: 16, marginTop: 20 }}>
+            {["Dipersiapkan Oleh", "Diterima Oleh", "Diketahui"].map((label) => (
+              <div key={label} style={{ flex: 1, textAlign: "center" }}>
+                <div style={{ fontSize: 10, color: "#555", marginBottom: 40 }}>{label}</div>
+                <div style={{ borderTop: "1px solid #555", paddingTop: 4, fontSize: 10, color: "#555" }}>Nama & Tanda Tangan</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer */}
+          <div style={{ borderTop: "1px solid #ddd", paddingTop: 8, marginTop: 12, fontSize: 10, color: "#888", display: "flex", justifyContent: "space-between" }}>
+            <span>Dokumen ini digenerate otomatis oleh {settings?.appName || "ProcureFlow"}</span>
+            <span>Ref: {pr.prNumber} | {new Date().toLocaleString("id-ID")}</span>
+          </div>
+        </div>
+      )}
 
       {/* Cancel PR Dialog */}
       <Dialog open={showCancelDialog} onOpenChange={(o) => { if (!o) { setShowCancelDialog(false); setCancelNotes(""); } }}>

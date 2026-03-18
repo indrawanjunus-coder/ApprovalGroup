@@ -94,9 +94,16 @@
 }
 
 /* ===== Print Styles ===== */
+[data-print-only] {
+  display: none !important;
+}
+
 @media print {
   [data-print-hide] {
     display: none !important;
+  }
+  [data-print-only] {
+    display: block !important;
   }
   .md\:pl-64 {
     padding-left: 0 !important;
@@ -109,9 +116,14 @@
     box-shadow: none !important;
   }
   .rounded-2xl, .rounded-xl {
-    border-radius: 0 !important;
+    border-radius: 0.5rem !important;
   }
   body {
     background: white !important;
+    font-size: 11px;
+  }
+  @page {
+    margin: 1.5cm;
+    size: A4 portrait;
   }
 }

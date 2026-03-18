@@ -4,7 +4,8 @@ import {
   useGetPurchaseOrderById, 
   useIssuePurchaseOrder, 
   useReceivePurchaseOrder,
-  useGetMe
+  useGetMe,
+  useGetSettings
 } from "@workspace/api-client-react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,7 @@ export default function PODetail() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: user } = useGetMe();
-
+  const { data: settings } = useGetSettings();
   const { data: po, isLoading } = useGetPurchaseOrderById(poId);
 
   const invalidate = () => {
@@ -78,7 +79,7 @@ export default function PODetail() {
 
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="shadow-sm" onClick={() => window.print()}>
-            <Printer className="mr-2 h-4 w-4" /> Cetak
+            <Printer className="mr-2 h-4 w-4" /> Cetak PO
           </Button>
           {user?.role === "admin" && (
             <Button
@@ -166,6 +167,105 @@ export default function PODetail() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ===== PRINT-ONLY: PO Document ===== */}
+      <div data-print-only style={{ fontFamily: "Arial, sans-serif", color: "#111", lineHeight: 1.4 }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "2px solid #7e22ce", paddingBottom: 12, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {settings?.logoUrl && (
+              <img src={settings.logoUrl} alt="Logo" style={{ height: 40, width: 40, objectFit: "contain", borderRadius: 6 }} />
+            )}
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16, color: "#7e22ce" }}>{settings?.appName || "ProcureFlow"}</div>
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>PURCHASE ORDER</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#7e22ce" }}>{po.poNumber}</div>
+            <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>Dicetak: {new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })}</div>
+          </div>
+        </div>
+
+        {/* PO Info */}
+        <table style={{ width: "100%", fontSize: 11, marginBottom: 14, borderCollapse: "collapse" }}>
+          <tbody>
+            <tr>
+              <td style={{ width: "16%", color: "#666", paddingBottom: 4 }}>Nomor PO</td>
+              <td style={{ width: "34%", fontWeight: 600, paddingBottom: 4 }}>{po.poNumber}</td>
+              <td style={{ width: "16%", color: "#666", paddingBottom: 4 }}>Status</td>
+              <td style={{ width: "34%", fontWeight: 600, paddingBottom: 4 }}>{po.status?.toUpperCase()}</td>
+            </tr>
+            <tr>
+              <td style={{ color: "#666", paddingBottom: 4 }}>Supplier</td>
+              <td style={{ fontWeight: 700, fontSize: 13, paddingBottom: 4 }}>{po.supplier}</td>
+              <td style={{ color: "#666", paddingBottom: 4 }}>Referensi PR</td>
+              <td style={{ paddingBottom: 4 }}>{po.prNumber}</td>
+            </tr>
+            <tr>
+              <td style={{ color: "#666", paddingBottom: 4 }}>Dibuat Oleh</td>
+              <td style={{ paddingBottom: 4 }}>{po.createdByName}</td>
+              <td style={{ color: "#666", paddingBottom: 4 }}>Tanggal</td>
+              <td style={{ paddingBottom: 4 }}>{new Date(po.createdAt).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })}</td>
+            </tr>
+            {po.notes && (
+              <tr>
+                <td style={{ color: "#666", paddingBottom: 4, verticalAlign: "top" }}>Catatan</td>
+                <td colSpan={3} style={{ paddingBottom: 4 }}>{po.notes}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        {/* Items Table */}
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 6, paddingBottom: 4, borderBottom: "1px solid #ddd" }}>DAFTAR ITEM</div>
+          <table style={{ width: "100%", fontSize: 11, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#f1f5f9" }}>
+                <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>No</th>
+                <th style={{ textAlign: "left", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Nama Item</th>
+                <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Qty</th>
+                <th style={{ textAlign: "center", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Satuan</th>
+                <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Harga Final</th>
+                <th style={{ textAlign: "right", padding: "5px 8px", border: "1px solid #e2e8f0" }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {po.items.map((item, i) => (
+                <tr key={item.id}>
+                  <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0" }}>{i + 1}</td>
+                  <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", fontWeight: 500 }}>{item.name}</td>
+                  <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{item.quantity}</td>
+                  <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "center" }}>{item.unit}</td>
+                  <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatIDR(item.finalPrice)}</td>
+                  <td style={{ padding: "5px 8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }}>{formatIDR(item.quantity * item.finalPrice)}</td>
+                </tr>
+              ))}
+              <tr style={{ background: "#f8fafc" }}>
+                <td colSpan={5} style={{ padding: "6px 8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 700 }}>TOTAL</td>
+                <td style={{ padding: "6px 8px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 700, color: "#7e22ce", fontSize: 13 }}>{formatIDR(po.totalAmount)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Signature Section */}
+        <div style={{ display: "flex", gap: 16, marginTop: 24 }}>
+          {["Dibuat Oleh", "Disetujui Oleh", "Diterima Supplier"].map((label) => (
+            <div key={label} style={{ flex: 1, textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: "#555", marginBottom: 40 }}>{label}</div>
+              <div style={{ borderTop: "1px solid #555", paddingTop: 4, fontSize: 10, color: "#555" }}>Nama & Tanda Tangan</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div style={{ borderTop: "1px solid #ddd", paddingTop: 8, marginTop: 12, fontSize: 10, color: "#888", display: "flex", justifyContent: "space-between" }}>
+          <span>Dokumen ini digenerate otomatis oleh {settings?.appName || "ProcureFlow"}</span>
+          <span>{po.poNumber} | {new Date().toLocaleString("id-ID")}</span>
+        </div>
+      </div>
 
       {/* Delete PO Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>

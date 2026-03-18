@@ -342,25 +342,46 @@ router.post("/:id/submit", async (req, res) => {
     if (pr.requesterId !== user.id && user.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
 
     const amount = parseFloat(pr.totalAmount);
+
+    // Fetch matching approval rule for this PR type/company/dept
     const allRules = await db.select().from(approvalRulesTable).where(eq(approvalRulesTable.type, pr.type));
-    let matchingRule = allRules.find(r => r.companyId === pr.companyId && r.department === pr.department)
+    const matchingRule = allRules.find(r => r.companyId === pr.companyId && r.department === pr.department)
       || allRules.find(r => r.companyId === pr.companyId && !r.department)
       || allRules.find(r => !r.companyId && r.department === pr.department)
       || allRules.find(r => !r.companyId && !r.department);
 
-    if (!matchingRule) {
-      res.status(400).json({ error: "Bad Request", message: "Tidak ditemukan aturan approval. Hubungi Admin." }); return;
-    }
+    // Build the list of approval entries to insert
+    type ApprovalEntry = { prId: number; approverId: number; level: number; status: string };
+    const approvalEntries: ApprovalEntry[] = [];
 
-    const allLevels = await db.select().from(approvalRuleLevelsTable).where(eq(approvalRuleLevelsTable.ruleId, matchingRule.id));
-    const sortedLevels = [...allLevels].sort((a, b) => a.level - b.level);
-
-    let applicableLevels: typeof sortedLevels;
     if (pr.type === "leave") {
-      applicableLevels = sortedLevels;
+      // STEP 1: Add the direct supervisor at level 0 (if requester has one)
+      const [requesterUser] = await db.select({ superiorId: usersTable.superiorId }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
+      if (requesterUser?.superiorId) {
+        approvalEntries.push({ prId: id, approverId: requesterUser.superiorId, level: 0, status: "pending" });
+      }
+
+      // STEP 2: Add tiered rule approvals at level 1+ (optional for leave)
+      if (matchingRule) {
+        const ruleLevels = await db.select().from(approvalRuleLevelsTable).where(eq(approvalRuleLevelsTable.ruleId, matchingRule.id));
+        const sorted = [...ruleLevels].sort((a, b) => a.level - b.level);
+        for (const l of sorted) {
+          approvalEntries.push({ prId: id, approverId: l.approverId!, level: l.level, status: "pending" });
+        }
+      }
+
+      if (approvalEntries.length === 0) {
+        res.status(400).json({ error: "Bad Request", message: "Tidak ada aturan approval atau atasan langsung yang terdaftar. Hubungi Admin." }); return;
+      }
     } else {
+      // Non-leave: matching rule is required; ceiling-level logic applies
+      if (!matchingRule) {
+        res.status(400).json({ error: "Bad Request", message: "Tidak ditemukan aturan approval. Hubungi Admin." }); return;
+      }
+      const allLevels = await db.select().from(approvalRuleLevelsTable).where(eq(approvalRuleLevelsTable.ruleId, matchingRule.id));
+      const sortedLevels = [...allLevels].sort((a, b) => a.level - b.level);
+
       // Find the "ceiling level" — the level whose min-max range contains the PR amount.
-      // All levels from 1 up to and including this ceiling level must approve.
       const ceilingLevel = sortedLevels.find(l => {
         const min = l.minAmount ? parseFloat(l.minAmount) : 0;
         const max = l.maxAmount ? parseFloat(l.maxAmount) : Infinity;
@@ -369,27 +390,27 @@ router.post("/:id/submit", async (req, res) => {
       if (!ceilingLevel) {
         res.status(400).json({ error: "Bad Request", message: "Tidak ada approver yang sesuai dengan jumlah PR. Hubungi Admin." }); return;
       }
-      // Include every level up to and including the ceiling level
-      applicableLevels = sortedLevels.filter(l => l.level <= ceilingLevel.level);
+      // All levels from 1 up to and including the ceiling level must approve
+      const applicableLevels = sortedLevels.filter(l => l.level <= ceilingLevel.level);
+      for (const l of applicableLevels) {
+        approvalEntries.push({ prId: id, approverId: l.approverId!, level: l.level, status: "pending" });
+      }
+      if (approvalEntries.length === 0) {
+        res.status(400).json({ error: "Bad Request", message: "Tidak ada approver yang sesuai. Hubungi Admin." }); return;
+      }
     }
 
-    if (applicableLevels.length === 0) {
-      res.status(400).json({ error: "Bad Request", message: "Tidak ada approver yang sesuai. Hubungi Admin." }); return;
-    }
-
-    await db.insert(approvalsTable).values(
-      applicableLevels.map(l => ({ prId: id, approverId: l.approverId!, level: l.level, status: "pending" }))
-    );
-    const minLevel = Math.min(...applicableLevels.map(l => l.level));
+    await db.insert(approvalsTable).values(approvalEntries);
+    const minLevel = Math.min(...approvalEntries.map(e => e.level));
     const [updated] = await db.update(purchaseRequestsTable).set({
       status: "waiting_approval", currentApprovalLevel: minLevel, updatedAt: new Date(),
     }).where(eq(purchaseRequestsTable.id, id)).returning();
 
-    const firstLevelApprovers = applicableLevels.filter(l => l.level === minLevel);
+    const firstLevelApprovers = approvalEntries.filter(e => e.level === minLevel);
     for (const l of firstLevelApprovers) {
-      await createNotification(l.approverId!, "PR Perlu Disetujui",
+      await createNotification(l.approverId, "PR Perlu Disetujui",
         `PR ${pr.prNumber} dari ${user.name} membutuhkan persetujuan Anda`, "approval_request", id);
-      const [approverUser] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, l.approverId!));
+      const [approverUser] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, l.approverId));
       if (approverUser?.email) {
         sendApprovalRequestEmail(approverUser.email, approverUser.name, pr.prNumber, user.name, parseFloat(pr.totalAmount), pr.description).catch(() => {});
       }
