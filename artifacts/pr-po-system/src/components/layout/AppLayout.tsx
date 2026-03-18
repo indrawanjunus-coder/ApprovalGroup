@@ -33,6 +33,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const { data: receivingData } = useGetReceivingList({ query: { enabled: !!user } });
   const { data: settings } = useGetSettings({ query: { enabled: !!user } });
   const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  const effectiveLogo = settings?.logoUrl || `${import.meta.env.BASE_URL}images/logo.png`;
+  const effectiveAppName = settings?.appName || "ProcureFlow";
   const { data: pembayaranData } = useQuery<any>({
     queryKey: ["/api/pembayaran"],
     queryFn: async () => {
@@ -130,8 +132,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
       {/* Desktop Sidebar */}
       <aside data-print-hide className="hidden md:flex w-64 flex-col fixed inset-y-0 z-50 border-r bg-card shadow-sm">
         <div className="h-16 flex items-center px-6 border-b">
-          <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="Logo" className="h-8 w-8 mr-3 rounded-md" />
-          <span className="font-display font-bold text-lg tracking-tight text-foreground">ProcureFlow</span>
+          <img src={effectiveLogo} alt="Logo" className="h-8 w-8 mr-3 rounded-md object-contain"
+            onError={(e) => { (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}images/logo.png`; }} />
+          <span className="font-display font-bold text-lg tracking-tight text-foreground">{effectiveAppName}</span>
         </div>
 
         <div className="flex-1 overflow-y-auto py-6 px-4 space-y-1 table-scrollbar">
@@ -165,8 +168,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
         {/* Header */}
         <header data-print-hide className="h-16 sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b flex items-center justify-between px-4 md:px-8">
           <div className="flex items-center md:hidden">
-            <img src={`${import.meta.env.BASE_URL}images/logo.png`} alt="Logo" className="h-8 w-8 mr-3 rounded-md" />
-            <span className="font-display font-bold text-lg">ProcureFlow</span>
+            <img src={effectiveLogo} alt="Logo" className="h-8 w-8 mr-3 rounded-md object-contain"
+              onError={(e) => { (e.target as HTMLImageElement).src = `${import.meta.env.BASE_URL}images/logo.png`; }} />
+            <span className="font-display font-bold text-lg">{effectiveAppName}</span>
           </div>
           <div className="hidden md:flex items-center">
             <h1 className="text-xl font-display font-bold text-foreground capitalize">

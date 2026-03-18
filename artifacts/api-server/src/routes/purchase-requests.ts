@@ -353,11 +353,25 @@ router.post("/:id/submit", async (req, res) => {
     }
 
     const allLevels = await db.select().from(approvalRuleLevelsTable).where(eq(approvalRuleLevelsTable.ruleId, matchingRule.id));
-    const applicableLevels = pr.type === "leave" ? allLevels : allLevels.filter(l => {
-      const min = l.minAmount ? parseFloat(l.minAmount) : 0;
-      const max = l.maxAmount ? parseFloat(l.maxAmount) : Infinity;
-      return amount >= min && amount <= max;
-    });
+    const sortedLevels = [...allLevels].sort((a, b) => a.level - b.level);
+
+    let applicableLevels: typeof sortedLevels;
+    if (pr.type === "leave") {
+      applicableLevels = sortedLevels;
+    } else {
+      // Find the "ceiling level" — the level whose min-max range contains the PR amount.
+      // All levels from 1 up to and including this ceiling level must approve.
+      const ceilingLevel = sortedLevels.find(l => {
+        const min = l.minAmount ? parseFloat(l.minAmount) : 0;
+        const max = l.maxAmount ? parseFloat(l.maxAmount) : Infinity;
+        return amount >= min && amount <= max;
+      });
+      if (!ceilingLevel) {
+        res.status(400).json({ error: "Bad Request", message: "Tidak ada approver yang sesuai dengan jumlah PR. Hubungi Admin." }); return;
+      }
+      // Include every level up to and including the ceiling level
+      applicableLevels = sortedLevels.filter(l => l.level <= ceilingLevel.level);
+    }
 
     if (applicableLevels.length === 0) {
       res.status(400).json({ error: "Bad Request", message: "Tidak ada approver yang sesuai. Hubungi Admin." }); return;
