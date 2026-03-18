@@ -18,7 +18,7 @@ router.get("/", async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 
-router.post("/", requireRole("admin"), async (req, res) => {
+router.post("/", requireRole("admin", "approver"), async (req, res) => {
   const { code, name, description, companyId } = req.body;
   if (!code || !name) { res.status(400).json({ error: "Kode dan nama lokasi wajib diisi" }); return; }
   const safeCode = code.trim().toUpperCase().replace(/\s+/g, "-");
@@ -35,7 +35,7 @@ router.post("/", requireRole("admin"), async (req, res) => {
   }
 });
 
-router.put("/:id", requireRole("admin"), async (req, res) => {
+router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
   const id = parseInt(req.params.id);
   const { name, description, companyId, isActive } = req.body;
   if (!name) { res.status(400).json({ error: "Nama lokasi wajib diisi" }); return; }

@@ -4,6 +4,7 @@ import {
   useUpdateCompany, useDeleteCompany, useGetApprovalRules,
   useCreateApprovalRule, useUpdateApprovalRule, useDeleteApprovalRule,
   useGetUsers, useGetCompanyLeaveSettings, useUpdateCompanyLeaveSetting,
+  useGetMe,
 } from "@workspace/api-client-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1243,6 +1244,8 @@ function LocationManager() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  const { data: currentUser } = useGetMe();
+  const isAdmin = currentUser?.role === "admin";
 
   const { data: locData, isLoading } = useQuery<any>({
     queryKey: ["/api/locations"],
@@ -1369,9 +1372,11 @@ function LocationManager() {
                         <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => startEdit(loc)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteLoc.mutate(loc.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        {isAdmin && (
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteLoc.mutate(loc.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>

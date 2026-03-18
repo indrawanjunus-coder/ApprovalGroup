@@ -40,6 +40,19 @@ export default function PODetail() {
     mutation: { onSuccess: () => { toast({ title: "Barang Diterima" }); invalidate(); } }
   });
 
+  const handlePrint = () => {
+    const el = document.querySelector("[data-print-only]") as HTMLElement | null;
+    if (el) {
+      el.style.zoom = "";
+      const usableH = 1062;
+      const h = el.scrollHeight;
+      if (h > usableH) el.style.zoom = String((usableH / h).toFixed(3));
+    }
+    window.print();
+    const reset = () => { if (el) el.style.zoom = ""; window.removeEventListener("afterprint", reset); };
+    window.addEventListener("afterprint", reset);
+  };
+
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { mutate: deletePO, isPending: isDeleting } = useMutation({
     mutationFn: async () => {
@@ -78,7 +91,7 @@ export default function PODetail() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" className="shadow-sm" onClick={() => window.print()}>
+          <Button variant="outline" className="shadow-sm" onClick={handlePrint}>
             <Printer className="mr-2 h-4 w-4" /> Cetak PO
           </Button>
           {user?.role === "admin" && (

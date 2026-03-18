@@ -34,8 +34,24 @@ export default function PRDetail() {
   const { data: pr, isLoading } = useGetPurchaseRequestById(prId);
   const [printMode, setPrintMode] = useState<"pr" | "receiving">("pr");
 
-  const handlePrintPR = () => { setPrintMode("pr"); setTimeout(() => window.print(), 80); };
-  const handlePrintReceiving = () => { setPrintMode("receiving"); setTimeout(() => window.print(), 80); };
+  const autoPrint = (mode: "pr" | "receiving") => {
+    setPrintMode(mode);
+    setTimeout(() => {
+      const el = document.querySelector("[data-print-only]") as HTMLElement | null;
+      if (el) {
+        el.style.zoom = "";
+        // A4 at 96dpi with 8mm top+bottom margins ≈ 1123 - 61 = 1062px usable
+        const usableH = 1062;
+        const h = el.scrollHeight;
+        if (h > usableH) el.style.zoom = String((usableH / h).toFixed(3));
+      }
+      window.print();
+      const reset = () => { if (el) el.style.zoom = ""; window.removeEventListener("afterprint", reset); };
+      window.addEventListener("afterprint", reset);
+    }, 120);
+  };
+  const handlePrintPR = () => autoPrint("pr");
+  const handlePrintReceiving = () => autoPrint("receiving");
 
   const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
   const { data: prTypesData } = useQuery<any[]>({
