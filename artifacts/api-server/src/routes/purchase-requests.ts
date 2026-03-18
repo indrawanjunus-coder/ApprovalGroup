@@ -366,13 +366,15 @@ router.post("/:id/submit", async (req, res) => {
     const approvalEntries: ApprovalEntry[] = [];
 
     if (pr.type === "leave") {
-      // STEP 1: Add the direct supervisor at level 0 (if requester has one)
-      const [requesterUser] = await db.select({ superiorId: usersTable.superiorId }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
-      if (requesterUser?.superiorId) {
-        approvalEntries.push({ prId: id, approverId: requesterUser.superiorId, level: 0, status: "pending" });
+      // STEP 1: Add the direct supervisor at level 0
+      // For leave, use leaveRequesterId (the actual employee) to find their supervisor in user management
+      const leaveEmployeeId = (pr as any).leaveRequesterId || pr.requesterId;
+      const [leaveEmployee] = await db.select({ superiorId: usersTable.superiorId }).from(usersTable).where(eq(usersTable.id, leaveEmployeeId));
+      if (leaveEmployee?.superiorId) {
+        approvalEntries.push({ prId: id, approverId: leaveEmployee.superiorId, level: 0, status: "pending" });
       }
 
-      // STEP 2: Add tiered rule approvals at level 1+ (optional for leave)
+      // STEP 2: If there are approval rules configured in Settings for leave, add them at level 1+
       if (matchingRule) {
         const ruleLevels = await db.select().from(approvalRuleLevelsTable).where(eq(approvalRuleLevelsTable.ruleId, matchingRule.id));
         const sorted = [...ruleLevels].sort((a, b) => a.level - b.level);
