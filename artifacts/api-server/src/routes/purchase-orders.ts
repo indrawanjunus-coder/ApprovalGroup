@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { sendPOCreatedEmail, sendReceivingReadyEmail, sendPOIssuedEmail } from "../lib/email.js";
 import { db } from "@workspace/db";
-import { purchaseOrdersTable, poItemsTable, purchaseRequestsTable, usersTable, settingsTable } from "@workspace/db/schema";
+import { purchaseOrdersTable, poItemsTable, purchaseRequestsTable, usersTable, settingsTable, approvalsTable, companiesTable } from "@workspace/db/schema";
 import { eq, desc, count, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
@@ -121,12 +121,40 @@ router.get("/:id", async (req, res) => {
   try {
     const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
     if (!po) { res.status(404).json({ error: "Not Found" }); return; }
-    const [items, pr, creator] = await Promise.all([
+    const [items, pr, creator, approvalsRaw] = await Promise.all([
       db.select().from(poItemsTable).where(eq(poItemsTable.poId, id)),
-      db.select({ prNumber: purchaseRequestsTable.prNumber, requesterId: purchaseRequestsTable.requesterId }).from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, po.prId)),
+      db.select({
+        prNumber: purchaseRequestsTable.prNumber,
+        requesterId: purchaseRequestsTable.requesterId,
+        department: purchaseRequestsTable.department,
+        description: purchaseRequestsTable.description,
+        notes: purchaseRequestsTable.notes,
+        companyId: purchaseRequestsTable.companyId,
+      }).from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, po.prId)),
       db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, po.createdById)),
+      db.select().from(approvalsTable).where(eq(approvalsTable.prId, po.prId)),
     ]);
-    res.json(formatPO({ ...po, prNumber: pr[0]?.prNumber || "Unknown", createdByName: creator[0]?.name || "Unknown" }, items));
+    const prRow = pr[0];
+    let companyName: string | null = null;
+    if (prRow?.companyId) {
+      const [comp] = await db.select({ name: companiesTable.name }).from(companiesTable).where(eq(companiesTable.id, prRow.companyId));
+      companyName = comp?.name || null;
+    }
+    const approverIds = [...new Set(approvalsRaw.map((a: any) => a.approverId))];
+    const approverUsers = approverIds.length > 0
+      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, approverIds as number[]))
+      : [];
+    const userMap = new Map(approverUsers.map(u => [u.id, u.name]));
+    const approvals = approvalsRaw.map((a: any) => ({ ...a, approverName: userMap.get(a.approverId) || "Unknown" }));
+    const enrichedPR = {
+      prNumber: prRow?.prNumber || "Unknown",
+      requesterName: creator[0]?.name || "Unknown",
+      department: prRow?.department || null,
+      description: prRow?.description || null,
+      notes: prRow?.notes || null,
+      companyName,
+    };
+    res.json({ ...formatPO({ ...po, prNumber: enrichedPR.prNumber, createdByName: creator[0]?.name || "Unknown" }, items), pr: enrichedPR, approvals });
   } catch (err) {
     res.status(500).json({ error: "Internal server error" });
   }

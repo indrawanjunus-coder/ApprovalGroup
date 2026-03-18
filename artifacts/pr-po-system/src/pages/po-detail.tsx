@@ -40,18 +40,7 @@ export default function PODetail() {
     mutation: { onSuccess: () => { toast({ title: "Barang Diterima" }); invalidate(); } }
   });
 
-  const handlePrint = () => {
-    const el = document.querySelector("[data-print-only]") as HTMLElement | null;
-    if (el) {
-      el.style.zoom = "";
-      const usableH = 1062;
-      const h = el.scrollHeight;
-      if (h > usableH) el.style.zoom = String((usableH / h).toFixed(3));
-    }
-    window.print();
-    const reset = () => { if (el) el.style.zoom = ""; window.removeEventListener("afterprint", reset); };
-    window.addEventListener("afterprint", reset);
-  };
+  const handlePrint = () => window.print();
 
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const { mutate: deletePO, isPending: isDeleting } = useMutation({
@@ -206,6 +195,12 @@ export default function PODetail() {
         {/* Info Grid */}
         <table style={{ width: "100%", fontSize: 9, marginBottom: 6, borderCollapse: "collapse" }}>
           <tbody>
+            {(po as any).pr?.companyName && (
+              <tr>
+                <td style={{ width: "12%", color: "#666", paddingBottom: 2 }}>Perusahaan</td>
+                <td colSpan={3} style={{ fontWeight: 700, paddingBottom: 2, color: "#7e22ce" }}>{(po as any).pr.companyName}</td>
+              </tr>
+            )}
             <tr>
               <td style={{ width: "12%", color: "#666", paddingBottom: 2 }}>Nomor PO</td>
               <td style={{ width: "38%", fontWeight: 700, paddingBottom: 2 }}>{po.poNumber}</td>
@@ -218,9 +213,23 @@ export default function PODetail() {
               <td style={{ color: "#666", paddingBottom: 2 }}>Dibuat Oleh</td>
               <td style={{ paddingBottom: 2 }}>{po.createdByName} — {new Date(po.createdAt).toLocaleDateString("id-ID")}</td>
             </tr>
+            {(po as any).pr?.department && (
+              <tr>
+                <td style={{ color: "#666", paddingBottom: 2 }}>Departemen</td>
+                <td style={{ paddingBottom: 2 }}>{(po as any).pr.department}</td>
+                <td style={{ color: "#666", paddingBottom: 2 }}>Pemohon PR</td>
+                <td style={{ paddingBottom: 2 }}>{(po as any).pr.requesterName}</td>
+              </tr>
+            )}
+            {((po as any).pr?.description || (po as any).pr?.notes) && (
+              <tr>
+                <td style={{ color: "#666", paddingBottom: 2 }}>Keperluan</td>
+                <td colSpan={3} style={{ paddingBottom: 2 }}>{(po as any).pr.description}{(po as any).pr.notes ? ` — ${(po as any).pr.notes}` : ""}</td>
+              </tr>
+            )}
             {po.notes && (
               <tr>
-                <td style={{ color: "#666", paddingBottom: 2 }}>Catatan</td>
+                <td style={{ color: "#666", paddingBottom: 2 }}>Catatan PO</td>
                 <td colSpan={3} style={{ paddingBottom: 2 }}>{po.notes}</td>
               </tr>
             )}
@@ -259,6 +268,37 @@ export default function PODetail() {
             </tbody>
           </table>
         </div>
+
+        {/* Approval Chain */}
+        {(po as any).approvals?.length > 0 && (
+          <div style={{ marginBottom: 6 }}>
+            <div style={{ fontWeight: 700, fontSize: 9, borderBottom: "1.5px solid #4c1d95", color: "#4c1d95", paddingBottom: 2, marginBottom: 2 }}>ALUR PERSETUJUAN PR</div>
+            <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f5f3ff" }}>
+                  <th style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>Level</th>
+                  <th style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "left" }}>Approver</th>
+                  <th style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>Status</th>
+                  <th style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>Tanggal</th>
+                  <th style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "left" }}>Catatan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(po as any).approvals.map((app: any) => (
+                  <tr key={app.id}>
+                    <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>{app.level === 0 ? "Atasan" : `L${app.level}`}</td>
+                    <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", fontWeight: 600 }}>{app.approverName}</td>
+                    <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center", fontWeight: 700, color: app.status === "approved" ? "#15803d" : app.status === "rejected" ? "#dc2626" : "#888" }}>
+                      {app.status === "approved" ? "✓ Disetujui" : app.status === "rejected" ? "✗ Ditolak" : "Menunggu"}
+                    </td>
+                    <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center", color: "#555" }}>{app.actionAt ? new Date(app.actionAt).toLocaleDateString("id-ID") : "—"}</td>
+                    <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", color: "#555" }}>{app.notes || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Signature Section */}
         <div style={{ display: "flex", gap: 10, marginTop: 12 }}>

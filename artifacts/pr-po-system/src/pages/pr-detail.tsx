@@ -36,19 +36,7 @@ export default function PRDetail() {
 
   const autoPrint = (mode: "pr" | "receiving") => {
     setPrintMode(mode);
-    setTimeout(() => {
-      const el = document.querySelector("[data-print-only]") as HTMLElement | null;
-      if (el) {
-        el.style.zoom = "";
-        // A4 at 96dpi with 8mm top+bottom margins ≈ 1123 - 61 = 1062px usable
-        const usableH = 1062;
-        const h = el.scrollHeight;
-        if (h > usableH) el.style.zoom = String((usableH / h).toFixed(3));
-      }
-      window.print();
-      const reset = () => { if (el) el.style.zoom = ""; window.removeEventListener("afterprint", reset); };
-      window.addEventListener("afterprint", reset);
-    }, 120);
+    setTimeout(() => window.print(), 150);
   };
   const handlePrintPR = () => autoPrint("pr");
   const handlePrintReceiving = () => autoPrint("receiving");
@@ -811,6 +799,12 @@ export default function PRDetail() {
           {/* Info Grid */}
           <table style={{ width: "100%", fontSize: 9, marginBottom: 6, borderCollapse: "collapse" }}>
             <tbody>
+              {pr.companyName && (
+                <tr>
+                  <td style={{ width: "12%", color: "#666", paddingBottom: 2 }}>Perusahaan</td>
+                  <td colSpan={3} style={{ fontWeight: 700, paddingBottom: 2, color: "#1a56db" }}>{pr.companyName}</td>
+                </tr>
+              )}
               <tr>
                 <td style={{ width: "12%", color: "#666", paddingBottom: 2 }}>Pemohon</td>
                 <td style={{ width: "38%", fontWeight: 600, paddingBottom: 2 }}>{pr.requesterName}</td>

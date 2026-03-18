@@ -99,47 +99,31 @@
 }
 
 @media print {
-  [data-print-hide] {
-    display: none !important;
-  }
-  [data-print-only] {
-    display: block !important;
-  }
-  .md\:pl-64 {
-    padding-left: 0 !important;
-  }
-  header.sticky {
-    position: static !important;
-    backdrop-filter: none !important;
-  }
-  .shadow-sm, .shadow-md, .shadow-lg {
-    box-shadow: none !important;
-  }
-  .rounded-2xl, .rounded-xl {
-    border-radius: 0.5rem !important;
-  }
-  body {
-    background: white !important;
-    font-size: 11px;
-  }
   @page {
-    margin: 8mm;
+    margin: 10mm;
     size: A4 portrait;
   }
-  /* Hide dialog chrome/overlay when printing */
-  [role="dialog"] > div:first-child,
-  [data-radix-dialog-overlay],
-  [data-radix-popper-content-wrapper] {
-    display: none !important;
-  }
-  /* Show dialog content properly */
-  [role="dialog"] {
-    position: static !important;
-    transform: none !important;
+
+  /* Hide EVERYTHING on the page first */
+  body * {
+    visibility: hidden !important;
     box-shadow: none !important;
-    border: none !important;
-    max-width: 100% !important;
-    max-height: none !important;
-    overflow: visible !important;
+  }
+
+  /* Then make ONLY the print document visible */
+  [data-print-only],
+  [data-print-only] * {
+    visibility: visible !important;
+  }
+
+  /* Position the print document at the top-left of the page */
+  [data-print-only] {
+    display: block !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    background: white !important;
+    zoom: 1 !important;
   }
 }
