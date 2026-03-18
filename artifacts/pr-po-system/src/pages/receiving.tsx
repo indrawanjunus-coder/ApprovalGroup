@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { formatIDR, formatDate } from "@/lib/utils";
-import { PackageCheck, Building, FileText, Loader2, ChevronRight, X, Package, CheckCircle2, Clock } from "lucide-react";
+import { PackageCheck, Building, FileText, Loader2, ChevronRight, X, Package, CheckCircle2, Clock, ArrowRightLeft } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import {
@@ -288,8 +288,12 @@ export default function Receiving() {
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <Badge className={`text-xs border-none shadow-none ${item.type === "po" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
-                        {item.type === "po" ? "Via PO" : "Direct"}
+                      <Badge className={`text-xs border-none shadow-none ${
+                        item.type === "po" ? "bg-purple-100 text-purple-700" :
+                        item.type === "transfer" ? "bg-amber-100 text-amber-700" :
+                        "bg-blue-100 text-blue-700"
+                      }`}>
+                        {item.type === "po" ? "Via PO" : item.type === "transfer" ? "Transfer" : "Direct"}
                       </Badge>
                       <Badge className={`text-xs border-none shadow-none ${recvLabel.cls}`}>
                         {recvLabel.label}
@@ -314,6 +318,12 @@ export default function Receiving() {
                         <span>Vendor: <strong>{item.vendorName}</strong></span>
                       </div>
                     )}
+                    {item.type === "transfer" && item.fromLocationName && (
+                      <div className="flex items-center gap-2 text-amber-700">
+                        <ArrowRightLeft className="h-3.5 w-3.5" />
+                        <span><strong>{item.fromLocationName}</strong> → <strong>{item.toLocationName}</strong></span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between border-t pt-3">
@@ -326,7 +336,7 @@ export default function Receiving() {
                         onClick={() => setLocation(`/purchase-requests/${item.prId}`)}>
                         Detail
                       </Button>
-                      {item.type === "pr" && recvStatus !== "closed" && (
+                      {(item.type === "pr" || item.type === "transfer") && recvStatus !== "closed" && (
                         <Button size="sm" className="h-8 text-xs bg-teal-600 hover:bg-teal-700"
                           onClick={() => {
                             setSelectedPRId(item.prId);

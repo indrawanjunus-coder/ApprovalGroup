@@ -324,6 +324,18 @@ export default function PRDetail() {
                   )}
                 </>
               )}
+              {pr.type === "transfer" && (
+                <>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Dari Lokasi</p>
+                    <p className="font-medium">{(pr as any).fromLocationName || "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Ke Lokasi</p>
+                    <p className="font-medium">{(pr as any).toLocationName || "—"}</p>
+                  </div>
+                </>
+              )}
               {pr.notes && (
                 <div className="col-span-2">
                   <p className="text-sm text-muted-foreground">Catatan</p>

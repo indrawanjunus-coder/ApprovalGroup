@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin } from "lucide-react";
 
 // Company Management
 function CompanyManager() {
@@ -1239,6 +1239,152 @@ function SmtpSettings() {
 }
 
 // Main Settings page
+function LocationManager() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
+  const { data: locData, isLoading } = useQuery<any>({
+    queryKey: ["/api/locations"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/locations`, { credentials: "include" });
+      return res.ok ? res.json() : { locations: [] };
+    },
+  });
+  const locations = locData?.locations || [];
+
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState({ code: "", name: "", description: "", isActive: true });
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["/api/locations"] });
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const url = editId ? `${BASE}/api/locations/${editId}` : `${BASE}/api/locations`;
+      const res = await fetch(url, {
+        method: editId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Gagal"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Berhasil", description: editId ? "Lokasi diperbarui." : "Lokasi ditambahkan." });
+      invalidate();
+      setShowForm(false);
+      setEditId(null);
+      setForm({ code: "", name: "", description: "", isActive: true });
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.message }),
+  });
+
+  const deleteLoc = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`${BASE}/api/locations/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Gagal menghapus"); }
+    },
+    onSuccess: () => { toast({ title: "Berhasil", description: "Lokasi dihapus." }); invalidate(); },
+    onError: (e: any) => toast({ variant: "destructive", title: "Gagal", description: e.message }),
+  });
+
+  const startEdit = (loc: any) => {
+    setEditId(loc.id);
+    setForm({ code: loc.code, name: loc.name, description: loc.description || "", isActive: loc.is_active });
+    setShowForm(true);
+  };
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-primary" />
+            Manajemen Lokasi / Gudang
+          </CardTitle>
+          <CardDescription>Lokasi asal dan tujuan untuk Transfer Barang</CardDescription>
+        </div>
+        <Button size="sm" onClick={() => { setShowForm(true); setEditId(null); setForm({ code: "", name: "", description: "", isActive: true }); }}>
+          <Plus className="mr-1 h-4 w-4" /> Tambah Lokasi
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {showForm && (
+          <div className="rounded-xl border p-4 bg-slate-50/50 space-y-3">
+            <h4 className="font-semibold text-sm">{editId ? "Edit Lokasi" : "Tambah Lokasi"}</h4>
+            <div className="grid grid-cols-2 gap-3">
+              {!editId && (
+                <div className="space-y-1">
+                  <Label className="text-xs">Kode <span className="text-destructive">*</span></Label>
+                  <Input placeholder="GUDANG-C" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} className="h-9" />
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label className="text-xs">Nama Lokasi <span className="text-destructive">*</span></Label>
+                <Input placeholder="Gudang Selatan" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="h-9" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Deskripsi</Label>
+                <Input placeholder="Opsional" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="h-9" />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+                {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {editId ? " Perbarui" : " Simpan"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setShowForm(false); setEditId(null); }}>Batal</Button>
+            </div>
+          </div>
+        )}
+        {isLoading ? <p className="text-sm text-muted-foreground animate-pulse">Memuat...</p> : locations.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Belum ada lokasi. Tambahkan lokasi di atas.</p>
+        ) : (
+          <div className="rounded-xl border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b">
+                <tr>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Kode</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Nama</th>
+                  <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Deskripsi</th>
+                  <th className="text-center px-4 py-2.5 font-medium text-muted-foreground">Aktif</th>
+                  <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {locations.map((loc: any) => (
+                  <tr key={loc.id} className="border-b last:border-0 hover:bg-slate-50/50">
+                    <td className="px-4 py-2.5 font-mono text-xs font-medium">{loc.code}</td>
+                    <td className="px-4 py-2.5 font-medium">{loc.name}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{loc.description || "—"}</td>
+                    <td className="px-4 py-2.5 text-center">
+                      <Badge variant={loc.is_active ? "default" : "secondary"} className="text-xs">
+                        {loc.is_active ? "Aktif" : "Non-aktif"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="flex gap-1 justify-end">
+                        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => startEdit(loc)}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteLoc.mutate(loc.id)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data, isLoading } = useGetSettings();
   const { toast } = useToast();
@@ -1314,6 +1460,7 @@ export default function Settings() {
 
       <DepartmentManager />
       <PrTypeManager />
+      <LocationManager />
       <CompanyManager />
       <CompanyLeaveManager />
       <ApprovalRuleManager />

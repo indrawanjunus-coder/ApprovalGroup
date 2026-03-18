@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Search, FileText, ShoppingCart, Wallet, ChevronLeft, ChevronRight, Calendar, X, ExternalLink, CalendarDays } from "lucide-react";
+import { Loader2, Search, FileText, ShoppingCart, Wallet, ChevronLeft, ChevronRight, Calendar, X, ExternalLink, CalendarDays, ArrowRightLeft } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatIDR, formatDate } from "@/lib/utils";
 import { useGetMe } from "@workspace/api-client-react";
@@ -359,6 +359,155 @@ function PaymentHistoryTab() {
   );
 }
 
+// --- Transfer History Tab ---
+function TransferHistoryTab() {
+  const [, setLocation] = useLocation();
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(20);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const params = new URLSearchParams({
+    page: String(page), limit: String(limit),
+    ...(status !== "all" ? { status } : {}),
+    ...(search ? { search } : {}),
+    ...(dateFrom ? { dateFrom } : {}),
+    ...(dateTo ? { dateTo } : {}),
+  });
+
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/history/transfer", page, limit, status, search, dateFrom, dateTo],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/history/transfer?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Gagal memuat riwayat transfer");
+      return res.json();
+    },
+    keepPreviousData: true,
+  });
+
+  const totalPages = data ? Math.ceil(data.total / limit) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-3 items-end">
+        <div className="flex-1 min-w-[180px]">
+          <Label className="text-xs text-muted-foreground mb-1 block">Cari Nomor PR</Label>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input placeholder="Nomor PR..." className="pl-8 h-9" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          </div>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
+          <Select value={status} onValueChange={v => { setStatus(v); setPage(1); }}>
+            <SelectTrigger className="w-40 h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Status</SelectItem>
+              {PR_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">Dari Tanggal</Label>
+          <div className="relative">
+            <Calendar className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+            <Input type="date" className="pl-8 h-9" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }} />
+          </div>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">Sampai</Label>
+          <Input type="date" className="h-9 w-36" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }} />
+        </div>
+        {(search || status !== "all" || dateFrom || dateTo) && (
+          <Button size="sm" variant="ghost" className="h-9 gap-1" onClick={() => { setSearch(""); setStatus("all"); setDateFrom(""); setDateTo(""); setPage(1); }}>
+            <X className="h-3.5 w-3.5" /> Reset
+          </Button>
+        )}
+        <Select value={String(limit)} onValueChange={v => { setLimit(Number(v)); setPage(1); }}>
+          <SelectTrigger className="w-24 h-9"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="20">20/hal</SelectItem>
+            <SelectItem value="50">50/hal</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : !data?.items?.length ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <ArrowRightLeft className="h-10 w-10 mx-auto mb-2 opacity-20" />
+          <p className="text-sm">Tidak ada riwayat transfer ditemukan</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto table-scrollbar rounded-xl border">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b">
+              <tr>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Nomor PR</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Deskripsi</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Dari</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Ke</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Dept.</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Pemohon</th>
+                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Jumlah</th>
+                <th className="text-center px-4 py-2.5 font-medium text-muted-foreground">Penerimaan</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.items.map((item: any) => (
+                <tr key={item.id} className="border-b hover:bg-slate-50/50 transition-colors">
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => setLocation(`/purchase-requests/${item.id}`)}
+                      className="font-mono text-xs text-primary hover:underline flex items-center gap-1 group"
+                    >
+                      {item.prNumber}
+                      <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 max-w-[140px] truncate">{item.description}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{item.fromLocationName}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{item.toLocationName}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{item.department || "—"}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{item.requesterName}</td>
+                  <td className="px-4 py-3 text-right font-medium">{item.totalAmount > 0 ? formatIDR(item.totalAmount) : "—"}</td>
+                  <td className="px-4 py-3 text-center">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      item.receivingStatus === "closed" ? "bg-green-100 text-green-700" :
+                      item.receivingStatus === "partial" ? "bg-yellow-100 text-yellow-700" :
+                      item.receivingStatus === "pending" ? "bg-blue-100 text-blue-700" :
+                      "bg-slate-100 text-slate-600"
+                    }`}>
+                      {item.receivingStatus === "closed" ? "Selesai" :
+                       item.receivingStatus === "partial" ? "Sebagian" :
+                       item.receivingStatus === "pending" ? "Siap Terima" : "Belum"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between pt-2">
+          <p className="text-xs text-muted-foreground">Hal {page} dari {totalPages} ({data?.total} entri)</p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(p => p - 1)}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight className="h-4 w-4" /></Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Leave History Tab ---
 function LeaveHistoryTab() {
   const [, setLocation] = useLocation();
@@ -523,6 +672,9 @@ export default function History() {
           <TabsTrigger value="leave" className="flex items-center gap-2">
             <CalendarDays className="h-4 w-4" /> Riwayat Cuti
           </TabsTrigger>
+          <TabsTrigger value="transfer" className="flex items-center gap-2">
+            <ArrowRightLeft className="h-4 w-4" /> Riwayat Transfer
+          </TabsTrigger>
         </TabsList>
 
         <Card className="border-0 shadow-sm">
@@ -531,6 +683,7 @@ export default function History() {
             <TabsContent value="po" className="mt-0"><POHistoryTab /></TabsContent>
             <TabsContent value="payment" className="mt-0"><PaymentHistoryTab /></TabsContent>
             <TabsContent value="leave" className="mt-0"><LeaveHistoryTab /></TabsContent>
+            <TabsContent value="transfer" className="mt-0"><TransferHistoryTab /></TabsContent>
           </CardContent>
         </Card>
       </Tabs>

@@ -24,6 +24,8 @@ export const purchaseRequestsTable = pgTable("purchase_requests", {
   vendorSelectedAt: timestamp("vendor_selected_at"),
   vendorFinalQty: numeric("vendor_final_qty", { precision: 15, scale: 2 }),
   vendorFinalAmount: numeric("vendor_final_amount", { precision: 15, scale: 2 }),
+  fromLocationId: integer("from_location_id"),
+  toLocationId: integer("to_location_id"),
   receivingStatus: text("receiving_status").notNull().default("none"),
   receivingClosedAt: timestamp("receiving_closed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

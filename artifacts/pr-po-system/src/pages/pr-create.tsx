@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatIDR } from "@/lib/utils";
-import { ArrowLeft, Plus, Trash2, Save, Loader2, CalendarDays, User } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Save, Loader2, CalendarDays, User, ArrowRightLeft } from "lucide-react";
 
 export default function PRCreate() {
   const [, setLocation] = useLocation();
@@ -30,6 +30,10 @@ export default function PRCreate() {
   const [leaveEndDate, setLeaveEndDate] = useState("");
   const [leaveRequesterId, setLeaveRequesterId] = useState<number | "">("");
 
+  // Transfer-specific fields
+  const [fromLocationId, setFromLocationId] = useState<number | "">("");
+  const [toLocationId, setToLocationId] = useState<number | "">("");
+
   const { data: me } = useGetMe();
   const { data: companiesData } = useGetCompanies();
   const { data: usersData } = useGetUsers({ limit: 200 });
@@ -49,6 +53,16 @@ export default function PRCreate() {
       return res.ok ? res.json() : [];
     },
   });
+
+  const { data: locData } = useQuery<any>({
+    queryKey: ["/api/locations"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/locations`, { credentials: "include" });
+      return res.ok ? res.json() : { locations: [] };
+    },
+    enabled: type === "transfer",
+  });
+  const activeLocations = (locData?.locations || []).filter((l: any) => l.is_active);
 
   const activeTypes = (prTypesData || []).filter((t: any) => t.isActive);
   const activeDepts = (departmentsData || []).filter((d: any) => d.isActive);
@@ -150,6 +164,20 @@ export default function PRCreate() {
           leaveRequesterId: leaveRequesterId || null,
         } as any
       });
+    } else if (type === "transfer") {
+      if (!fromLocationId || !toLocationId) {
+        toast({ variant: "destructive", title: "Validasi", description: "Lokasi asal dan tujuan wajib dipilih." });
+        return;
+      }
+      if (fromLocationId === toLocationId) {
+        toast({ variant: "destructive", title: "Validasi", description: "Lokasi asal dan tujuan tidak boleh sama." });
+        return;
+      }
+      if (items.some(i => !i.name || i.qty <= 0)) {
+        toast({ variant: "destructive", title: "Validasi", description: "Lengkapi semua item yang ditransfer." });
+        return;
+      }
+      createPR({ data: { type, description, notes, department, companyId: companyId || null, items, fromLocationId, toLocationId } as any });
     } else {
       if (items.some(i => !i.name || i.qty <= 0)) {
         toast({ variant: "destructive", title: "Validasi", description: "Lengkapi semua item." });
@@ -341,6 +369,60 @@ export default function PRCreate() {
                 </select>
                 <p className="text-xs text-muted-foreground">Biarkan kosong jika pengaju = yang cuti</p>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Transfer-specific fields */}
+        {type === "transfer" && (
+          <Card className="border-0 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ArrowRightLeft className="h-5 w-5 text-primary" />
+                Lokasi Transfer
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <Label>Dari Lokasi <span className="text-destructive">*</span></Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  value={fromLocationId}
+                  onChange={(e) => setFromLocationId(e.target.value ? Number(e.target.value) : "")}
+                  required
+                >
+                  <option value="">-- Pilih Lokasi Asal --</option>
+                  {activeLocations.map((l: any) => (
+                    <option key={l.id} value={l.id}>{l.name} ({l.code})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Ke Lokasi <span className="text-destructive">*</span></Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  value={toLocationId}
+                  onChange={(e) => setToLocationId(e.target.value ? Number(e.target.value) : "")}
+                  required
+                >
+                  <option value="">-- Pilih Lokasi Tujuan --</option>
+                  {activeLocations.filter((l: any) => l.id !== fromLocationId).map((l: any) => (
+                    <option key={l.id} value={l.id}>{l.name} ({l.code})</option>
+                  ))}
+                </select>
+              </div>
+              {fromLocationId && toLocationId && fromLocationId !== toLocationId && (
+                <div className="md:col-span-2">
+                  <div className="flex items-center gap-3 text-sm bg-amber-50 border border-amber-100 rounded-lg p-3 text-amber-800">
+                    <ArrowRightLeft className="h-4 w-4 shrink-0" />
+                    <span>
+                      Transfer dari <strong>{activeLocations.find((l: any) => l.id === fromLocationId)?.name}</strong>
+                      {" → "}
+                      <strong>{activeLocations.find((l: any) => l.id === toLocationId)?.name}</strong>
+                    </span>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

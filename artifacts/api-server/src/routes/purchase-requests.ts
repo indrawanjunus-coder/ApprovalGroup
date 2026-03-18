@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import {
   purchaseRequestsTable, prItemsTable, approvalsTable, approvalRulesTable,
   approvalRuleLevelsTable, usersTable, companiesTable, prVendorAttachmentsTable,
-  purchaseOrdersTable, prReceivingItemsTable, userLeaveBalancesTable
+  purchaseOrdersTable, prReceivingItemsTable, userLeaveBalancesTable, locationsTable
 } from "@workspace/db/schema";
 import { eq, desc, ilike, and, inArray, count, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
@@ -62,12 +62,25 @@ async function buildFullPR(pr: any, items: any[], approvals: any[], vendorAttach
     .leftJoin(usersTable, eq(prReceivingItemsTable.receivedBy, usersTable.id))
     .where(eq(prReceivingItemsTable.prId, pr.id));
 
+  let fromLocationName: string | null = null;
+  let toLocationName: string | null = null;
+  if ((pr as any).fromLocationId) {
+    const [loc] = await db.execute(sql`SELECT name FROM locations WHERE id=${(pr as any).fromLocationId}`).then((r: any) => r.rows || []);
+    fromLocationName = loc?.name || null;
+  }
+  if ((pr as any).toLocationId) {
+    const [loc] = await db.execute(sql`SELECT name FROM locations WHERE id=${(pr as any).toLocationId}`).then((r: any) => r.rows || []);
+    toLocationName = loc?.name || null;
+  }
+
   return {
     ...parsePRRow(pr),
     companyName,
     leaveRequesterName,
     selectedVendorName,
     vendorSelectedByName,
+    fromLocationName,
+    toLocationName,
     receivingStatus: pr.receivingStatus || "none",
     receivingRecords: receivingRecords.map(r => ({ ...r, receivedQty: parseFloat(r.receivedQty) })),
     items: items.map(i => ({
@@ -161,8 +174,11 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   const user = req.user!;
-  const { type, description, items, notes, companyId, department, leaveStartDate, leaveEndDate, leaveRequesterId } = req.body;
+  const { type, description, items, notes, companyId, department, leaveStartDate, leaveEndDate, leaveRequesterId, fromLocationId, toLocationId } = req.body;
   if (!type || !description) { res.status(400).json({ error: "Bad Request", message: "Missing required fields" }); return; }
+  if (type === "transfer" && (!fromLocationId || !toLocationId)) {
+    res.status(400).json({ error: "Bad Request", message: "Lokasi asal dan tujuan wajib diisi untuk Transfer Barang" }); return;
+  }
   if (type !== "leave" && (!items || !Array.isArray(items) || items.length === 0)) {
     res.status(400).json({ error: "Bad Request", message: "Items required for this request type" }); return;
   }
@@ -229,7 +245,9 @@ router.post("/", async (req, res) => {
       totalAmount: totalAmount.toString(), notes,
       leaveStartDate: leaveStartDate || null, leaveEndDate: leaveEndDate || null,
       leaveRequesterId: leaveRequesterId || user.id,
-    }).returning();
+      fromLocationId: fromLocationId ? parseInt(fromLocationId) : null,
+      toLocationId: toLocationId ? parseInt(toLocationId) : null,
+    } as any).returning();
 
     let prItems: any[] = [];
     if (type !== "leave" && items?.length > 0) {
@@ -671,6 +689,14 @@ router.get("/receiving-list", async (req, res) => {
     if (user.role === "user") conditions.push(eq(purchaseRequestsTable.requesterId, user.id));
     const vendorSelectedPRs = await db.select().from(purchaseRequestsTable).where(and(...conditions));
 
+    // Transfer PRs approved: ready for receiving
+    const transferConditions: any[] = [
+      eq(purchaseRequestsTable.type, "transfer"),
+      eq(purchaseRequestsTable.status, "approved"),
+    ];
+    if (user.role === "user") transferConditions.push(eq(purchaseRequestsTable.requesterId, user.id));
+    const transferPRs = await db.select().from(purchaseRequestsTable).where(and(...transferConditions));
+
     // Get PR info for POs
     const poItems = [];
     for (const po of prReadyPOs) {
@@ -720,7 +746,43 @@ router.get("/receiving-list", async (req, res) => {
       });
     }
 
-    const items = [...poItems, ...prItems];
+    // Transfer PR items
+    const transferItems = [];
+    for (const pr of transferPRs) {
+      if (pr.receivingStatus === "closed") continue;
+      const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
+      let fromLocationName: string | null = null;
+      let toLocationName: string | null = null;
+      if ((pr as any).fromLocationId) {
+        const [loc] = await db.select({ name: locationsTable.name }).from(locationsTable).where(eq(locationsTable.id, (pr as any).fromLocationId));
+        fromLocationName = loc?.name || null;
+      }
+      if ((pr as any).toLocationId) {
+        const [loc] = await db.select({ name: locationsTable.name }).from(locationsTable).where(eq(locationsTable.id, (pr as any).toLocationId));
+        toLocationName = loc?.name || null;
+      }
+      transferItems.push({
+        id: pr.id,
+        type: "transfer" as const,
+        prId: pr.id,
+        prNumber: pr.prNumber,
+        prDescription: pr.description,
+        requesterName: requester?.name || "Unknown",
+        department: pr.department,
+        vendorName: null,
+        fromLocationId: (pr as any).fromLocationId,
+        toLocationId: (pr as any).toLocationId,
+        fromLocationName,
+        toLocationName,
+        totalAmount: parseFloat(pr.totalAmount),
+        status: pr.status,
+        poId: null,
+        poNumber: null,
+        receivingStatus: pr.receivingStatus,
+      });
+    }
+
+    const items = [...poItems, ...prItems, ...transferItems];
     res.json({ items, total: items.length });
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });

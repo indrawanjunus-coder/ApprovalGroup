@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import {
-  approvalsTable, purchaseRequestsTable, usersTable, userCompaniesTable, companiesTable
+  approvalsTable, purchaseRequestsTable, usersTable, userCompaniesTable, companiesTable,
+  userLeaveBalancesTable, prItemsTable, prReceivingItemsTable,
 } from "@workspace/db/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
@@ -115,10 +116,59 @@ async function processApprovalAction(req: any, res: any, action: "approved" | "r
         const [requester] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
         if (requester?.email) {
           sendPRApprovedEmail(requester.email, requester.name, pr.prNumber, pr.description).catch(() => {});
-          // For non-leave, non-pembayaran types: also ask to upload vendor attachments
-          if (pr.type !== "leave" && pr.type !== "pembayaran") {
+          // For non-leave, non-pembayaran, non-transfer types: also ask to upload vendor attachments
+          if (pr.type !== "leave" && pr.type !== "pembayaran" && pr.type !== "transfer") {
             sendVendorAttachmentRequestEmail(requester.email, requester.name, pr.prNumber).catch(() => {});
           }
+        }
+
+        // Leave: deduct balance (carried_over first, then balance_days)
+        if (pr.type === "leave" && pr.leaveStartDate && pr.leaveEndDate) {
+          try {
+            const start = new Date(pr.leaveStartDate);
+            const end = new Date(pr.leaveEndDate);
+            const requestedDays = Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+            const leaveUserId = (pr as any).leaveRequesterId || pr.requesterId;
+            const year = start.getFullYear();
+            let [balance] = await db.select().from(userLeaveBalancesTable)
+              .where(and(eq(userLeaveBalancesTable.userId, leaveUserId), eq(userLeaveBalancesTable.year, year)));
+            if (balance) {
+              let remaining = requestedDays;
+              let newCarriedOver = parseFloat(balance.carriedOverDays);
+              let newBalance = parseFloat(balance.balanceDays);
+              let newUsed = parseFloat(balance.usedDays);
+              // Deduct carried_over first
+              if (newCarriedOver > 0) {
+                const fromCarried = Math.min(newCarriedOver, remaining);
+                newCarriedOver -= fromCarried;
+                remaining -= fromCarried;
+              }
+              // Then deduct balance_days
+              if (remaining > 0) {
+                newBalance = Math.max(0, newBalance - remaining);
+              }
+              newUsed += requestedDays;
+              await db.update(userLeaveBalancesTable).set({
+                carriedOverDays: newCarriedOver.toFixed(1),
+                balanceDays: newBalance.toFixed(1),
+                usedDays: newUsed.toFixed(1),
+                updatedAt: new Date(),
+              }).where(eq(userLeaveBalancesTable.id, balance.id));
+            }
+          } catch (leaveErr) { console.error("Leave deduction failed:", leaveErr); }
+        }
+
+        // Transfer: auto-create receiving (mark items as ready to receive)
+        if (pr.type === "transfer") {
+          try {
+            const prItems = await db.select().from(prItemsTable).where(eq(prItemsTable.prId, pr.id));
+            if (prItems.length > 0) {
+              await db.update(purchaseRequestsTable).set({
+                receivingStatus: "pending",
+                updatedAt: new Date(),
+              }).where(eq(purchaseRequestsTable.id, pr.id));
+            }
+          } catch (transferErr) { console.error("Transfer receiving setup failed:", transferErr); }
         }
       } else {
         await db.update(purchaseRequestsTable).set({ currentApprovalLevel: nextLevel, updatedAt: new Date() }).where(eq(purchaseRequestsTable.id, pr.id));
