@@ -33,6 +33,7 @@ export default function PRCreate() {
   // Transfer-specific fields
   const [fromLocationId, setFromLocationId] = useState<number | "">("");
   const [toLocationId, setToLocationId] = useState<number | "">("");
+  const [transferToUserId, setTransferToUserId] = useState<number | "">("");
 
   const { data: me } = useGetMe();
   const { data: companiesData } = useGetCompanies();
@@ -173,11 +174,15 @@ export default function PRCreate() {
         toast({ variant: "destructive", title: "Validasi", description: "Lokasi asal dan tujuan tidak boleh sama." });
         return;
       }
+      if (!transferToUserId) {
+        toast({ variant: "destructive", title: "Validasi", description: "Penerima transfer wajib dipilih." });
+        return;
+      }
       if (items.some(i => !i.name || i.qty <= 0)) {
         toast({ variant: "destructive", title: "Validasi", description: "Lengkapi semua item yang ditransfer." });
         return;
       }
-      createPR({ data: { type, description, notes, department, companyId: companyId || null, items, fromLocationId, toLocationId } as any });
+      createPR({ data: { type, description, notes, department, companyId: companyId || null, items, fromLocationId, toLocationId, transferToUserId } as any });
     } else {
       if (items.some(i => !i.name || i.qty <= 0)) {
         toast({ variant: "destructive", title: "Validasi", description: "Lengkapi semua item." });
@@ -411,6 +416,21 @@ export default function PRCreate() {
                   ))}
                 </select>
               </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Penerima Transfer <span className="text-destructive">*</span></Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  value={transferToUserId}
+                  onChange={(e) => setTransferToUserId(e.target.value ? Number(e.target.value) : "")}
+                  required
+                >
+                  <option value="">-- Pilih Penerima --</option>
+                  {(usersData?.users || []).filter((u: any) => u.id !== me?.id && u.isActive).map((u: any) => (
+                    <option key={u.id} value={u.id}>{u.name} ({u.department})</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">Penerima akan mendapatkan notifikasi email saat transfer disetujui</p>
+              </div>
               {fromLocationId && toLocationId && fromLocationId !== toLocationId && (
                 <div className="md:col-span-2">
                   <div className="flex items-center gap-3 text-sm bg-amber-50 border border-amber-100 rounded-lg p-3 text-amber-800">
@@ -419,6 +439,9 @@ export default function PRCreate() {
                       Transfer dari <strong>{activeLocations.find((l: any) => l.id === fromLocationId)?.name}</strong>
                       {" → "}
                       <strong>{activeLocations.find((l: any) => l.id === toLocationId)?.name}</strong>
+                      {transferToUserId && (
+                        <>{" "} kepada <strong>{(usersData?.users || []).find((u: any) => u.id === transferToUserId)?.name}</strong></>
+                      )}
                     </span>
                   </div>
                 </div>

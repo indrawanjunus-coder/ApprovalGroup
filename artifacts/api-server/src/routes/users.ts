@@ -86,9 +86,12 @@ router.get("/:id", async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 });
 
-router.post("/", requireRole("admin"), async (req, res) => {
-  const { username, password, name, email, department, position, role, superiorId, hiredCompanyId, companies } = req.body;
-  if (!username || !password || !name || !department || !position || !role) {
+router.post("/", requireRole("admin", "approver"), async (req, res) => {
+  const requester = req.user!;
+  const { username, password, name, email, department, position, superiorId, hiredCompanyId, companies } = req.body;
+  // Approver can only create "user" role; admin can set any role
+  const role = requester.role === "approver" ? "user" : (req.body.role || "user");
+  if (!username || !password || !name || !department || !position) {
     res.status(400).json({ error: "Missing required fields" }); return;
   }
   try {
@@ -119,9 +122,12 @@ router.post("/", requireRole("admin"), async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 
-router.put("/:id", requireRole("admin"), async (req, res) => {
+router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
+  const requester = req.user!;
   const id = parseInt(req.params.id);
-  const { name, email, department, position, role, superiorId, hiredCompanyId, isActive, password, companies } = req.body;
+  const { name, email, department, position, superiorId, hiredCompanyId, isActive, password, companies } = req.body;
+  // Approver can only set role "user" and cannot change password
+  const role = requester.role === "approver" ? "user" : (req.body.role || "user");
   try {
     const updateData: any = {
       name, email: email || null, department, position, role,
@@ -129,7 +135,8 @@ router.put("/:id", requireRole("admin"), async (req, res) => {
       hiredCompanyId: hiredCompanyId !== undefined ? (hiredCompanyId || null) : undefined,
       isActive: isActive !== undefined ? isActive : true, updatedAt: new Date(),
     };
-    if (password) updateData.passwordHash = hashPassword(password);
+    // Only admin can change password
+    if (password && requester.role === "admin") updateData.passwordHash = hashPassword(password);
     const [user] = await db.update(usersTable).set(updateData).where(eq(usersTable.id, id)).returning();
     if (!user) { res.status(404).json({ error: "Not Found" }); return; }
 

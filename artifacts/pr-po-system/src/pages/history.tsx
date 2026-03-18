@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Search, FileText, ShoppingCart, Wallet, ChevronLeft, ChevronRight, Calendar, X, ExternalLink, CalendarDays, ArrowRightLeft } from "lucide-react";
+import { Loader2, Search, FileText, ShoppingCart, Wallet, ChevronLeft, ChevronRight, Calendar, X, ExternalLink, CalendarDays, ArrowRightLeft, Download, Package, TrendingUp } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatIDR, formatDate } from "@/lib/utils";
 import { useGetMe } from "@workspace/api-client-react";
@@ -368,6 +368,18 @@ function TransferHistoryTab() {
   const [status, setStatus] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [fromLocationId, setFromLocationId] = useState("");
+  const [toLocationId, setToLocationId] = useState("");
+
+  // Fetch locations for filters
+  const { data: locData } = useQuery<any>({
+    queryKey: ["/api/locations"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/locations`, { credentials: "include" });
+      return res.ok ? res.json() : { locations: [] };
+    },
+  });
+  const locations = (locData?.locations || []).filter((l: any) => l.is_active);
 
   const params = new URLSearchParams({
     page: String(page), limit: String(limit),
@@ -375,10 +387,19 @@ function TransferHistoryTab() {
     ...(search ? { search } : {}),
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
+    ...(fromLocationId ? { fromLocationId } : {}),
+    ...(toLocationId ? { toLocationId } : {}),
+  });
+
+  const summaryParams = new URLSearchParams({
+    ...(dateFrom ? { dateFrom } : {}),
+    ...(dateTo ? { dateTo } : {}),
+    ...(fromLocationId ? { fromLocationId } : {}),
+    ...(toLocationId ? { toLocationId } : {}),
   });
 
   const { data, isLoading } = useQuery<any>({
-    queryKey: ["/api/history/transfer", page, limit, status, search, dateFrom, dateTo],
+    queryKey: ["/api/history/transfer", page, limit, status, search, dateFrom, dateTo, fromLocationId, toLocationId],
     queryFn: async () => {
       const res = await fetch(`${BASE}/api/history/transfer?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Gagal memuat riwayat transfer");
@@ -387,12 +408,86 @@ function TransferHistoryTab() {
     keepPreviousData: true,
   });
 
+  const { data: summary } = useQuery<any>({
+    queryKey: ["/api/history/transfer/summary", dateFrom, dateTo, fromLocationId, toLocationId],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/history/transfer/summary?${summaryParams}`, { credentials: "include" });
+      return res.ok ? res.json() : null;
+    },
+  });
+
   const totalPages = data ? Math.ceil(data.total / limit) : 0;
+  const hasFilter = !!(search || status !== "all" || dateFrom || dateTo || fromLocationId || toLocationId);
+
+  const handleExportExcel = async () => {
+    const allParams = new URLSearchParams({ ...Object.fromEntries(params), page: "1", limit: "9999" });
+    const res = await fetch(`${BASE}/api/history/transfer?${allParams}`, { credentials: "include" });
+    const json = await res.json();
+    const rows = json.items || [];
+
+    const headers = ["Nomor PR", "Deskripsi", "Dari Gudang", "Ke Gudang", "Penerima", "Pemohon", "Dept.", "Status", "Penerimaan", "Tanggal"];
+    const csvRows = [
+      headers.join(","),
+      ...rows.map((r: any) => [
+        r.prNumber, `"${r.description}"`, r.fromLocationName, r.toLocationName,
+        r.transferToUserName || "—", r.requesterName, r.department || "—",
+        r.status, r.receivingStatus,
+        new Date(r.createdAt).toLocaleDateString("id-ID"),
+      ].join(",")),
+    ];
+    const blob = new Blob(["\uFEFF" + csvRows.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `riwayat-transfer-${Date.now()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="space-y-4">
+      {/* Summary Cards */}
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
+            <p className="text-xs text-amber-600 font-medium mb-1">Total Transfer</p>
+            <p className="text-2xl font-bold text-amber-800">{summary.totalPRs}</p>
+            <p className="text-xs text-amber-500 mt-0.5">dokumen disetujui</p>
+          </div>
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <p className="text-xs text-blue-600 font-medium mb-1">Total Item</p>
+            <p className="text-2xl font-bold text-blue-800">{summary.totalItems}</p>
+            <p className="text-xs text-blue-500 mt-0.5">jenis barang</p>
+          </div>
+          <div className="bg-purple-50 border border-purple-100 rounded-xl p-4">
+            <p className="text-xs text-purple-600 font-medium mb-1">Total Kuantitas</p>
+            <p className="text-2xl font-bold text-purple-800">{Number(summary.totalQty || 0).toLocaleString("id-ID")}</p>
+            <p className="text-xs text-purple-500 mt-0.5">unit ditransfer</p>
+          </div>
+          <div className="bg-green-50 border border-green-100 rounded-xl p-4">
+            <p className="text-xs text-green-600 font-medium mb-1">Total Nilai</p>
+            <p className="text-lg font-bold text-green-800">{formatIDR(summary.totalValue || 0)}</p>
+            <p className="text-xs text-green-500 mt-0.5">estimasi nilai</p>
+          </div>
+        </div>
+      )}
+
+      {/* Top Items */}
+      {summary?.topItems?.length > 0 && (
+        <div className="bg-slate-50 rounded-xl border p-4">
+          <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5" /> Item Terbanyak Ditransfer (Top 5)</p>
+          <div className="flex flex-wrap gap-2">
+            {summary.topItems.map((item: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 bg-white border rounded-lg px-3 py-1.5 text-sm">
+                <Package className="h-3.5 w-3.5 text-amber-500" />
+                <span className="font-medium">{item.name}</span>
+                <span className="text-muted-foreground text-xs">{Number(item.qty).toLocaleString("id-ID")} unit</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
       <div className="flex flex-wrap gap-3 items-end">
-        <div className="flex-1 min-w-[180px]">
+        <div className="flex-1 min-w-[160px]">
           <Label className="text-xs text-muted-foreground mb-1 block">Cari Nomor PR</Label>
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -400,17 +495,37 @@ function TransferHistoryTab() {
           </div>
         </div>
         <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">Gudang Pengirim</Label>
+          <Select value={fromLocationId || "all"} onValueChange={v => { setFromLocationId(v === "all" ? "" : v); setPage(1); }}>
+            <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Semua" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Pengirim</SelectItem>
+              {locations.map((l: any) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1 block">Gudang Penerima</Label>
+          <Select value={toLocationId || "all"} onValueChange={v => { setToLocationId(v === "all" ? "" : v); setPage(1); }}>
+            <SelectTrigger className="w-40 h-9"><SelectValue placeholder="Semua" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Semua Penerima</SelectItem>
+              {locations.map((l: any) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
           <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
           <Select value={status} onValueChange={v => { setStatus(v); setPage(1); }}>
-            <SelectTrigger className="w-40 h-9"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-36 h-9"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Semua Status</SelectItem>
+              <SelectItem value="all">Semua</SelectItem>
               {PR_STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
         <div>
-          <Label className="text-xs text-muted-foreground mb-1 block">Dari Tanggal</Label>
+          <Label className="text-xs text-muted-foreground mb-1 block">Dari</Label>
           <div className="relative">
             <Calendar className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
             <Input type="date" className="pl-8 h-9" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }} />
@@ -420,18 +535,14 @@ function TransferHistoryTab() {
           <Label className="text-xs text-muted-foreground mb-1 block">Sampai</Label>
           <Input type="date" className="h-9 w-36" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }} />
         </div>
-        {(search || status !== "all" || dateFrom || dateTo) && (
-          <Button size="sm" variant="ghost" className="h-9 gap-1" onClick={() => { setSearch(""); setStatus("all"); setDateFrom(""); setDateTo(""); setPage(1); }}>
+        {hasFilter && (
+          <Button size="sm" variant="ghost" className="h-9 gap-1" onClick={() => { setSearch(""); setStatus("all"); setDateFrom(""); setDateTo(""); setFromLocationId(""); setToLocationId(""); setPage(1); }}>
             <X className="h-3.5 w-3.5" /> Reset
           </Button>
         )}
-        <Select value={String(limit)} onValueChange={v => { setLimit(Number(v)); setPage(1); }}>
-          <SelectTrigger className="w-24 h-9"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="20">20/hal</SelectItem>
-            <SelectItem value="50">50/hal</SelectItem>
-          </SelectContent>
-        </Select>
+        <Button size="sm" variant="outline" className="h-9 gap-1.5 ml-auto" onClick={handleExportExcel}>
+          <Download className="h-3.5 w-3.5" /> Export CSV
+        </Button>
       </div>
 
       {isLoading ? (
@@ -448,13 +559,13 @@ function TransferHistoryTab() {
               <tr>
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Nomor PR</th>
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Deskripsi</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Dari</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Ke</th>
-                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Dept.</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Dari Gudang</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Ke Gudang</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Penerima</th>
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Pemohon</th>
-                <th className="text-right px-4 py-2.5 font-medium text-muted-foreground">Jumlah</th>
                 <th className="text-center px-4 py-2.5 font-medium text-muted-foreground">Penerimaan</th>
                 <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Status</th>
+                <th className="text-left px-4 py-2.5 font-medium text-muted-foreground">Tanggal</th>
               </tr>
             </thead>
             <tbody>
@@ -469,12 +580,15 @@ function TransferHistoryTab() {
                       <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </button>
                   </td>
-                  <td className="px-4 py-3 max-w-[140px] truncate">{item.description}</td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">{item.fromLocationName}</td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">{item.toLocationName}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{item.department || "—"}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{item.requesterName}</td>
-                  <td className="px-4 py-3 text-right font-medium">{item.totalAmount > 0 ? formatIDR(item.totalAmount) : "—"}</td>
+                  <td className="px-4 py-3 max-w-[140px] truncate text-sm">{item.description}</td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-1 text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded-md">{item.fromLocationName}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="inline-flex items-center gap-1 text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md">{item.toLocationName}</span>
+                  </td>
+                  <td className="px-4 py-3 text-sm font-medium">{item.transferToUserName || "—"}</td>
+                  <td className="px-4 py-3 text-muted-foreground text-sm">{item.requesterName}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                       item.receivingStatus === "closed" ? "bg-green-100 text-green-700" :
@@ -488,6 +602,7 @@ function TransferHistoryTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">{formatDate(item.createdAt)}</td>
                 </tr>
               ))}
             </tbody>

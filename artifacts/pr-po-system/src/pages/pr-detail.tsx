@@ -331,13 +331,19 @@ export default function PRDetail() {
               {pr.type === "transfer" && (
                 <>
                   <div>
-                    <p className="text-sm text-muted-foreground">Dari Lokasi</p>
+                    <p className="text-sm text-muted-foreground">Dari Gudang</p>
                     <p className="font-medium">{(pr as any).fromLocationName || "—"}</p>
                   </div>
                   <div>
-                    <p className="text-sm text-muted-foreground">Ke Lokasi</p>
+                    <p className="text-sm text-muted-foreground">Ke Gudang</p>
                     <p className="font-medium">{(pr as any).toLocationName || "—"}</p>
                   </div>
+                  {(pr as any).transferToUserName && (
+                    <div className="col-span-2">
+                      <p className="text-sm text-muted-foreground">Penerima Transfer</p>
+                      <p className="font-medium text-amber-700">{(pr as any).transferToUserName}</p>
+                    </div>
+                  )}
                 </>
               )}
               {pr.notes && (

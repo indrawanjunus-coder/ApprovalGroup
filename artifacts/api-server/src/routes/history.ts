@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { purchaseRequestsTable, purchaseOrdersTable, poItemsTable, usersTable } from "@workspace/db/schema";
-import { eq, desc, count, and, like, gte, lte, inArray, SQL, or } from "drizzle-orm";
+import { eq, ne, desc, count, sum, and, like, gte, lte, inArray, SQL, or, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 
 const router = Router();
@@ -50,6 +50,9 @@ router.get("/pr", async (req, res) => {
         conditions.push(ownerCond);
       }
     }
+
+    // Exclude transfer PRs from general PR history (they have their own tab)
+    conditions.push(ne(purchaseRequestsTable.type, "transfer"));
 
     if (status) conditions.push(eq(purchaseRequestsTable.status, status));
     if (search) conditions.push(like(purchaseRequestsTable.prNumber, `%${search}%`));
@@ -304,6 +307,51 @@ router.get("/leave", async (req, res) => {
   }
 });
 
+// Transfer History Summary (item-level breakdown)
+router.get("/transfer/summary", async (req, res) => {
+  const user = req.user!;
+  const fromLocationId = req.query.fromLocationId ? parseInt(req.query.fromLocationId as string) : undefined;
+  const toLocationId = req.query.toLocationId ? parseInt(req.query.toLocationId as string) : undefined;
+  const dateFrom = req.query.dateFrom as string;
+  const dateTo = req.query.dateTo as string;
+  try {
+    const conditions: SQL[] = [eq(purchaseRequestsTable.type, "transfer"), eq(purchaseRequestsTable.status, "approved")];
+    if (user.role !== "admin") {
+      if (user.hiredCompanyId) conditions.push(eq(purchaseRequestsTable.companyId, user.hiredCompanyId));
+    }
+    if (fromLocationId) conditions.push(eq(purchaseRequestsTable.fromLocationId, fromLocationId));
+    if (toLocationId) conditions.push(eq(purchaseRequestsTable.toLocationId, toLocationId));
+    if (dateFrom) conditions.push(gte(purchaseRequestsTable.createdAt, new Date(dateFrom)));
+    if (dateTo) { const end = new Date(dateTo); end.setHours(23,59,59,999); conditions.push(lte(purchaseRequestsTable.createdAt, end)); }
+
+    const whereClause = and(...conditions);
+    const prRows = await db.select({ id: purchaseRequestsTable.id }).from(purchaseRequestsTable).where(whereClause);
+    const prIds = prRows.map(r => r.id);
+    if (prIds.length === 0) { res.json({ totalPRs: 0, totalItems: 0, totalQty: 0, totalValue: 0, topItems: [] }); return; }
+
+    const { prItemsTable } = await import("@workspace/db/schema");
+    const itemRows = await db.select().from(prItemsTable).where(inArray(prItemsTable.prId, prIds));
+    const totalQty = itemRows.reduce((s, r) => s + parseFloat(r.qty), 0);
+    const totalValue = itemRows.reduce((s, r) => s + parseFloat(r.totalPrice), 0);
+
+    // Top items by qty
+    const itemMap = new Map<string, { qty: number; value: number }>();
+    for (const item of itemRows) {
+      const existing = itemMap.get(item.name) || { qty: 0, value: 0 };
+      itemMap.set(item.name, { qty: existing.qty + parseFloat(item.qty), value: existing.value + parseFloat(item.totalPrice) });
+    }
+    const topItems = [...itemMap.entries()]
+      .sort((a, b) => b[1].qty - a[1].qty)
+      .slice(0, 5)
+      .map(([name, data]) => ({ name, qty: data.qty, value: data.value }));
+
+    res.json({ totalPRs: prIds.length, totalItems: itemRows.length, totalQty, totalValue, topItems });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // Transfer History
 router.get("/transfer", async (req, res) => {
   const user = req.user!;
@@ -314,6 +362,8 @@ router.get("/transfer", async (req, res) => {
   const search = req.query.search as string;
   const dateFrom = req.query.dateFrom as string;
   const dateTo = req.query.dateTo as string;
+  const fromLocId = req.query.fromLocationId ? parseInt(req.query.fromLocationId as string) : undefined;
+  const toLocId = req.query.toLocationId ? parseInt(req.query.toLocationId as string) : undefined;
 
   try {
     const conditions: SQL[] = [eq(purchaseRequestsTable.type, "transfer")];
@@ -335,6 +385,8 @@ router.get("/transfer", async (req, res) => {
       const end = new Date(dateTo); end.setHours(23, 59, 59, 999);
       conditions.push(lte(purchaseRequestsTable.createdAt, end));
     }
+    if (fromLocId) conditions.push(eq(purchaseRequestsTable.fromLocationId, fromLocId));
+    if (toLocId) conditions.push(eq(purchaseRequestsTable.toLocationId, toLocId));
 
     const whereClause = and(...conditions);
     const [rows, totalResult] = await Promise.all([
@@ -345,16 +397,20 @@ router.get("/transfer", async (req, res) => {
       db.select({ count: count() }).from(purchaseRequestsTable).where(whereClause),
     ]);
 
-    const requesterIds = [...new Set(rows.map(r => r.requesterId))];
-    const requesters = requesterIds.length > 0
-      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, requesterIds))
+    // Collect all user IDs (requesters + recipients)
+    const allUserIds = [...new Set([
+      ...rows.map(r => r.requesterId),
+      ...rows.map(r => r.transferToUserId).filter(Boolean) as number[],
+    ])];
+    const userRows = allUserIds.length > 0
+      ? await db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable).where(inArray(usersTable.id, allUserIds))
       : [];
-    const requesterMap = new Map(requesters.map(r => [r.id, r.name]));
+    const userMap = new Map(userRows.map(r => [r.id, r.name]));
 
     // Fetch location names
     const locationIds = [...new Set([
-      ...rows.map(r => (r as any).fromLocationId).filter(Boolean),
-      ...rows.map(r => (r as any).toLocationId).filter(Boolean),
+      ...rows.map(r => r.fromLocationId).filter(Boolean) as number[],
+      ...rows.map(r => r.toLocationId).filter(Boolean) as number[],
     ])];
     let locationMap = new Map<number, string>();
     if (locationIds.length > 0) {
@@ -370,13 +426,15 @@ router.get("/transfer", async (req, res) => {
       id: pr.id, prNumber: pr.prNumber, description: pr.description,
       status: pr.status, department: pr.department,
       totalAmount: parseFloat(pr.totalAmount),
-      fromLocationId: (pr as any).fromLocationId,
-      toLocationId: (pr as any).toLocationId,
-      fromLocationName: (pr as any).fromLocationId ? locationMap.get((pr as any).fromLocationId) || "—" : "—",
-      toLocationName: (pr as any).toLocationId ? locationMap.get((pr as any).toLocationId) || "—" : "—",
+      fromLocationId: pr.fromLocationId,
+      toLocationId: pr.toLocationId,
+      fromLocationName: pr.fromLocationId ? locationMap.get(pr.fromLocationId) || "—" : "—",
+      toLocationName: pr.toLocationId ? locationMap.get(pr.toLocationId) || "—" : "—",
+      transferToUserId: pr.transferToUserId,
+      transferToUserName: pr.transferToUserId ? userMap.get(pr.transferToUserId) || "—" : "—",
       receivingStatus: pr.receivingStatus,
       createdAt: pr.createdAt, updatedAt: pr.updatedAt,
-      requesterName: requesterMap.get(pr.requesterId) || "Unknown",
+      requesterName: userMap.get(pr.requesterId) || "Unknown",
     }));
 
     res.json({ items: result, total: Number(totalResult[0]?.count) || 0, page, limit });

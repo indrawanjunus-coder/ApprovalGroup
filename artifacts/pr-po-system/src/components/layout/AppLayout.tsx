@@ -102,7 +102,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { name: "Pembayaran", href: "/pembayaran", icon: Wallet, roles: ["admin"], departments: ["Finance"], badge: pembayaranCount > 0 ? pembayaranCount : null },
     { name: "Riwayat", href: "/history", icon: History, roles: ["admin", "user", "approver", "purchasing"] },
     { name: "Manajemen Cuti", href: "/leave-management", icon: CalendarDays, roles: ["admin"] },
-    { name: "User Management", href: "/users", icon: Users, roles: ["admin"] },
+    { name: "User Management", href: "/users", icon: Users, roles: ["admin", "approver"] },
     { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"] },
     { name: "Settings", href: "/settings", icon: Settings, roles: ["admin"] },
   ].filter(item => item.roles.includes(user.role) || (item as any).departments?.includes(user.department));

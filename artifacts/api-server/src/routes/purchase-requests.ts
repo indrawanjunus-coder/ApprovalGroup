@@ -72,6 +72,11 @@ async function buildFullPR(pr: any, items: any[], approvals: any[], vendorAttach
     const [loc] = await db.execute(sql`SELECT name FROM locations WHERE id=${(pr as any).toLocationId}`).then((r: any) => r.rows || []);
     toLocationName = loc?.name || null;
   }
+  let transferToUserName: string | null = null;
+  if ((pr as any).transferToUserId) {
+    const [u] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, (pr as any).transferToUserId));
+    transferToUserName = u?.name || null;
+  }
 
   return {
     ...parsePRRow(pr),
@@ -81,6 +86,8 @@ async function buildFullPR(pr: any, items: any[], approvals: any[], vendorAttach
     vendorSelectedByName,
     fromLocationName,
     toLocationName,
+    transferToUserId: (pr as any).transferToUserId,
+    transferToUserName,
     receivingStatus: pr.receivingStatus || "none",
     receivingRecords: receivingRecords.map(r => ({ ...r, receivedQty: parseFloat(r.receivedQty) })),
     items: items.map(i => ({
@@ -174,10 +181,13 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   const user = req.user!;
-  const { type, description, items, notes, companyId, department, leaveStartDate, leaveEndDate, leaveRequesterId, fromLocationId, toLocationId } = req.body;
+  const { type, description, items, notes, companyId, department, leaveStartDate, leaveEndDate, leaveRequesterId, fromLocationId, toLocationId, transferToUserId } = req.body;
   if (!type || !description) { res.status(400).json({ error: "Bad Request", message: "Missing required fields" }); return; }
   if (type === "transfer" && (!fromLocationId || !toLocationId)) {
     res.status(400).json({ error: "Bad Request", message: "Lokasi asal dan tujuan wajib diisi untuk Transfer Barang" }); return;
+  }
+  if (type === "transfer" && !transferToUserId) {
+    res.status(400).json({ error: "Bad Request", message: "Penerima transfer wajib dipilih" }); return;
   }
   if (type !== "leave" && (!items || !Array.isArray(items) || items.length === 0)) {
     res.status(400).json({ error: "Bad Request", message: "Items required for this request type" }); return;
@@ -210,14 +220,14 @@ router.post("/", async (req, res) => {
       // Count already-pending/approved leave days for this user in the same year (to prevent double booking)
       const pendingResult = await db.execute(sql`
         SELECT COALESCE(SUM(
-          EXTRACT(DAY FROM (leave_end_date::date - leave_start_date::date)) + 1
+          (leave_end_date::date - leave_start_date::date) + 1
         ), 0) as pending_days
         FROM purchase_requests
         WHERE type = 'leave'
           AND leave_requester_id = ${targetUserId}
           AND status NOT IN ('rejected', 'closed', 'cancelled')
           AND leave_start_date IS NOT NULL
-          AND EXTRACT(YEAR FROM leave_start_date::date) = ${year}
+          AND date_part('year', leave_start_date::date) = ${year}
       `);
       const pendingDays = parseFloat((pendingResult.rows[0] as any)?.pending_days || "0");
 
@@ -247,6 +257,7 @@ router.post("/", async (req, res) => {
       leaveRequesterId: leaveRequesterId || user.id,
       fromLocationId: fromLocationId ? parseInt(fromLocationId) : null,
       toLocationId: toLocationId ? parseInt(toLocationId) : null,
+      transferToUserId: transferToUserId ? parseInt(transferToUserId) : null,
     } as any).returning();
 
     let prItems: any[] = [];

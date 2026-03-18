@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useGetUsers, useCreateUser, useUpdateUser, useDeleteUser, useGetCompanies } from "@workspace/api-client-react";
+import { useGetUsers, useCreateUser, useUpdateUser, useDeleteUser, useGetCompanies, useGetMe } from "@workspace/api-client-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -35,6 +35,8 @@ export default function UserList() {
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { data: me } = useGetMe();
+  const isApprover = me?.role === "approver";
   const { data, isLoading } = useGetUsers({ search: search || undefined, page, limit });
   const { data: allUsers } = useGetUsers({ limit: 200 });
 
@@ -125,10 +127,13 @@ export default function UserList() {
     const validCompanies = companies.filter(c => c.companyId);
     const payload: any = {
       ...form,
+      role: isApprover ? "user" : form.role,
       superiorId: form.superiorId ? Number(form.superiorId) : null,
       hiredCompanyId: form.hiredCompanyId ? Number(form.hiredCompanyId) : null,
       companies: validCompanies.map(c => ({ companyId: Number(c.companyId), department: c.department || form.department || "" })),
     };
+    // Approver can't change passwords of existing users
+    if (isApprover && editUser) delete payload.password;
     if (editUser) {
       if (!payload.password) delete payload.password;
       updateUser({ id: editUser.id, data: payload });
@@ -234,10 +239,12 @@ export default function UserList() {
                           <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(user)}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => { if (confirm(`Hapus user "${user.name}"?`)) deleteUser({ id: user.id }); }}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                          {!isApprover && (
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => { if (confirm(`Hapus user "${user.name}"?`)) deleteUser({ id: user.id }); }}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -274,10 +281,12 @@ export default function UserList() {
                   <Input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} placeholder="budi.santoso" />
                 </div>
               )}
-              <div className="space-y-1">
-                <Label className="text-xs">{editUser ? "Password Baru (kosong = tidak diubah)" : "Password *"}</Label>
-                <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="••••••••" />
-              </div>
+              {!(isApprover && editUser) && (
+                <div className="space-y-1">
+                  <Label className="text-xs">{editUser ? "Password Baru (kosong = tidak diubah)" : "Password *"}</Label>
+                  <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="••••••••" />
+                </div>
+              )}
               <div className="space-y-1">
                 <Label className="text-xs">Email</Label>
                 <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="budi@perusahaan.com" />
@@ -300,10 +309,16 @@ export default function UserList() {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Role *</Label>
-                <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-                  {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
+                {isApprover ? (
+                  <div className="flex h-10 w-full rounded-md border border-input bg-slate-50 px-3 py-2 text-sm items-center text-muted-foreground">
+                    User (hanya approver yang bisa membuat role user)
+                  </div>
+                ) : (
+                  <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+                    {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                )}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Atasan Langsung</Label>

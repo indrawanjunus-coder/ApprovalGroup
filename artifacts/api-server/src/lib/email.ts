@@ -133,6 +133,24 @@ export async function sendPOIssuedEmail(requesterEmail: string, requesterName: s
   await sendEmail(requesterEmail, `[ProcureFlow] PO ${poNumber} Diterbitkan`, html);
 }
 
+export async function sendTransferRecipientEmail(recipientEmail: string, recipientName: string, prNumber: string, senderName: string, fromLocation: string, toLocation: string, description: string) {
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <h2 style="color:#d97706">ProcureFlow — Transfer Barang Disetujui</h2>
+      <p>Yth. <b>${recipientName}</b>,</p>
+      <p>Transfer barang berikut telah <b>disetujui</b> dan akan segera dikirimkan ke lokasi Anda:</p>
+      <table style="border-collapse:collapse;width:100%;margin:16px 0">
+        <tr><td style="padding:8px;background:#fef9ee;font-weight:bold">Nomor PR</td><td style="padding:8px">${prNumber}</td></tr>
+        <tr><td style="padding:8px;background:#fef9ee;font-weight:bold">Deskripsi</td><td style="padding:8px">${description}</td></tr>
+        <tr><td style="padding:8px;background:#fef9ee;font-weight:bold">Pengirim</td><td style="padding:8px">${senderName}</td></tr>
+        <tr><td style="padding:8px;background:#fef9ee;font-weight:bold">Dari Gudang</td><td style="padding:8px">${fromLocation}</td></tr>
+        <tr><td style="padding:8px;background:#fef9ee;font-weight:bold">Ke Gudang</td><td style="padding:8px">${toLocation}</td></tr>
+      </table>
+      <p>Silakan login ke sistem ProcureFlow untuk melakukan konfirmasi penerimaan barang.</p>
+    </div>`;
+  await sendEmail(recipientEmail, `[ProcureFlow] Transfer Barang ${prNumber} Disetujui — Konfirmasi Penerimaan`, html);
+}
+
 export async function sendNewUserEmail(userEmail: string, userName: string, username: string, password: string) {
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">

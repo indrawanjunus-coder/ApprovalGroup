@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { formatIDR, formatDate } from "@/lib/utils";
-import { PackageCheck, Building, FileText, Loader2, ChevronRight, X, Package, CheckCircle2, Clock, ArrowRightLeft } from "lucide-react";
+import { PackageCheck, Building, FileText, Loader2, ChevronRight, X, Package, CheckCircle2, Clock, ArrowRightLeft, Printer } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState } from "react";
 import {
@@ -26,6 +26,7 @@ function PRReceivingDetail({ prId, onClose }: { prId: number; onClose: () => voi
   const [qtyInputs, setQtyInputs] = useState<Record<number, string>>({});
 
   const { data: pr, isLoading } = useGetPurchaseRequestById(prId);
+  const { data: settings } = useGetSettings();
 
   const { mutate: receiveItems, isPending: isSubmitting } = useReceivePartialItems({
     mutation: {
@@ -92,7 +93,8 @@ function PRReceivingDetail({ prId, onClose }: { prId: number; onClose: () => voi
   const isClosed = receivingStatus === "closed";
 
   return (
-    <div className="space-y-4">
+    <div>
+      <div data-print-hide className="space-y-4">
       <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg">
         <div>
           <p className="font-semibold text-sm">{pr.prNumber}</p>
@@ -217,6 +219,145 @@ function PRReceivingDetail({ prId, onClose }: { prId: number; onClose: () => voi
           </div>
         </>
       )}
+
+      {/* Print button */}
+      {(pr as any).receivingRecords?.length > 0 && (
+        <div className="flex justify-end pt-1 border-t">
+          <Button variant="outline" size="sm" onClick={() => window.print()}
+            className="text-xs gap-1.5">
+            <Printer className="h-3.5 w-3.5" />
+            Cetak Bukti Penerimaan
+          </Button>
+        </div>
+      )}
+    </div>
+
+      {/* ===== PRINT ONLY: Bukti Penerimaan ===== */}
+      <div data-print-only className="hidden print:block text-sm font-sans text-black">
+        {/* Company header */}
+        <div className="flex items-center justify-between mb-4 border-b-2 border-black pb-3">
+          <div className="flex items-center gap-3">
+            {settings?.logoUrl && (
+              <img src={settings.logoUrl} alt="Logo" className="h-14 object-contain" />
+            )}
+            <div>
+              <p className="font-bold text-lg">{settings?.companyName || "Perusahaan"}</p>
+              {settings?.companyAddress && <p className="text-xs">{settings.companyAddress}</p>}
+              {settings?.companyPhone && <p className="text-xs">Telp: {settings.companyPhone}</p>}
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-lg font-bold uppercase tracking-wide">Bukti Penerimaan Barang</p>
+            <p className="text-xs mt-0.5">No. PR: <strong>{pr.prNumber}</strong></p>
+            <p className="text-xs">Tanggal Cetak: {formatDate(new Date().toISOString())}</p>
+          </div>
+        </div>
+
+        {/* PR Info */}
+        <div className="grid grid-cols-2 gap-x-6 mb-4 text-xs">
+          <table className="w-full">
+            <tbody>
+              <tr><td className="py-0.5 text-gray-600 w-32">Nomor PR</td><td>: <strong>{pr.prNumber}</strong></td></tr>
+              <tr><td className="py-0.5 text-gray-600">Keterangan</td><td>: {pr.description}</td></tr>
+              <tr><td className="py-0.5 text-gray-600">Pemohon</td><td>: {pr.requesterName}</td></tr>
+              <tr><td className="py-0.5 text-gray-600">Departemen</td><td>: {pr.department}</td></tr>
+            </tbody>
+          </table>
+          <table className="w-full">
+            <tbody>
+              <tr><td className="py-0.5 text-gray-600 w-32">Status</td><td>: {isClosed ? "Selesai" : receivingStatus === "partial" ? "Parsial" : "Belum"}</td></tr>
+              {(pr as any).vendorName && <tr><td className="py-0.5 text-gray-600">Vendor</td><td>: {(pr as any).vendorName}</td></tr>}
+              {(pr as any).fromLocationName && <tr><td className="py-0.5 text-gray-600">Dari Gudang</td><td>: {(pr as any).fromLocationName}</td></tr>}
+              {(pr as any).toLocationName && <tr><td className="py-0.5 text-gray-600">Ke Gudang</td><td>: {(pr as any).toLocationName}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Items */}
+        <p className="font-semibold text-xs uppercase tracking-wide mb-1">Rincian Barang</p>
+        <table className="w-full border-collapse text-xs mb-4">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="border border-gray-300 px-2 py-1 text-left">No</th>
+              <th className="border border-gray-300 px-2 py-1 text-left">Nama Barang</th>
+              <th className="border border-gray-300 px-2 py-1 text-center">Satuan</th>
+              <th className="border border-gray-300 px-2 py-1 text-right">Target</th>
+              <th className="border border-gray-300 px-2 py-1 text-right">Diterima</th>
+              <th className="border border-gray-300 px-2 py-1 text-right">Sisa</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item: any, idx: number) => {
+              const received = receivedByItem[item.id] || 0;
+              const remaining = Math.max(0, item.qty - received);
+              return (
+                <tr key={item.id}>
+                  <td className="border border-gray-300 px-2 py-1 text-center">{idx + 1}</td>
+                  <td className="border border-gray-300 px-2 py-1">{item.name}</td>
+                  <td className="border border-gray-300 px-2 py-1 text-center">{item.unit}</td>
+                  <td className="border border-gray-300 px-2 py-1 text-right">{item.qty}</td>
+                  <td className="border border-gray-300 px-2 py-1 text-right font-semibold">{received}</td>
+                  <td className="border border-gray-300 px-2 py-1 text-right">{remaining}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        {/* Receiving history */}
+        {(pr as any).receivingRecords?.length > 0 && (
+          <>
+            <p className="font-semibold text-xs uppercase tracking-wide mb-1">Riwayat Penerimaan</p>
+            <table className="w-full border-collapse text-xs mb-4">
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-gray-300 px-2 py-1 text-left">Tanggal</th>
+                  <th className="border border-gray-300 px-2 py-1 text-left">Nama Barang</th>
+                  <th className="border border-gray-300 px-2 py-1 text-right">Qty</th>
+                  <th className="border border-gray-300 px-2 py-1 text-left">Diterima Oleh</th>
+                  <th className="border border-gray-300 px-2 py-1 text-left">Catatan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(pr as any).receivingRecords.map((r: any) => {
+                  const itemName = items.find((i: any) => i.id === r.prItemId)?.name || `Item #${r.prItemId}`;
+                  return (
+                    <tr key={r.id}>
+                      <td className="border border-gray-300 px-2 py-1 whitespace-nowrap">{formatDate(r.receivedAt)}</td>
+                      <td className="border border-gray-300 px-2 py-1">{itemName}</td>
+                      <td className="border border-gray-300 px-2 py-1 text-right">{r.receivedQty}</td>
+                      <td className="border border-gray-300 px-2 py-1">{r.receivedByName}</td>
+                      <td className="border border-gray-300 px-2 py-1">{r.notes || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        {/* Signatures */}
+        <div className="grid grid-cols-3 gap-4 mt-6 text-xs">
+          <div className="text-center">
+            <p className="font-medium mb-12">Diterima Oleh,</p>
+            <div className="border-t border-black pt-1">
+              <p>(Penerima)</p>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="font-medium mb-12">Diketahui Oleh,</p>
+            <div className="border-t border-black pt-1">
+              <p>(Supervisor)</p>
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="font-medium mb-12">Diserahkan Oleh,</p>
+            <div className="border-t border-black pt-1">
+              <p>(Pengirim / Vendor)</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -364,7 +505,7 @@ export default function Receiving() {
       {/* Partial receiving dialog */}
       <Dialog open={dialogOpen} onOpenChange={open => { if (!open) { setDialogOpen(false); setSelectedPRId(null); } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+          <DialogHeader data-print-hide>
             <DialogTitle className="flex items-center gap-2">
               <Package className="h-5 w-5 text-teal-600" />
               Input Penerimaan Barang

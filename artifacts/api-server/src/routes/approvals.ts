@@ -8,7 +8,7 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
 import { createNotification } from "../lib/notifications.js";
-import { sendApprovalRequestEmail, sendVendorAttachmentRequestEmail, sendPRApprovedEmail } from "../lib/email.js";
+import { sendApprovalRequestEmail, sendVendorAttachmentRequestEmail, sendPRApprovedEmail, sendTransferRecipientEmail } from "../lib/email.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -119,6 +119,18 @@ async function processApprovalAction(req: any, res: any, action: "approved" | "r
           // For non-leave, non-pembayaran, non-transfer types: also ask to upload vendor attachments
           if (pr.type !== "leave" && pr.type !== "pembayaran" && pr.type !== "transfer") {
             sendVendorAttachmentRequestEmail(requester.email, requester.name, pr.prNumber).catch(() => {});
+          }
+        }
+
+        // Transfer: notify recipient
+        if (pr.type === "transfer" && (pr as any).transferToUserId) {
+          const [recipient] = await db.select({ email: usersTable.email, name: usersTable.name }).from(usersTable).where(eq(usersTable.id, (pr as any).transferToUserId));
+          if (recipient?.email) {
+            const fromLoc = (pr as any).fromLocationId ? await db.execute(sql`SELECT name FROM locations WHERE id=${(pr as any).fromLocationId}`) : null;
+            const toLoc = (pr as any).toLocationId ? await db.execute(sql`SELECT name FROM locations WHERE id=${(pr as any).toLocationId}`) : null;
+            const fromName = (fromLoc as any)?.rows?.[0]?.name || "—";
+            const toName = (toLoc as any)?.rows?.[0]?.name || "—";
+            sendTransferRecipientEmail(recipient.email, recipient.name, pr.prNumber, requester?.name || "—", fromName, toName, pr.description).catch(() => {});
           }
         }
 

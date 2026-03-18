@@ -126,4 +126,20 @@
     margin: 1.5cm;
     size: A4 portrait;
   }
+  /* Hide dialog chrome/overlay when printing */
+  [role="dialog"] > div:first-child,
+  [data-radix-dialog-overlay],
+  [data-radix-popper-content-wrapper] {
+    display: none !important;
+  }
+  /* Show dialog content properly */
+  [role="dialog"] {
+    position: static !important;
+    transform: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
 }
