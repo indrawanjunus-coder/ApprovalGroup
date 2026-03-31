@@ -53,14 +53,39 @@ async function getUserPlafon(companyId: number, position: string): Promise<numbe
   return Number(sorted[0].amount);
 }
 
-async function uploadToGDrive(base64Data: string, filename: string): Promise<{ fileId: string; fileUrl: string; error?: string } | null> {
+interface GDriveUploadMeta {
+  mealDate?: string;    // "YYYY-MM-DD"
+  brandName?: string;
+  username?: string;
+  fullName?: string;
+  originalFilename?: string; // to extract extension
+}
+
+function sanitizeForFilename(str: string): string {
+  return (str || "").replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+}
+
+async function getOrCreateFolder(drive: any, name: string, parentId: string): Promise<string> {
+  const safeQ = name.replace(/'/g, "\\'");
+  const q = `name='${safeQ}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const list = await drive.files.list({ q, supportsAllDrives: true, includeItemsFromAllDrives: true, fields: "files(id)", pageSize: 1 });
+  if (list.data.files && list.data.files.length > 0) return list.data.files[0].id;
+  const created = await drive.files.create({
+    supportsAllDrives: true,
+    requestBody: { name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] },
+    fields: "id",
+  });
+  return created.data.id!;
+}
+
+async function uploadToGDrive(base64Data: string, originalFilename: string, meta?: GDriveUploadMeta): Promise<{ fileId: string; fileUrl: string; error?: string } | null> {
   try {
-    const [folder, email, rawKey] = await Promise.all([
+    const [rootFolder, email, rawKey] = await Promise.all([
       getSetting("duty_meal_gdrive_folder"),
       getSetting("duty_meal_gdrive_email"),
       getSetting("duty_meal_gdrive_private_key"),
     ]);
-    if (!folder || !email || !rawKey) return null; // not configured, silently skip
+    if (!rootFolder || !email || !rawKey) return null;
 
     const privateKey = rawKey.replace(/\\n/g, "\n");
     const auth = new google.auth.GoogleAuth({
@@ -69,29 +94,50 @@ async function uploadToGDrive(base64Data: string, filename: string): Promise<{ f
     });
     const drive = google.drive({ version: "v3", auth });
 
+    // ── Build filename ──────────────────────────────────────────
+    const ext = (meta?.originalFilename || originalFilename).split(".").pop()?.toLowerCase() || "jpg";
+    let finalName: string;
+    if (meta?.mealDate) {
+      const parts = [
+        meta.mealDate,
+        sanitizeForFilename(meta.brandName || ""),
+        sanitizeForFilename(meta.username || ""),
+        sanitizeForFilename(meta.fullName || ""),
+      ].filter(Boolean);
+      finalName = parts.join("-") + "." + ext;
+    } else {
+      finalName = originalFilename;
+    }
+
+    // ── Build folder hierarchy: rootFolder / YYYY / YYYY-MM ─────
+    let targetFolder = rootFolder;
+    if (meta?.mealDate) {
+      const year = meta.mealDate.substring(0, 4);
+      const yearMonth = meta.mealDate.substring(0, 7);
+      const yearFolder = await getOrCreateFolder(drive, year, rootFolder);
+      targetFolder = await getOrCreateFolder(drive, yearMonth, yearFolder);
+    }
+
+    // ── Upload file ─────────────────────────────────────────────
     const base64Content = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
     const mimeType = base64Data.startsWith("data:") ? base64Data.split(";")[0].split(":")[1] : "application/octet-stream";
     const buffer = Buffer.from(base64Content, "base64");
     const stream = Readable.from(buffer);
 
-    // supportsAllDrives required for Shared Drive (Team Drive) folders
     const res = await drive.files.create({
       supportsAllDrives: true,
-      requestBody: { name: filename, parents: [folder] },
+      requestBody: { name: finalName, parents: [targetFolder] },
       media: { mimeType, body: stream },
       fields: "id,webViewLink",
     });
 
-    // For Shared Drive files, permissions are inherited — this may fail silently
     try {
       await drive.permissions.create({
         fileId: res.data.id!,
         supportsAllDrives: true,
         requestBody: { role: "reader", type: "anyone" },
       });
-    } catch {
-      // Shared Drive may restrict public permission changes — ignore, file still uploaded
-    }
+    } catch { /* Shared Drive may restrict public links — ignore */ }
 
     return { fileId: res.data.id!, fileUrl: res.data.webViewLink! };
   } catch (err: any) {
@@ -103,9 +149,9 @@ async function uploadToGDrive(base64Data: string, filename: string): Promise<{ f
     } else if (msg.includes("invalid_grant") || msg.includes("Invalid JWT")) {
       friendlyMsg = "Private key service account tidak valid atau expired.";
     } else if (msg.includes("storage quota") || msg.includes("storageQuota")) {
-      friendlyMsg = "Service account tidak bisa upload ke My Drive. Solusi: buat Shared Drive baru di Google Drive → tambah email service account sebagai Member → gunakan ID Shared Drive (bukan folder di My Drive) di Settings.";
+      friendlyMsg = "Service account tidak bisa upload ke My Drive. Gunakan Shared Drive dan tambah service account sebagai Member.";
     } else if (msg.includes("403") || msg.includes("PERMISSION_DENIED")) {
-      friendlyMsg = "Akses ditolak. Pastikan folder Drive sudah di-share ke email service account dengan akses Editor.";
+      friendlyMsg = "Akses ditolak. Pastikan service account punya akses Editor ke folder/Shared Drive.";
     } else if (msg.includes("404") || msg.includes("notFound")) {
       friendlyMsg = "Folder ID tidak ditemukan atau service account tidak punya akses ke folder tersebut.";
     }
@@ -387,13 +433,26 @@ router.post("/", async (req, res) => {
       return;
     }
 
+    // Lookup brand name for filename
+    let brandName = "";
+    if (brandId) {
+      const [brand] = await db.select({ name: brandsTable.name }).from(brandsTable).where(eq(brandsTable.id, Number(brandId)));
+      brandName = brand?.name || "";
+    }
+
     // Upload receipt to GDrive if provided
     let receiptGdriveId: string | null = null;
     let receiptGdriveUrl: string | null = null;
     let storedReceiptData: string | null = null;
     let gdriveWarning: string | null = null;
     if (receiptData) {
-      const gdrive = await uploadToGDrive(receiptData, receiptFilename || "struk.jpg");
+      const gdrive = await uploadToGDrive(receiptData, receiptFilename || "struk.jpg", {
+        mealDate,
+        brandName,
+        username: user.username,
+        fullName: user.name || user.username,
+        originalFilename: receiptFilename || "struk.jpg",
+      });
       if (gdrive && !gdrive.error && gdrive.fileId) {
         receiptGdriveId = gdrive.fileId;
         receiptGdriveUrl = gdrive.fileUrl;
@@ -414,6 +473,8 @@ router.post("/", async (req, res) => {
       status: "pending",
       receiptData: storedReceiptData,
       receiptFilename: receiptFilename || null,
+      gdriveFileId: receiptGdriveId,
+      gdriveFileUrl: receiptGdriveUrl,
     } as any).returning();
 
     await createAuditLog(user.id, "CREATE", "duty_meal", meal.id,
@@ -488,13 +549,29 @@ router.post("/:id/upload-receipt", async (req, res) => {
     const { fileData, filename } = req.body;
     if (!fileData) { res.status(400).json({ error: "fileData required" }); return; }
 
-    const gdrive = await uploadToGDrive(fileData, filename || "struk.jpg");
+    // Look up brand for filename (reuse `meal` already fetched above)
+    let brandName = "";
+    if (meal?.brandId) {
+      const [br] = await db.select({ name: brandsTable.name }).from(brandsTable).where(eq(brandsTable.id, meal.brandId));
+      brandName = br?.name || "";
+    }
+    const mealDate = meal?.mealDate ? String(meal.mealDate).substring(0, 10) : undefined;
+
+    const gdrive = await uploadToGDrive(fileData, filename || "struk.jpg", {
+      mealDate,
+      brandName,
+      username: user.username,
+      fullName: user.name || user.username,
+      originalFilename: filename || "struk.jpg",
+    });
     const gdriveOk = gdrive && !gdrive.error && !!gdrive.fileId;
 
     const [updated] = await db.update(dutyMealsTable)
       .set({
         receiptData: gdriveOk ? null : fileData,
         receiptFilename: filename || "struk.jpg",
+        gdriveFileId: gdriveOk ? gdrive!.fileId : null,
+        gdriveFileUrl: gdriveOk ? gdrive!.fileUrl : null,
         updatedAt: new Date(),
       } as any)
       .where(eq(dutyMealsTable.id, Number(req.params.id)))

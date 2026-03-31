@@ -28,6 +28,8 @@ export const dutyMealsTable = pgTable("duty_meals", {
   status: text("status").notNull().default("pending"),
   receiptData: text("receipt_data"),
   receiptFilename: text("receipt_filename"),
+  gdriveFileId: text("gdrive_file_id"),
+  gdriveFileUrl: text("gdrive_file_url"),
   approvedBy: integer("approved_by"),
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),

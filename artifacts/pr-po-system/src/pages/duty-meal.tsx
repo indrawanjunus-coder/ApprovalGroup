@@ -557,7 +557,7 @@ export default function DutyMeal() {
                           </span>
                           {m.brandName && <Badge variant="outline" className="text-xs">{m.brandName}</Badge>}
                           <StatusBadge status={m.status} />
-                          {(m.receiptData || m.receiptFilename) && (
+                          {(m.receiptData || m.receiptFilename || m.gdriveFileUrl) && (
                             <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 gap-1">
                               <FileImage className="h-3 w-3" /> Struk Ada
                             </Badge>
@@ -572,12 +572,18 @@ export default function DutyMeal() {
                         )}
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
-                        {m.receiptData && (
+                        {m.gdriveFileUrl ? (
+                          <a href={m.gdriveFileUrl} target="_blank" rel="noreferrer">
+                            <Button size="sm" variant="outline" title="Lihat Struk di Google Drive">
+                              <Eye className="h-3.5 w-3.5" />
+                            </Button>
+                          </a>
+                        ) : m.receiptData ? (
                           <Button size="sm" variant="outline" title="Lihat Struk"
                             onClick={() => setShowPreview({ data: m.receiptData })}>
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
-                        )}
+                        ) : null}
                         {m.status === "pending" && (
                           <>
                             <Button size="sm" variant="outline" className="gap-1"
@@ -680,7 +686,7 @@ export default function DutyMeal() {
                                 </span>
                                 {e.brandName && <Badge variant="outline" className="text-xs">{e.brandName}</Badge>}
                                 <StatusBadge status={e.status} />
-                                {(e.receiptData || e.receiptFilename) && (
+                                {(e.receiptData || e.receiptFilename || e.gdriveFileUrl) && (
                                   <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 gap-1">
                                     <FileImage className="h-3 w-3" /> Struk
                                   </Badge>
@@ -693,12 +699,19 @@ export default function DutyMeal() {
                               )}
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                              {e.receiptData && (
-                                <Button size="sm" variant="outline" onClick={() => setShowPreview({ data: e.receiptData })} className="gap-1">
+                              {e.gdriveFileUrl ? (
+                                <a href={e.gdriveFileUrl} target="_blank" rel="noreferrer">
+                                  <Button size="sm" variant="outline" className="gap-1" title="Lihat Struk di Google Drive">
+                                    <Eye className="h-3.5 w-3.5" />
+                                    <span className="hidden sm:inline text-xs">Struk</span>
+                                  </Button>
+                                </a>
+                              ) : e.receiptData ? (
+                                <Button size="sm" variant="outline" onClick={() => setShowPreview({ data: e.receiptData })} className="gap-1" title="Lihat Struk">
                                   <Eye className="h-3.5 w-3.5" />
                                   <span className="hidden sm:inline text-xs">Struk</span>
                                 </Button>
-                              )}
+                              ) : null}
                               {e.status === "pending" && (
                                 <>
                                   <Button size="sm" className="bg-green-600 hover:bg-green-700 gap-1"
