@@ -1663,6 +1663,7 @@ function DutyMealSettings() {
   const [bankInstitution, setBankInstitution] = useState("");
   const [gdriveFolder, setGdriveFolder] = useState("");
   const [gdriveEmail, setGdriveEmail] = useState("");
+  const [gdrivePrivateKey, setGdrivePrivateKey] = useState("");
 
   useEffect(() => {
     if (settings) {
@@ -1674,6 +1675,7 @@ function DutyMealSettings() {
       setBankInstitution(settings.dutyMealBankName || "");
       setGdriveFolder(settings.dutyMealGdriveFolder || "");
       setGdriveEmail(settings.dutyMealGdriveEmail || "");
+      if (settings.dutyMealGdrivePrivateKey === "***configured***") setGdrivePrivateKey("***configured***");
     }
   }, [settings]);
 
@@ -1698,6 +1700,7 @@ function DutyMealSettings() {
       dutyMealBankName: bankInstitution,
       dutyMealGdriveFolder: gdriveFolder,
       dutyMealGdriveEmail: gdriveEmail,
+      dutyMealGdrivePrivateKey: gdrivePrivateKey,
     });
   };
 
@@ -1762,22 +1765,39 @@ function DutyMealSettings() {
               </div>
             </div>
 
-            {/* Google Drive (placeholder for future integration) */}
+            {/* Google Drive */}
             <div className="space-y-3">
-              <Label className="text-sm font-semibold">Google Drive (Penyimpanan Bukti Pembayaran)</Label>
-              <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
-                Integrasi Google Drive aktif bila email service account dikonfigurasi. Saat ini bukti pembayaran tersimpan di sistem internal.
+              <Label className="text-sm font-semibold">Google Drive (Penyimpanan Bukti & Struk)</Label>
+              <p className="text-xs text-blue-700 bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
+                Jika terkonfigurasi, file struk makanan dan bukti pembayaran akan diupload ke Google Drive secara otomatis. Perlu Service Account Google Cloud.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs">Google Drive Folder ID</Label>
-                  <Input placeholder="ID Folder Google Drive" value={gdriveFolder} onChange={e => setGdriveFolder(e.target.value)} className="h-9" />
+                  <Input placeholder="ID Folder Google Drive (dari URL folder)" value={gdriveFolder} onChange={e => setGdriveFolder(e.target.value)} className="h-9" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Email Service Account</Label>
                   <Input placeholder="serviceaccount@project.iam.gserviceaccount.com" value={gdriveEmail} onChange={e => setGdriveEmail(e.target.value)} className="h-9" />
                 </div>
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Private Key Service Account</Label>
+                <p className="text-xs text-muted-foreground">Salin seluruh isi field "private_key" dari file JSON service account (termasuk -----BEGIN...-----END-----)</p>
+                <Textarea
+                  placeholder={"-----BEGIN RSA PRIVATE KEY-----\n...isi private key...\n-----END RSA PRIVATE KEY-----"}
+                  value={gdrivePrivateKey === "***configured***" ? "" : gdrivePrivateKey}
+                  onChange={e => setGdrivePrivateKey(e.target.value)}
+                  rows={4}
+                  className="text-xs font-mono"
+                />
+                {gdrivePrivateKey === "***configured***" && (
+                  <p className="text-xs text-green-600 font-medium">✓ Private key sudah terkonfigurasi. Kosongkan untuk tetap menggunakan yang ada.</p>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Cara setup: Buat Service Account di Google Cloud Console → buat key JSON → bagikan folder Drive ke email service account → isi ketiga field di atas.
+              </p>
             </div>
           </>
         )}

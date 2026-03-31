@@ -7,10 +7,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Utensils, Plus, Upload, Eye, Check, X, Trash2, AlertTriangle, ChevronLeft, ChevronRight, FileImage, Ban } from "lucide-react";
+import { Utensils, Plus, Upload, Eye, Check, X, Trash2, AlertTriangle, ChevronLeft, ChevronRight, FileImage, Ban, CreditCard, Clock } from "lucide-react";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 
@@ -21,18 +20,34 @@ const MONTHS = [
   "Juli","Agustus","September","Oktober","November","Desember"
 ];
 
+const MAX_FILE_SIZE = 1 * 1024 * 1024; // 1MB
+
 function formatRupiah(n: number) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
 }
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; variant: "default"|"secondary"|"destructive"|"outline" }> = {
-    pending: { label: "Menunggu", variant: "secondary" },
+    pending:  { label: "Menunggu",  variant: "secondary" },
     approved: { label: "Disetujui", variant: "default" },
-    rejected: { label: "Ditolak", variant: "destructive" },
+    rejected: { label: "Ditolak",   variant: "destructive" },
   };
   const cfg = map[status] || { label: status, variant: "outline" };
   return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
+}
+
+/** Hitung tanggal terakhir bulan dari string "YYYY-MM" */
+function lastDayOfMonth(mealMonth: string): Date {
+  const [y, m] = mealMonth.split("-").map(Number);
+  return new Date(y, m, 0); // day=0 of next month = last day of current month
+}
+
+/** Tanggal lock (tgl X bulan berikutnya) dari string "YYYY-MM" */
+function lockDeadline(mealMonth: string, lockDate: number): Date {
+  const [y, m] = mealMonth.split("-").map(Number);
+  const nextY = m === 12 ? y + 1 : y;
+  const nextM = m === 12 ? 1 : m + 1;
+  return new Date(nextY, nextM - 1, lockDate, 23, 59, 59);
 }
 
 export default function DutyMeal() {
@@ -44,28 +59,34 @@ export default function DutyMeal() {
   const now = new Date();
   const [activeTab, setActiveTab] = useState<"mine" | "report">("mine");
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear] = useState(now.getFullYear());
+  const [year, setYear]   = useState(now.getFullYear());
   const [rptMonth, setRptMonth] = useState(now.getMonth() + 1);
-  const [rptYear, setRptYear] = useState(now.getFullYear());
+  const [rptYear, setRptYear]   = useState(now.getFullYear());
 
   // Modals
-  const [showAdd, setShowAdd] = useState(false);
-  const [showProof, setShowProof] = useState<any>(null);
-  const [showPreview, setShowPreview] = useState<string | null>(null);
-  const [showReject, setShowReject] = useState<any>(null);
+  const [showAdd, setShowAdd]       = useState(false);
+  const [showReceipt, setShowReceipt] = useState<any>(null); // upload struk per entry
+  const [showPayment, setShowPayment] = useState(false);      // upload bukti pembayaran bulanan
+  const [showPreview, setShowPreview] = useState<{ data?: string; url?: string } | null>(null);
+  const [showReject, setShowReject]   = useState<any>(null);
   const [rejectReason, setRejectReason] = useState("");
-  const [editEntry, setEditEntry] = useState<any>(null);
+  const [rejectPayment, setRejectPayment] = useState<any>(null);
+  const [rejectPaymentReason, setRejectPaymentReason] = useState("");
 
   // Add form state
   const [form, setForm] = useState({ mealDate: "", brandId: "", totalBill: "", description: "" });
-  const [proofFile, setProofFile] = useState<{ data: string; filename: string } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const proofInputRef = useRef<HTMLInputElement>(null);
+  const [addReceiptFile, setAddReceiptFile] = useState<{ data: string; filename: string } | null>(null);
+  const [receiptFile, setReceiptFile] = useState<{ data: string; filename: string } | null>(null);
+  const [paymentFile, setPaymentFile] = useState<{ data: string; filename: string } | null>(null);
+
+  const addReceiptInputRef = useRef<HTMLInputElement>(null);
+  const receiptInputRef    = useRef<HTMLInputElement>(null);
+  const paymentInputRef    = useRef<HTMLInputElement>(null);
 
   const mealMonthStr = `${year}-${String(month).padStart(2, "0")}`;
-  const rptMonthStr = `${rptYear}-${String(rptMonth).padStart(2, "0")}`;
+  const rptMonthStr  = `${rptYear}-${String(rptMonth).padStart(2, "0")}`;
 
-  // Fetch duty meal settings
+  // Fetch settings
   const { data: dmSettings } = useQuery({
     queryKey: ["/api/settings/duty-meal"],
     queryFn: async () => {
@@ -73,6 +94,8 @@ export default function DutyMeal() {
       return r.json();
     },
   });
+
+  const lockDate = dmSettings?.dutyMealLockDate ?? 10;
 
   // Fetch my plafon
   const { data: myPlafon } = useQuery({
@@ -98,23 +121,37 @@ export default function DutyMeal() {
     enabled: !!me,
   });
 
+  const fetchArray = async (url: string) => {
+    const r = await fetch(url, { credentials: "include" });
+    const d = await r.json();
+    return Array.isArray(d) ? d : [];
+  };
+
   // Fetch my duty meals
   const { data: myMeals = [], isLoading: loadingMine } = useQuery({
     queryKey: ["/api/duty-meals", "mine", mealMonthStr],
-    queryFn: async () => {
-      const r = await fetch(`${apiBase}/api/duty-meals?month=${mealMonthStr}`, { credentials: "include" });
-      return r.json();
-    },
+    queryFn: () => fetchArray(`${apiBase}/api/duty-meals?month=${mealMonthStr}`),
     enabled: activeTab === "mine" && !!me,
+  });
+
+  // Fetch monthly payments (mine)
+  const { data: myMonthlyPayments = [] } = useQuery({
+    queryKey: ["/api/duty-meals/monthly-payments", mealMonthStr],
+    queryFn: () => fetchArray(`${apiBase}/api/duty-meals/monthly-payments?month=${mealMonthStr}`),
+    enabled: activeTab === "mine" && !!me,
+  });
+
+  // Fetch monthly payments for report (HRD)
+  const { data: rptMonthlyPayments = [] } = useQuery({
+    queryKey: ["/api/duty-meals/monthly-payments", "report", rptMonthStr],
+    queryFn: () => fetchArray(`${apiBase}/api/duty-meals/monthly-payments?month=${rptMonthStr}`),
+    enabled: activeTab === "report" && isHrd,
   });
 
   // Fetch report meals (HRD)
   const { data: rptMeals = [], isLoading: loadingRpt } = useQuery({
     queryKey: ["/api/duty-meals", "report", rptMonthStr],
-    queryFn: async () => {
-      const r = await fetch(`${apiBase}/api/duty-meals?month=${rptMonthStr}`, { credentials: "include" });
-      return r.json();
-    },
+    queryFn: () => fetchArray(`${apiBase}/api/duty-meals?month=${rptMonthStr}`),
     enabled: activeTab === "report" && isHrd,
   });
 
@@ -134,6 +171,7 @@ export default function DutyMeal() {
       qc.invalidateQueries({ queryKey: ["/api/duty-meals"] });
       setShowAdd(false);
       setForm({ mealDate: "", brandId: "", totalBill: "", description: "" });
+      setAddReceiptFile(null);
       toast({ title: "Duty Meal berhasil ditambahkan" });
     },
     onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
@@ -154,10 +192,10 @@ export default function DutyMeal() {
     onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
   });
 
-  // Upload proof
-  const uploadProofMutation = useMutation({
+  // Upload struk per entry
+  const uploadReceiptMutation = useMutation({
     mutationFn: async ({ id, fileData, filename }: { id: number; fileData: string; filename: string }) => {
-      const r = await fetch(`${apiBase}/api/duty-meals/${id}/upload-proof`, {
+      const r = await fetch(`${apiBase}/api/duty-meals/${id}/upload-receipt`, {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileData, filename }),
@@ -166,16 +204,45 @@ export default function DutyMeal() {
       if (!r.ok) throw new Error(json.error || "Gagal upload");
       return json;
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["/api/duty-meals"] });
-      setShowProof(null);
-      setProofFile(null);
-      toast({ title: "Bukti pembayaran berhasil diupload" });
+      setShowReceipt(null);
+      setReceiptFile(null);
+      if (res.uploadedToGdrive) {
+        toast({ title: "Struk berhasil diupload ke Google Drive" });
+      } else {
+        toast({ title: "Struk berhasil diupload" });
+      }
     },
     onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
   });
 
-  // Approve
+  // Upload bukti pembayaran bulanan
+  const uploadPaymentMutation = useMutation({
+    mutationFn: async ({ fileData, filename }: { fileData: string; filename: string }) => {
+      const r = await fetch(`${apiBase}/api/duty-meals/monthly-payment/${mealMonthStr}/upload`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileData, filename }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || "Gagal upload");
+      return json;
+    },
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["/api/duty-meals/monthly-payments"] });
+      setShowPayment(false);
+      setPaymentFile(null);
+      if (res.uploadedToGdrive) {
+        toast({ title: "Bukti pembayaran berhasil diupload ke Google Drive" });
+      } else {
+        toast({ title: "Bukti pembayaran berhasil diupload" });
+      }
+    },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  // Approve entry (HRD)
   const approveMutation = useMutation({
     mutationFn: async (id: number) => {
       const r = await fetch(`${apiBase}/api/duty-meals/${id}/approve`, {
@@ -193,7 +260,7 @@ export default function DutyMeal() {
     onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
   });
 
-  // Reject
+  // Reject entry (HRD)
   const rejectMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
       const r = await fetch(`${apiBase}/api/duty-meals/${id}/reject`, {
@@ -214,54 +281,100 @@ export default function DutyMeal() {
     onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
   });
 
-  // Compute monthly summary for "mine"
+  // Approve monthly payment (HRD)
+  const approvePaymentMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`${apiBase}/api/duty-meals/monthly-payment/${id}/approve`, {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || "Gagal approve");
+      return json;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/duty-meals/monthly-payments"] });
+      toast({ title: "Bukti pembayaran disetujui" });
+    },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  // Reject monthly payment (HRD)
+  const rejectPaymentMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
+      const r = await fetch(`${apiBase}/api/duty-meals/monthly-payment/${id}/reject`, {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error || "Gagal reject");
+      return json;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/duty-meals/monthly-payments"] });
+      setRejectPayment(null);
+      setRejectPaymentReason("");
+      toast({ title: "Bukti pembayaran ditolak" });
+    },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  // Monthly summary
   const plafonAmount = myPlafon?.amount || 0;
-  const monthTotal = myMeals.reduce((s: number, m: any) => s + Number(m.totalBillBeforeTax), 0);
+  const monthTotal   = (myMeals as any[]).reduce((s: number, m: any) => s + Number(m.totalBillBeforeTax), 0);
   const isOverPlafon = monthTotal > plafonAmount && plafonAmount > 0;
-  const overAmount = Math.max(0, monthTotal - plafonAmount);
+  const overAmount   = Math.max(0, monthTotal - plafonAmount);
+
+  // Payment button timing logic
+  const currentMonthPayment = (myMonthlyPayments as any[]).find((p: any) => p.mealMonth === mealMonthStr) || null;
+  const mealLastDay = lastDayOfMonth(mealMonthStr);
+  const mealLockDeadline = lockDeadline(mealMonthStr, lockDate);
+  const showPaymentBtn = isOverPlafon && now >= mealLastDay && now <= mealLockDeadline && currentMonthPayment?.status !== "approved";
+  const paymentExpired = isOverPlafon && now > mealLockDeadline && !currentMonthPayment;
 
   // File reading helper
   const readFileAsBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
+    reader.onload  = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
 
-  const handleProofFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setter: (v: { data: string; filename: string } | null) => void
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast({ title: "File terlalu besar (max 5MB)", variant: "destructive" }); return; }
+    if (file.size > MAX_FILE_SIZE) {
+      toast({ title: "File terlalu besar (maks. 1MB)", description: "Kompres gambar sebelum upload.", variant: "destructive" });
+      e.target.value = "";
+      return;
+    }
     const data = await readFileAsBase64(file);
-    setProofFile({ data, filename: file.name });
+    setter({ data, filename: file.name });
   };
 
   const handleSubmitAdd = () => {
-    if (!form.mealDate || !form.totalBill) { toast({ title: "Tanggal dan Total Bill wajib diisi", variant: "destructive" }); return; }
+    if (!form.mealDate || !form.totalBill) {
+      toast({ title: "Tanggal dan Total Bill wajib diisi", variant: "destructive" });
+      return;
+    }
     createMutation.mutate({
-      mealDate: form.mealDate,
-      brandId: form.brandId ? parseInt(form.brandId) : null,
+      mealDate:          form.mealDate,
+      brandId:           form.brandId ? parseInt(form.brandId) : null,
       totalBillBeforeTax: parseFloat(form.totalBill),
-      description: form.description || null,
+      description:       form.description || null,
+      receiptData:       addReceiptFile?.data || null,
+      receiptFilename:   addReceiptFile?.filename || null,
     });
   };
 
-  const prevMonth = () => {
-    if (month === 1) { setMonth(12); setYear(y => y - 1); }
-    else setMonth(m => m - 1);
-  };
-  const nextMonth = () => {
-    if (month === 12) { setMonth(1); setYear(y => y + 1); }
-    else setMonth(m => m + 1);
-  };
-  const prevRptMonth = () => {
-    if (rptMonth === 1) { setRptMonth(12); setRptYear(y => y - 1); }
-    else setRptMonth(m => m - 1);
-  };
-  const nextRptMonth = () => {
-    if (rptMonth === 12) { setRptMonth(1); setRptYear(y => y + 1); }
-    else setRptMonth(m => m + 1);
-  };
+  const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1); } else setMonth(m => m - 1); };
+  const nextMonth = () => { if (month === 12) { setMonth(1); setYear(y => y + 1); } else setMonth(m => m + 1); };
+  const prevRptMonth = () => { if (rptMonth === 1) { setRptMonth(12); setRptYear(y => y - 1); } else setRptMonth(m => m - 1); };
+  const nextRptMonth = () => { if (rptMonth === 12) { setRptMonth(1); setRptYear(y => y + 1); } else setRptMonth(m => m + 1); };
 
   if (dmSettings && !dmSettings.dutyMealEnabled && (me as any)?.role !== "admin") {
     return (
@@ -281,35 +394,30 @@ export default function DutyMeal() {
     return acc;
   }, {});
   const rptGroups = Object.values(rptByUser) as any[];
+  const rptPaymentMap = new Map((rptMonthlyPayments as any[]).map((p: any) => [p.userId, p]));
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="bg-orange-100 rounded-xl p-2.5">
-            <Utensils className="h-6 w-6 text-orange-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Duty Meal</h1>
-            <p className="text-sm text-muted-foreground">Pengelolaan biaya makan dinas</p>
-          </div>
+      <div className="flex items-center gap-3">
+        <div className="bg-orange-100 rounded-xl p-2.5">
+          <Utensils className="h-6 w-6 text-orange-600" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Duty Meal</h1>
+          <p className="text-sm text-muted-foreground">Pengelolaan biaya makan dinas</p>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-2 border-b">
-        <button
-          onClick={() => setActiveTab("mine")}
-          className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "mine" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-        >
+        <button onClick={() => setActiveTab("mine")}
+          className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "mine" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
           Duty Meal Saya
         </button>
         {isHrd && (
-          <button
-            onClick={() => setActiveTab("report")}
-            className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "report" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-          >
+          <button onClick={() => setActiveTab("report")}
+            className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "report" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             Report Duty Meal
           </button>
         )}
@@ -357,11 +465,13 @@ export default function DutyMeal() {
                     )}
                   </div>
                 </div>
+
+                {/* Over-plafon alert */}
                 {isOverPlafon && (
                   <div className="mt-3 p-3 bg-red-100 rounded-lg border border-red-200">
                     <div className="flex items-start gap-2">
                       <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
-                      <div className="text-xs text-red-700">
+                      <div className="text-xs text-red-700 flex-1">
                         <p className="font-semibold">Melebihi Plafon!</p>
                         <p>Anda harus membayar kelebihan sebesar <strong>{formatRupiah(overAmount)}</strong> ke:</p>
                         {dmSettings?.dutyMealBankAccountNumber && (
@@ -373,6 +483,51 @@ export default function DutyMeal() {
                     </div>
                   </div>
                 )}
+
+                {/* Upload bukti pembayaran bulanan */}
+                {showPaymentBtn && (
+                  <div className="mt-3">
+                    {currentMonthPayment ? (
+                      <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="text-xs text-blue-800">
+                          <p className="font-semibold flex items-center gap-1">
+                            <CreditCard className="h-3.5 w-3.5" />
+                            Bukti Pembayaran {MONTHS[month - 1]}
+                          </p>
+                          <p className="text-blue-600 mt-0.5">Status: <StatusBadge status={currentMonthPayment.status} /></p>
+                          {currentMonthPayment.gdriveFileUrl ? (
+                            <a href={currentMonthPayment.gdriveFileUrl} target="_blank" rel="noreferrer"
+                              className="underline text-blue-700 mt-1 inline-block">Lihat di Google Drive</a>
+                          ) : currentMonthPayment.proofData && (
+                            <button onClick={() => setShowPreview({ data: currentMonthPayment.proofData })}
+                              className="underline text-blue-700 mt-1">Lihat Bukti</button>
+                          )}
+                        </div>
+                        {currentMonthPayment.status !== "approved" && (
+                          <Button size="sm" variant="outline" onClick={() => { setShowPayment(true); setPaymentFile(null); }}>
+                            Ganti
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <Button onClick={() => { setShowPayment(true); setPaymentFile(null); }}
+                        className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white">
+                        <CreditCard className="h-4 w-4" />
+                        Upload Pembayaran bulan {MONTHS[month - 1]}
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* Expired warning */}
+                {paymentExpired && (
+                  <div className="mt-3 p-3 bg-yellow-50 border border-yellow-300 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs text-yellow-800">
+                      <Clock className="h-4 w-4 shrink-0" />
+                      <span>Periode upload bukti pembayaran bulan {MONTHS[month - 1]} sudah berakhir (tgl {lockDate} bulan berikutnya). Bulan ini terkunci.</span>
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
@@ -380,69 +535,63 @@ export default function DutyMeal() {
           {/* Entries */}
           {loadingMine ? (
             <div className="text-center py-12 text-muted-foreground">Memuat data...</div>
-          ) : myMeals.length === 0 ? (
+          ) : (myMeals as any[]).length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Utensils className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p>Belum ada Duty Meal untuk {MONTHS[month - 1]} {year}</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {(myMeals as any[]).map((m: any) => {
-                const runningTotal = (myMeals as any[])
-                  .filter((x: any) => x.id <= m.id)
-                  .reduce((s: number, x: any) => s + Number(x.totalBillBeforeTax), 0);
-                const entryOver = runningTotal > plafonAmount && plafonAmount > 0;
-                return (
-                  <Card key={m.id} className={entryOver ? "border-red-200" : ""}>
-                    <CardContent className="pt-4 pb-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap mb-1">
-                            <span className="font-semibold text-sm">
-                              {format(new Date(m.mealDate), "dd MMMM yyyy", { locale: localeId })}
-                            </span>
-                            {m.brandName && (
-                              <Badge variant="outline" className="text-xs">{m.brandName}</Badge>
-                            )}
-                            <StatusBadge status={m.status} />
-                            {m.paymentProofData && (
-                              <Badge variant="outline" className="text-xs text-blue-600 border-blue-300 gap-1">
-                                <FileImage className="h-3 w-3" /> Bukti Ada
-                              </Badge>
-                            )}
-                          </div>
-                          <p className={`text-base font-bold ${isOverPlafon ? "text-red-600" : ""}`}>
-                            {formatRupiah(Number(m.totalBillBeforeTax))}
-                          </p>
-                          {m.description && <p className="text-xs text-muted-foreground mt-0.5">{m.description}</p>}
-                          {m.status === "rejected" && m.rejectionReason && (
-                            <p className="text-xs text-red-600 mt-1">Alasan ditolak: {m.rejectionReason}</p>
+              {(myMeals as any[]).map((m: any) => (
+                <Card key={m.id} className={isOverPlafon ? "border-red-200" : ""}>
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="font-semibold text-sm">
+                            {format(new Date(m.mealDate), "dd MMMM yyyy", { locale: localeId })}
+                          </span>
+                          {m.brandName && <Badge variant="outline" className="text-xs">{m.brandName}</Badge>}
+                          <StatusBadge status={m.status} />
+                          {(m.receiptData || m.receiptFilename) && (
+                            <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 gap-1">
+                              <FileImage className="h-3 w-3" /> Struk Ada
+                            </Badge>
                           )}
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {m.paymentProofData && (
-                            <Button size="sm" variant="outline" className="gap-1" onClick={() => setShowPreview(m.paymentProofData)}>
-                              <Eye className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          {m.status === "pending" && (
-                            <>
-                              <Button size="sm" variant="outline" className="gap-1" onClick={() => { setShowProof(m); setProofFile(null); }}>
-                                <Upload className="h-3.5 w-3.5" />
-                                <span className="hidden sm:inline">Upload Bukti</span>
-                              </Button>
-                              <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => { if (confirm("Hapus Duty Meal ini?")) deleteMutation.mutate(m.id); }}>
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
+                        <p className={`text-base font-bold ${isOverPlafon ? "text-red-600" : ""}`}>
+                          {formatRupiah(Number(m.totalBillBeforeTax))}
+                        </p>
+                        {m.description && <p className="text-xs text-muted-foreground mt-0.5">{m.description}</p>}
+                        {m.status === "rejected" && m.rejectionReason && (
+                          <p className="text-xs text-red-600 mt-1">Alasan ditolak: {m.rejectionReason}</p>
+                        )}
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {m.receiptData && (
+                          <Button size="sm" variant="outline" title="Lihat Struk"
+                            onClick={() => setShowPreview({ data: m.receiptData })}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {m.status === "pending" && (
+                          <>
+                            <Button size="sm" variant="outline" className="gap-1"
+                              onClick={() => { setShowReceipt(m); setReceiptFile(null); }}>
+                              <Upload className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">Upload Struk</span>
+                            </Button>
+                            <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => { if (confirm("Hapus Duty Meal ini?")) deleteMutation.mutate(m.id); }}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
           )}
         </div>
@@ -451,7 +600,6 @@ export default function DutyMeal() {
       {/* ─── REPORT TAB (HRD) ────────────────────────────────── */}
       {activeTab === "report" && isHrd && (
         <div className="space-y-4">
-          {/* Month navigator */}
           <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" onClick={prevRptMonth}><ChevronLeft className="h-4 w-4" /></Button>
             <span className="font-semibold text-base min-w-[140px] text-center">{MONTHS[rptMonth - 1]} {rptYear}</span>
@@ -468,8 +616,9 @@ export default function DutyMeal() {
           ) : (
             <div className="space-y-4">
               {rptGroups.map((group: any) => {
-                const groupTotal = group.entries.reduce((s: number, e: any) => s + Number(e.totalBillBeforeTax), 0);
-                const groupOver = groupTotal > group.plafon && group.plafon > 0;
+                const groupTotal   = group.entries.reduce((s: number, e: any) => s + Number(e.totalBillBeforeTax), 0);
+                const groupOver    = groupTotal > group.plafon && group.plafon > 0;
+                const groupPayment = rptPaymentMap.get(group.userId) as any;
                 return (
                   <Card key={group.userId} className={groupOver ? "border-red-200" : ""}>
                     <CardHeader className="pb-2 pt-4">
@@ -481,11 +630,40 @@ export default function DutyMeal() {
                         <div className="text-right">
                           <p className={`font-bold text-sm ${groupOver ? "text-red-600" : "text-green-700"}`}>{formatRupiah(groupTotal)}</p>
                           <p className="text-xs text-muted-foreground">Plafon: {formatRupiah(group.plafon)}</p>
-                          {groupOver && (
-                            <p className="text-xs text-red-600 font-medium">Lebih: +{formatRupiah(groupTotal - group.plafon)}</p>
-                          )}
+                          {groupOver && <p className="text-xs text-red-600 font-medium">Lebih: +{formatRupiah(groupTotal - group.plafon)}</p>}
                         </div>
                       </div>
+                      {/* Bukti pembayaran bulanan */}
+                      {groupOver && groupPayment && (
+                        <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800 flex items-center justify-between gap-2">
+                          <div>
+                            <p className="font-semibold flex items-center gap-1"><CreditCard className="h-3.5 w-3.5" /> Bukti Pembayaran</p>
+                            <p className="mt-0.5">Status: <StatusBadge status={groupPayment.status} /></p>
+                            {groupPayment.gdriveFileUrl ? (
+                              <a href={groupPayment.gdriveFileUrl} target="_blank" rel="noreferrer" className="underline mt-0.5 inline-block">Lihat di Drive</a>
+                            ) : groupPayment.proofData ? (
+                              <button onClick={() => setShowPreview({ data: groupPayment.proofData })} className="underline mt-0.5">Lihat Bukti</button>
+                            ) : null}
+                          </div>
+                          {groupPayment.status === "pending" && (
+                            <div className="flex gap-1 shrink-0">
+                              <Button size="sm" className="bg-green-600 hover:bg-green-700 gap-1" onClick={() => approvePaymentMutation.mutate(groupPayment.id)}>
+                                <Check className="h-3 w-3" /> Approve
+                              </Button>
+                              <Button size="sm" variant="destructive" className="gap-1"
+                                onClick={() => { setRejectPayment(groupPayment); setRejectPaymentReason(""); }}>
+                                <X className="h-3 w-3" /> Tolak
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {groupOver && !groupPayment && (
+                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-800 flex items-center gap-1">
+                          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                          Belum ada bukti pembayaran atas kelebihan plafon
+                        </div>
+                      )}
                     </CardHeader>
                     <CardContent className="pb-3">
                       <div className="space-y-2">
@@ -498,6 +676,11 @@ export default function DutyMeal() {
                                 </span>
                                 {e.brandName && <Badge variant="outline" className="text-xs">{e.brandName}</Badge>}
                                 <StatusBadge status={e.status} />
+                                {(e.receiptData || e.receiptFilename) && (
+                                  <Badge variant="outline" className="text-xs text-orange-600 border-orange-300 gap-1">
+                                    <FileImage className="h-3 w-3" /> Struk
+                                  </Badge>
+                                )}
                               </div>
                               <p className="font-semibold text-sm mt-0.5">{formatRupiah(Number(e.totalBillBeforeTax))}</p>
                               {e.description && <p className="text-xs text-muted-foreground">{e.description}</p>}
@@ -506,15 +689,15 @@ export default function DutyMeal() {
                               )}
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
-                              {e.paymentProofData && (
-                                <Button size="sm" variant="outline" onClick={() => setShowPreview(e.paymentProofData)} className="gap-1">
+                              {e.receiptData && (
+                                <Button size="sm" variant="outline" onClick={() => setShowPreview({ data: e.receiptData })} className="gap-1">
                                   <Eye className="h-3.5 w-3.5" />
-                                  <span className="hidden sm:inline text-xs">Bukti</span>
+                                  <span className="hidden sm:inline text-xs">Struk</span>
                                 </Button>
                               )}
                               {e.status === "pending" && (
                                 <>
-                                  <Button size="sm" variant="default" className="bg-green-600 hover:bg-green-700 gap-1"
+                                  <Button size="sm" className="bg-green-600 hover:bg-green-700 gap-1"
                                     onClick={() => approveMutation.mutate(e.id)}>
                                     <Check className="h-3.5 w-3.5" />
                                     <span className="hidden sm:inline text-xs">Approve</span>
@@ -539,12 +722,10 @@ export default function DutyMeal() {
         </div>
       )}
 
-      {/* ─── MODAL: Add Duty Meal ─────────────────────────────── */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+      {/* ─── MODAL: Tambah Duty Meal ─────────────────────────────── */}
+      <Dialog open={showAdd} onOpenChange={open => { setShowAdd(open); if (!open) setAddReceiptFile(null); }}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Tambah Duty Meal</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Tambah Duty Meal</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div>
               <Label>Tanggal <span className="text-red-500">*</span></Label>
@@ -552,28 +733,27 @@ export default function DutyMeal() {
             </div>
             <div>
               <Label>Brand</Label>
-              <Select value={form.brandId} onValueChange={v => setForm(f => ({ ...f, brandId: v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Pilih Brand (opsional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(brands as any[]).map((b: any) => (
-                    <SelectItem key={b.id} value={String(b.id)}>{b.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <select
+                value={form.brandId}
+                onChange={e => setForm(f => ({ ...f, brandId: e.target.value }))}
+                className="w-full h-10 border border-input rounded-md px-3 text-sm bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">Pilih Brand (opsional)</option>
+                {(brands as any[]).map((b: any) => (
+                  <option key={b.id} value={String(b.id)}>{b.name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <Label>Total Bill Sebelum Pajak (Rp) <span className="text-red-500">*</span></Label>
               <Input
-                type="number"
-                placeholder="Contoh: 850000"
+                type="number" placeholder="Contoh: 850000"
                 value={form.totalBill}
                 onChange={e => setForm(f => ({ ...f, totalBill: e.target.value }))}
               />
               {form.totalBill && plafonAmount > 0 && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Plafon bulan ini: {formatRupiah(plafonAmount - monthTotal - Number(form.totalBill) || 0)} sisa
+                  Sisa plafon: {formatRupiah(plafonAmount - monthTotal - Number(form.totalBill))}
                   {(monthTotal + Number(form.totalBill)) > plafonAmount && (
                     <span className="text-red-600 font-medium"> (akan melebihi plafon)</span>
                   )}
@@ -582,16 +762,24 @@ export default function DutyMeal() {
             </div>
             <div>
               <Label>Keterangan</Label>
-              <Textarea
-                placeholder="Deskripsi/keterangan (opsional)"
-                value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                rows={2}
-              />
+              <Textarea placeholder="Deskripsi/keterangan (opsional)" value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={2} />
+            </div>
+            <div>
+              <Label>Struk Makanan <span className="text-muted-foreground text-xs">(opsional, maks. 1MB)</span></Label>
+              <input ref={addReceiptInputRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => handleFileChange(e, setAddReceiptFile)} />
+              <Button variant="outline" className="w-full gap-2 mt-1" onClick={() => addReceiptInputRef.current?.click()}>
+                <Upload className="h-4 w-4" />
+                {addReceiptFile ? addReceiptFile.filename : "Pilih Struk Makanan"}
+              </Button>
+              {addReceiptFile?.data.startsWith("data:image") && (
+                <img src={addReceiptFile.data} alt="preview struk" className="mt-2 rounded-lg w-full object-contain max-h-32 border" />
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAdd(false)}>Batal</Button>
+            <Button variant="outline" onClick={() => { setShowAdd(false); setAddReceiptFile(null); }}>Batal</Button>
             <Button onClick={handleSubmitAdd} disabled={createMutation.isPending}
               className="bg-orange-600 hover:bg-orange-700 text-white">
               {createMutation.isPending ? "Menyimpan..." : "Simpan"}
@@ -600,61 +788,95 @@ export default function DutyMeal() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── MODAL: Upload Proof ──────────────────────────────── */}
-      <Dialog open={!!showProof} onOpenChange={() => { setShowProof(null); setProofFile(null); }}>
+      {/* ─── MODAL: Upload Struk per entry ──────────────────────── */}
+      <Dialog open={!!showReceipt} onOpenChange={() => { setShowReceipt(null); setReceiptFile(null); }}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Upload Bukti Pembayaran</DialogTitle>
-          </DialogHeader>
-          {showProof && (
+          <DialogHeader><DialogTitle>Upload Struk Makanan</DialogTitle></DialogHeader>
+          {showReceipt && (
             <div className="space-y-4">
               <div className="text-sm text-muted-foreground">
-                <p>Tanggal: <strong>{showProof.mealDate}</strong></p>
-                <p>Nominal: <strong>{formatRupiah(Number(showProof.totalBillBeforeTax))}</strong></p>
-                {dmSettings?.dutyMealBankAccountNumber && (
-                  <div className="mt-2 p-3 bg-blue-50 rounded-lg text-xs">
-                    <p className="font-medium text-blue-800">Info Rekening Pembayaran:</p>
-                    <p className="text-blue-700">{dmSettings.dutyMealBankName || "Bank"} — {dmSettings.dutyMealBankAccountNumber}</p>
-                    <p className="text-blue-700">a/n {dmSettings.dutyMealBankAccountName}</p>
-                  </div>
-                )}
+                <p>Tanggal: <strong>{showReceipt.mealDate}</strong></p>
+                <p>Nominal: <strong>{formatRupiah(Number(showReceipt.totalBillBeforeTax))}</strong></p>
               </div>
               <div>
-                <Label>File Bukti Pembayaran (maks. 5MB)</Label>
-                <div className="mt-1">
-                  <input ref={proofInputRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleProofFileChange} />
-                  <Button variant="outline" className="w-full gap-2" onClick={() => proofInputRef.current?.click()}>
-                    <Upload className="h-4 w-4" />
-                    {proofFile ? proofFile.filename : "Pilih File"}
-                  </Button>
-                </div>
-                {proofFile && proofFile.data.startsWith("data:image") && (
-                  <img src={proofFile.data} alt="preview" className="mt-2 rounded-lg w-full object-contain max-h-40 border" />
+                <Label>File Struk (foto/PDF, maks. 1MB)</Label>
+                <input ref={receiptInputRef} type="file" accept="image/*,application/pdf" className="hidden"
+                  onChange={e => handleFileChange(e, setReceiptFile)} />
+                <Button variant="outline" className="w-full gap-2 mt-1" onClick={() => receiptInputRef.current?.click()}>
+                  <Upload className="h-4 w-4" />
+                  {receiptFile ? receiptFile.filename : "Pilih File Struk"}
+                </Button>
+                {receiptFile?.data.startsWith("data:image") && (
+                  <img src={receiptFile.data} alt="preview" className="mt-2 rounded-lg w-full object-contain max-h-40 border" />
                 )}
               </div>
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowProof(null); setProofFile(null); }}>Batal</Button>
+            <Button variant="outline" onClick={() => { setShowReceipt(null); setReceiptFile(null); }}>Batal</Button>
             <Button
-              disabled={!proofFile || uploadProofMutation.isPending}
-              onClick={() => showProof && proofFile && uploadProofMutation.mutate({ id: showProof.id, fileData: proofFile.data, filename: proofFile.filename })}
-            >
-              {uploadProofMutation.isPending ? "Mengupload..." : "Upload"}
+              disabled={!receiptFile || uploadReceiptMutation.isPending}
+              onClick={() => showReceipt && receiptFile && uploadReceiptMutation.mutate({ id: showReceipt.id, fileData: receiptFile.data, filename: receiptFile.filename })}>
+              {uploadReceiptMutation.isPending ? "Mengupload..." : "Upload Struk"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ─── MODAL: Preview Proof ─────────────────────────────── */}
+      {/* ─── MODAL: Upload Bukti Pembayaran Bulanan ─────────────── */}
+      <Dialog open={showPayment} onOpenChange={open => { setShowPayment(open); if (!open) setPaymentFile(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Upload Bukti Pembayaran — {MONTHS[month - 1]} {year}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-blue-50 rounded-lg text-xs text-blue-800">
+              <p className="font-semibold">Total kelebihan: <strong className="text-red-600">{formatRupiah(overAmount)}</strong></p>
+              {dmSettings?.dutyMealBankAccountNumber && (
+                <div className="mt-1">
+                  <p>Transfer ke:</p>
+                  <p className="font-medium">{dmSettings.dutyMealBankName} — {dmSettings.dutyMealBankAccountNumber}</p>
+                  <p>a/n {dmSettings.dutyMealBankAccountName}</p>
+                </div>
+              )}
+              <p className="mt-1 text-blue-600">Batas upload: {format(mealLockDeadline, "dd MMMM yyyy", { locale: localeId })}</p>
+            </div>
+            <div>
+              <Label>Bukti Transfer (foto/PDF, maks. 1MB)</Label>
+              <input ref={paymentInputRef} type="file" accept="image/*,application/pdf" className="hidden"
+                onChange={e => handleFileChange(e, setPaymentFile)} />
+              <Button variant="outline" className="w-full gap-2 mt-1" onClick={() => paymentInputRef.current?.click()}>
+                <Upload className="h-4 w-4" />
+                {paymentFile ? paymentFile.filename : "Pilih File Bukti Transfer"}
+              </Button>
+              {paymentFile?.data.startsWith("data:image") && (
+                <img src={paymentFile.data} alt="preview" className="mt-2 rounded-lg w-full object-contain max-h-40 border" />
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowPayment(false); setPaymentFile(null); }}>Batal</Button>
+            <Button
+              disabled={!paymentFile || uploadPaymentMutation.isPending}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => paymentFile && uploadPaymentMutation.mutate({ fileData: paymentFile.data, filename: paymentFile.filename })}>
+              {uploadPaymentMutation.isPending ? "Mengupload..." : "Upload Bukti Pembayaran"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── MODAL: Preview ─────────────────────────────────────── */}
       <Dialog open={!!showPreview} onOpenChange={() => setShowPreview(null)}>
         <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Preview Bukti Pembayaran</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Preview</DialogTitle></DialogHeader>
           {showPreview && (
-            showPreview.startsWith("data:image") ? (
-              <img src={showPreview} alt="bukti" className="w-full rounded-lg object-contain max-h-[60vh] border" />
+            showPreview.url ? (
+              <div className="text-center">
+                <a href={showPreview.url} target="_blank" rel="noreferrer" className="text-blue-600 underline">Buka di Google Drive</a>
+              </div>
+            ) : showPreview.data?.startsWith("data:image") ? (
+              <img src={showPreview.data} alt="preview" className="w-full rounded-lg object-contain max-h-[60vh] border" />
             ) : (
               <div className="text-center py-8 text-muted-foreground">
                 <FileImage className="h-12 w-12 mx-auto mb-3 opacity-40" />
@@ -662,34 +884,43 @@ export default function DutyMeal() {
               </div>
             )
           )}
+          <DialogFooter><Button onClick={() => setShowPreview(null)}>Tutup</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── MODAL: Tolak Entry ─────────────────────────────────── */}
+      <Dialog open={!!showReject} onOpenChange={() => { setShowReject(null); setRejectReason(""); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Tolak Duty Meal</DialogTitle></DialogHeader>
+          <div>
+            <Label>Alasan Penolakan</Label>
+            <Textarea placeholder="Masukkan alasan penolakan..." value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)} rows={3} className="mt-1" />
+          </div>
           <DialogFooter>
-            <Button onClick={() => setShowPreview(null)}>Tutup</Button>
+            <Button variant="outline" onClick={() => { setShowReject(null); setRejectReason(""); }}>Batal</Button>
+            <Button variant="destructive" disabled={rejectMutation.isPending}
+              onClick={() => showReject && rejectMutation.mutate({ id: showReject.id, reason: rejectReason })}>
+              {rejectMutation.isPending ? "Menolak..." : "Tolak"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ─── MODAL: Reject ───────────────────────────────────── */}
-      <Dialog open={!!showReject} onOpenChange={() => { setShowReject(null); setRejectReason(""); }}>
+      {/* ─── MODAL: Tolak Bukti Pembayaran ──────────────────────── */}
+      <Dialog open={!!rejectPayment} onOpenChange={() => { setRejectPayment(null); setRejectPaymentReason(""); }}>
         <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Tolak Duty Meal</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Tolak Bukti Pembayaran</DialogTitle></DialogHeader>
           <div>
             <Label>Alasan Penolakan</Label>
-            <Textarea
-              placeholder="Masukkan alasan penolakan..."
-              value={rejectReason}
-              onChange={e => setRejectReason(e.target.value)}
-              rows={3}
-              className="mt-1"
-            />
+            <Textarea placeholder="Masukkan alasan..." value={rejectPaymentReason}
+              onChange={e => setRejectPaymentReason(e.target.value)} rows={3} className="mt-1" />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowReject(null); setRejectReason(""); }}>Batal</Button>
-            <Button variant="destructive"
-              disabled={rejectMutation.isPending}
-              onClick={() => showReject && rejectMutation.mutate({ id: showReject.id, reason: rejectReason })}>
-              {rejectMutation.isPending ? "Menolak..." : "Tolak"}
+            <Button variant="outline" onClick={() => { setRejectPayment(null); setRejectPaymentReason(""); }}>Batal</Button>
+            <Button variant="destructive" disabled={rejectPaymentMutation.isPending}
+              onClick={() => rejectPayment && rejectPaymentMutation.mutate({ id: rejectPayment.id, reason: rejectPaymentReason })}>
+              {rejectPaymentMutation.isPending ? "Menolak..." : "Tolak"}
             </Button>
           </DialogFooter>
         </DialogContent>

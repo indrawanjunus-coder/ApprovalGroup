@@ -1,20 +1,22 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { dutyMealsTable, dutyMealPlafonTable, brandsTable, usersTable } from "@workspace/db/schema";
+import { dutyMealsTable, dutyMealPlafonTable, brandsTable, usersTable, dutyMealMonthlyPaymentsTable } from "@workspace/db/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
+import { google } from "googleapis";
+import { Readable } from "stream";
 
 const router = Router();
 router.use(requireAuth);
 
-// Helper: get setting value
+// ─── Helpers ──────────────────────────────────────────────────────────────
+
 async function getSetting(key: string): Promise<string> {
   const rows = await db.execute(sql`SELECT value FROM settings WHERE key = ${key}`);
   const row = (rows as any).rows?.[0];
   return row?.value ?? "";
 }
 
-// Helper: check if date is locked for a given meal_month (YYYY-MM)
 async function isMonthLocked(mealMonth: string): Promise<boolean> {
   const lockDateStr = await getSetting("duty_meal_lock_date");
   if (!lockDateStr) return false;
@@ -26,20 +28,17 @@ async function isMonthLocked(mealMonth: string): Promise<boolean> {
   return now.getDate() > lockDate;
 }
 
-// Helper: get user plafon for given company & position
 async function getUserPlafon(companyId: number, position: string): Promise<number> {
   const plafons = await db.select().from(dutyMealPlafonTable).where(eq(dutyMealPlafonTable.companyId, companyId));
   if (plafons.length === 0) return 500000;
-  // exact match first
   const exact = plafons.find(p => p.positionName.toLowerCase() === position.toLowerCase());
   if (exact) return Number(exact.amount);
-  // partial match
   const lp = position.toLowerCase();
   if (lp.includes("general manager")) {
     const gm = plafons.find(p => p.positionName.toLowerCase().includes("general manager"));
     if (gm) return Number(gm.amount);
   }
-  if (lp.includes("assistant manager") || lp.includes("asst manager") || lp.includes("ass. manager")) {
+  if (lp.includes("assistant manager") || lp.includes("asst") || lp.includes("ass. manager")) {
     const am = plafons.find(p => p.positionName.toLowerCase().includes("assistant"));
     if (am) return Number(am.amount);
   }
@@ -49,14 +48,51 @@ async function getUserPlafon(companyId: number, position: string): Promise<numbe
   }
   const staff = plafons.find(p => p.positionName.toLowerCase().includes("staff"));
   if (staff) return Number(staff.amount);
-  // return smallest
   const sorted = [...plafons].sort((a, b) => Number(a.amount) - Number(b.amount));
   return Number(sorted[0].amount);
 }
 
-// ─── PLAFON ENDPOINTS ───────────────────────────────────────────────────
+async function uploadToGDrive(base64Data: string, filename: string): Promise<{ fileId: string; fileUrl: string } | null> {
+  try {
+    const [folder, email, rawKey] = await Promise.all([
+      getSetting("duty_meal_gdrive_folder"),
+      getSetting("duty_meal_gdrive_email"),
+      getSetting("duty_meal_gdrive_private_key"),
+    ]);
+    if (!folder || !email || !rawKey) return null;
 
-// GET /api/duty-meals/plafon?companyId=
+    const privateKey = rawKey.replace(/\\n/g, "\n");
+    const auth = new google.auth.GoogleAuth({
+      credentials: { client_email: email, private_key: privateKey },
+      scopes: ["https://www.googleapis.com/auth/drive.file"],
+    });
+    const drive = google.drive({ version: "v3", auth });
+
+    const base64Content = base64Data.includes(",") ? base64Data.split(",")[1] : base64Data;
+    const mimeType = base64Data.startsWith("data:") ? base64Data.split(";")[0].split(":")[1] : "application/octet-stream";
+    const buffer = Buffer.from(base64Content, "base64");
+    const stream = Readable.from(buffer);
+
+    const res = await drive.files.create({
+      requestBody: { name: filename, parents: [folder] },
+      media: { mimeType, body: stream },
+      fields: "id,webViewLink",
+    });
+
+    await drive.permissions.create({
+      fileId: res.data.id!,
+      requestBody: { role: "reader", type: "anyone" },
+    });
+
+    return { fileId: res.data.id!, fileUrl: res.data.webViewLink! };
+  } catch (err) {
+    console.error("[GDrive upload error]", err);
+    return null;
+  }
+}
+
+// ─── PLAFON ENDPOINTS ──────────────────────────────────────────────────────
+
 router.get("/plafon", async (req, res) => {
   try {
     const { companyId } = req.query;
@@ -67,7 +103,6 @@ router.get("/plafon", async (req, res) => {
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// POST /api/duty-meals/plafon
 router.post("/plafon", requireRole("admin"), async (req, res) => {
   try {
     const { companyId, positionName, amount } = req.body;
@@ -77,12 +112,11 @@ router.post("/plafon", requireRole("admin"), async (req, res) => {
     }).returning();
     res.json(row);
   } catch (err: any) {
-    if (err.code === "23505") { res.status(400).json({ error: "Plafon for this company & position already exists" }); return; }
+    if (err.code === "23505") { res.status(400).json({ error: "Plafon sudah ada untuk perusahaan & jabatan ini" }); return; }
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// PUT /api/duty-meals/plafon/:id
 router.put("/plafon/:id", requireRole("admin"), async (req, res) => {
   try {
     const { positionName, amount, companyId } = req.body;
@@ -96,7 +130,6 @@ router.put("/plafon/:id", requireRole("admin"), async (req, res) => {
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// DELETE /api/duty-meals/plafon/:id
 router.delete("/plafon/:id", requireRole("admin"), async (req, res) => {
   try {
     await db.delete(dutyMealPlafonTable).where(eq(dutyMealPlafonTable.id, Number(req.params.id)));
@@ -104,9 +137,8 @@ router.delete("/plafon/:id", requireRole("admin"), async (req, res) => {
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// ─── MY PLAFON ───────────────────────────────────────────────────────────
+// ─── MY PLAFON ────────────────────────────────────────────────────────────
 
-// GET /api/duty-meals/my-plafon
 router.get("/my-plafon", async (req, res) => {
   try {
     const user = req.user as any;
@@ -116,9 +148,127 @@ router.get("/my-plafon", async (req, res) => {
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// ─── DUTY MEAL ENTRIES ────────────────────────────────────────────────────
+// ─── MONTHLY PAYMENTS ─────────────────────────────────────────────────────
 
-// GET /api/duty-meals?month=2025-01&userId=  (HRD/admin can see all, others see own)
+// GET /api/duty-meals/monthly-payments?month=
+router.get("/monthly-payments", async (req, res) => {
+  try {
+    const user = req.user as any;
+    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
+    const { month } = req.query;
+
+    const filters: any[] = [];
+    if (!isHrd) filters.push(eq(dutyMealMonthlyPaymentsTable.userId, user.id));
+    if (month) filters.push(eq(dutyMealMonthlyPaymentsTable.mealMonth, String(month)));
+
+    const rows = filters.length
+      ? await db.select().from(dutyMealMonthlyPaymentsTable).where(filters.length === 1 ? filters[0] : and(...filters))
+      : await db.select().from(dutyMealMonthlyPaymentsTable);
+
+    // Enrich with user name
+    const userIds = [...new Set(rows.map(r => r.userId))];
+    const usersRows = userIds.length
+      ? await db.select({ id: usersTable.id, name: usersTable.name, position: usersTable.position })
+          .from(usersTable).where(inArray(usersTable.id, userIds))
+      : [];
+    const userMap = new Map(usersRows.map(u => [u.id, u]));
+    const enriched = rows.map(r => ({ ...r, userName: (userMap.get(r.userId) as any)?.name || "Unknown" }));
+    res.json(enriched);
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
+// POST /api/duty-meals/monthly-payment/:month/upload
+router.post("/monthly-payment/:month/upload", async (req, res) => {
+  try {
+    const user = req.user as any;
+    const mealMonth = req.params.month;
+
+    // Check if month is locked
+    if (await isMonthLocked(mealMonth)) {
+      res.status(400).json({ error: "Periode ini sudah terkunci. Tidak bisa upload bukti pembayaran." });
+      return;
+    }
+
+    const { fileData, filename } = req.body;
+    if (!fileData) { res.status(400).json({ error: "fileData required" }); return; }
+
+    // Upload to GDrive if configured
+    const gdrive = await uploadToGDrive(fileData, filename || "bukti_pembayaran.jpg");
+
+    // Get current month total to calculate over amount
+    const meals = await db.select().from(dutyMealsTable)
+      .where(and(eq(dutyMealsTable.userId, user.id), eq(dutyMealsTable.mealMonth, mealMonth)));
+    const monthTotal = meals.reduce((s, m) => s + Number(m.totalBillBeforeTax), 0);
+    const plafon = user.hiredCompanyId ? await getUserPlafon(user.hiredCompanyId, user.position) : 0;
+    const overAmount = Math.max(0, monthTotal - plafon);
+
+    // Upsert monthly payment record
+    const existing = await db.select({ id: dutyMealMonthlyPaymentsTable.id })
+      .from(dutyMealMonthlyPaymentsTable)
+      .where(and(eq(dutyMealMonthlyPaymentsTable.userId, user.id), eq(dutyMealMonthlyPaymentsTable.mealMonth, mealMonth)));
+
+    let record: any;
+    const data: any = {
+      proofData: gdrive ? null : fileData,
+      proofFilename: filename || "bukti_pembayaran.jpg",
+      gdriveFileId: gdrive?.fileId || null,
+      gdriveFileUrl: gdrive?.fileUrl || null,
+      overAmount: String(overAmount),
+      status: "pending",
+      updatedAt: new Date(),
+    };
+
+    if (existing.length > 0) {
+      [record] = await db.update(dutyMealMonthlyPaymentsTable).set(data)
+        .where(eq(dutyMealMonthlyPaymentsTable.id, existing[0].id)).returning();
+    } else {
+      [record] = await db.insert(dutyMealMonthlyPaymentsTable).values({
+        userId: user.id,
+        companyId: user.hiredCompanyId || null,
+        mealMonth,
+        ...data,
+      }).returning();
+    }
+
+    res.json({
+      success: true,
+      record,
+      uploadedToGdrive: !!gdrive,
+      gdriveUrl: gdrive?.fileUrl || null,
+    });
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
+// PUT /api/duty-meals/monthly-payment/:id/approve (HRD)
+router.put("/monthly-payment/:id/approve", async (req, res) => {
+  try {
+    const user = req.user as any;
+    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
+    if (!isHrd) { res.status(403).json({ error: "Hanya HRD yang bisa approve" }); return; }
+    const [updated] = await db.update(dutyMealMonthlyPaymentsTable)
+      .set({ status: "approved", approvedBy: user.id, approvedAt: new Date(), updatedAt: new Date() })
+      .where(eq(dutyMealMonthlyPaymentsTable.id, Number(req.params.id))).returning();
+    res.json(updated);
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// PUT /api/duty-meals/monthly-payment/:id/reject (HRD)
+router.put("/monthly-payment/:id/reject", async (req, res) => {
+  try {
+    const user = req.user as any;
+    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
+    if (!isHrd) { res.status(403).json({ error: "Hanya HRD yang bisa reject" }); return; }
+    const { reason } = req.body;
+    const [updated] = await db.update(dutyMealMonthlyPaymentsTable)
+      .set({ status: "rejected", rejectionReason: reason || null, updatedAt: new Date() })
+      .where(eq(dutyMealMonthlyPaymentsTable.id, Number(req.params.id))).returning();
+    res.json(updated);
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// ─── DUTY MEAL ENTRIES ─────────────────────────────────────────────────────
+
+// GET /api/duty-meals?month=YYYY-MM
 router.get("/", async (req, res) => {
   try {
     const user = req.user as any;
@@ -131,18 +281,14 @@ router.get("/", async (req, res) => {
     } else if (userId) {
       filters.push(eq(dutyMealsTable.userId, Number(userId)));
     }
-    if (month) {
-      filters.push(eq(dutyMealsTable.mealMonth, String(month)));
-    }
+    if (month) filters.push(eq(dutyMealsTable.mealMonth, String(month)));
 
     const meals = filters.length
       ? await db.select().from(dutyMealsTable).where(filters.length === 1 ? filters[0] : and(...filters))
       : await db.select().from(dutyMealsTable);
 
-    // Enrich with user + brand info
     const userIds = [...new Set(meals.map(m => m.userId))];
     const brandIds = [...new Set(meals.map(m => m.brandId).filter(Boolean))];
-    const companyIds = [...new Set(meals.map(m => m.companyId).filter(Boolean))];
 
     const [usersRows, brandsRows] = await Promise.all([
       userIds.length
@@ -155,7 +301,6 @@ router.get("/", async (req, res) => {
     const userMap = new Map((usersRows as any[]).map((u: any) => [u.id, u]));
     const brandMap = new Map((brandsRows as any[]).map((b: any) => [b.id, b]));
 
-    // For each user in results, fetch plafon
     const plafonMap = new Map<number, number>();
     for (const uid of userIds) {
       const u = userMap.get(uid) as any;
@@ -165,7 +310,6 @@ router.get("/", async (req, res) => {
       }
     }
 
-    // Group by userId+month and compute monthly totals
     const monthlyTotals = new Map<string, number>();
     for (const m of meals) {
       const key = `${m.userId}:${m.mealMonth}`;
@@ -185,7 +329,7 @@ router.get("/", async (req, res) => {
         brandName: (brand as any)?.name || null,
         plafon,
         monthTotal,
-        isOverPlafon: monthTotal > plafon,
+        isOverPlafon: monthTotal > plafon && plafon > 0,
         overAmount: Math.max(0, monthTotal - plafon),
       };
     });
@@ -204,13 +348,27 @@ router.post("/", async (req, res) => {
     const enabled = await getSetting("duty_meal_enabled");
     if (enabled !== "true") { res.status(403).json({ error: "Fitur Duty Meal tidak aktif" }); return; }
 
-    const { brandId, mealDate, totalBillBeforeTax, description } = req.body;
+    const { brandId, mealDate, totalBillBeforeTax, description, receiptData, receiptFilename } = req.body;
     if (!mealDate || totalBillBeforeTax === undefined) { res.status(400).json({ error: "mealDate dan totalBillBeforeTax wajib diisi" }); return; }
 
-    const mealMonth = mealDate.substring(0, 7); // YYYY-MM
+    const mealMonth = mealDate.substring(0, 7);
     if (await isMonthLocked(mealMonth)) {
-      res.status(400).json({ error: "Periode bulan tersebut sudah terkunci. Tidak bisa menambah Duty Meal untuk bulan lalu." });
+      res.status(400).json({ error: "Periode bulan tersebut sudah terkunci." });
       return;
+    }
+
+    // Upload receipt to GDrive if provided
+    let receiptGdriveId: string | null = null;
+    let receiptGdriveUrl: string | null = null;
+    let storedReceiptData: string | null = null;
+    if (receiptData) {
+      const gdrive = await uploadToGDrive(receiptData, receiptFilename || "struk.jpg");
+      if (gdrive) {
+        receiptGdriveId = gdrive.fileId;
+        receiptGdriveUrl = gdrive.fileUrl;
+      } else {
+        storedReceiptData = receiptData;
+      }
     }
 
     const [meal] = await db.insert(dutyMealsTable).values({
@@ -222,9 +380,11 @@ router.post("/", async (req, res) => {
       totalBillBeforeTax: String(totalBillBeforeTax),
       description: description || null,
       status: "pending",
-    }).returning();
+      receiptData: storedReceiptData,
+      receiptFilename: receiptFilename || null,
+    } as any).returning();
 
-    res.json(meal);
+    res.json({ ...meal, receiptGdriveUrl });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -250,16 +410,14 @@ router.put("/:id", async (req, res) => {
     const [meal] = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.id, Number(req.params.id)));
     if (!meal) { res.status(404).json({ error: "Not found" }); return; }
     if (meal.userId !== user.id && user.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
-    if (meal.status !== "pending") { res.status(400).json({ error: "Hanya bisa edit entry dengan status pending" }); return; }
+    if (meal.status !== "pending") { res.status(400).json({ error: "Hanya bisa edit entry pending" }); return; }
 
     const { brandId, mealDate, totalBillBeforeTax, description } = req.body;
     const updates: any = { updatedAt: new Date() };
     if (brandId !== undefined) updates.brandId = brandId ? Number(brandId) : null;
     if (mealDate !== undefined) {
       const newMonth = mealDate.substring(0, 7);
-      if (await isMonthLocked(newMonth)) {
-        res.status(400).json({ error: "Periode bulan tersebut sudah terkunci." }); return;
-      }
+      if (await isMonthLocked(newMonth)) { res.status(400).json({ error: "Periode sudah terkunci." }); return; }
       updates.mealDate = mealDate;
       updates.mealMonth = newMonth;
     }
@@ -284,8 +442,8 @@ router.delete("/:id", async (req, res) => {
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// POST /api/duty-meals/:id/upload-proof
-router.post("/:id/upload-proof", async (req, res) => {
+// POST /api/duty-meals/:id/upload-receipt (struk makanan per entry)
+router.post("/:id/upload-receipt", async (req, res) => {
   try {
     const user = req.user as any;
     const [meal] = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.id, Number(req.params.id)));
@@ -295,11 +453,23 @@ router.post("/:id/upload-proof", async (req, res) => {
     const { fileData, filename } = req.body;
     if (!fileData) { res.status(400).json({ error: "fileData required" }); return; }
 
+    const gdrive = await uploadToGDrive(fileData, filename || "struk.jpg");
+
     const [updated] = await db.update(dutyMealsTable)
-      .set({ paymentProofData: fileData, paymentProofFilename: filename || "bukti.jpg", updatedAt: new Date() })
+      .set({
+        receiptData: gdrive ? null : fileData,
+        receiptFilename: filename || "struk.jpg",
+        updatedAt: new Date(),
+      } as any)
       .where(eq(dutyMealsTable.id, Number(req.params.id)))
       .returning();
-    res.json({ success: true, meal: updated });
+
+    res.json({
+      success: true,
+      meal: updated,
+      uploadedToGdrive: !!gdrive,
+      gdriveUrl: gdrive?.fileUrl || null,
+    });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
@@ -309,14 +479,11 @@ router.put("/:id/approve", async (req, res) => {
     const user = req.user as any;
     const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
     if (!isHrd) { res.status(403).json({ error: "Hanya HRD yang bisa approve" }); return; }
-
     const [meal] = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.id, Number(req.params.id)));
     if (!meal) { res.status(404).json({ error: "Not found" }); return; }
-
     const [updated] = await db.update(dutyMealsTable)
       .set({ status: "approved", approvedBy: user.id, approvedAt: new Date(), updatedAt: new Date() })
-      .where(eq(dutyMealsTable.id, Number(req.params.id)))
-      .returning();
+      .where(eq(dutyMealsTable.id, Number(req.params.id))).returning();
     res.json(updated);
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -327,40 +494,11 @@ router.put("/:id/reject", async (req, res) => {
     const user = req.user as any;
     const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
     if (!isHrd) { res.status(403).json({ error: "Hanya HRD yang bisa reject" }); return; }
-
     const { reason } = req.body;
     const [updated] = await db.update(dutyMealsTable)
       .set({ status: "rejected", rejectionReason: reason || null, updatedAt: new Date() })
-      .where(eq(dutyMealsTable.id, Number(req.params.id)))
-      .returning();
+      .where(eq(dutyMealsTable.id, Number(req.params.id))).returning();
     res.json(updated);
-  } catch { res.status(500).json({ error: "Internal server error" }); }
-});
-
-// GET /api/duty-meals/report/summary?month=  (HRD/admin only)
-router.get("/report/summary", async (req, res) => {
-  try {
-    const user = req.user as any;
-    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
-    if (!isHrd) { res.status(403).json({ error: "Forbidden" }); return; }
-
-    const { month } = req.query;
-    const filter = month ? eq(dutyMealsTable.mealMonth, String(month)) : undefined;
-    const meals = filter
-      ? await db.select().from(dutyMealsTable).where(filter)
-      : await db.select().from(dutyMealsTable);
-
-    // Aggregate by userId+month
-    const summary: Record<string, any> = {};
-    for (const m of meals) {
-      const key = `${m.userId}:${m.mealMonth}`;
-      if (!summary[key]) {
-        summary[key] = { userId: m.userId, mealMonth: m.mealMonth, total: 0, entries: [] };
-      }
-      summary[key].total += Number(m.totalBillBeforeTax);
-      summary[key].entries.push(m);
-    }
-    res.json(Object.values(summary));
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 

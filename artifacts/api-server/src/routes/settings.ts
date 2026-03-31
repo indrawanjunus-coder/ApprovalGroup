@@ -245,7 +245,7 @@ router.get("/duty-meal", async (req, res) => {
     const keys = [
       "duty_meal_enabled", "duty_meal_company_id", "duty_meal_lock_date",
       "duty_meal_bank_account_number", "duty_meal_bank_account_name", "duty_meal_bank_name",
-      "duty_meal_gdrive_folder", "duty_meal_gdrive_email",
+      "duty_meal_gdrive_folder", "duty_meal_gdrive_email", "duty_meal_gdrive_private_key",
     ];
     const rows = await Promise.all(keys.map(k => getSettingValue(k)));
     res.json({
@@ -257,6 +257,7 @@ router.get("/duty-meal", async (req, res) => {
       dutyMealBankName: rows[5] || "",
       dutyMealGdriveFolder: rows[6] || "",
       dutyMealGdriveEmail: rows[7] || "",
+      dutyMealGdrivePrivateKey: rows[8] ? "***configured***" : "",
     });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -265,7 +266,7 @@ router.put("/duty-meal", requireRole("admin"), async (req, res) => {
   try {
     const { dutyMealEnabled, dutyMealCompanyId, dutyMealLockDate,
       dutyMealBankAccountNumber, dutyMealBankAccountName, dutyMealBankName,
-      dutyMealGdriveFolder, dutyMealGdriveEmail } = req.body;
+      dutyMealGdriveFolder, dutyMealGdriveEmail, dutyMealGdrivePrivateKey } = req.body;
     if (dutyMealEnabled !== undefined) await upsertSetting("duty_meal_enabled", String(dutyMealEnabled));
     if (dutyMealCompanyId !== undefined) await upsertSetting("duty_meal_company_id", dutyMealCompanyId ? String(dutyMealCompanyId) : "");
     if (dutyMealLockDate !== undefined) await upsertSetting("duty_meal_lock_date", String(dutyMealLockDate));
@@ -274,6 +275,9 @@ router.put("/duty-meal", requireRole("admin"), async (req, res) => {
     if (dutyMealBankName !== undefined) await upsertSetting("duty_meal_bank_name", dutyMealBankName || "");
     if (dutyMealGdriveFolder !== undefined) await upsertSetting("duty_meal_gdrive_folder", dutyMealGdriveFolder || "");
     if (dutyMealGdriveEmail !== undefined) await upsertSetting("duty_meal_gdrive_email", dutyMealGdriveEmail || "");
+    if (dutyMealGdrivePrivateKey !== undefined && dutyMealGdrivePrivateKey && dutyMealGdrivePrivateKey !== "***configured***") {
+      await upsertSetting("duty_meal_gdrive_private_key", dutyMealGdrivePrivateKey);
+    }
     res.json({ success: true });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
