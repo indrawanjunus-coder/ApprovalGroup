@@ -1407,7 +1407,8 @@ function BrandManager() {
     queryKey: ["/api/brands"],
     queryFn: async () => {
       const r = await fetch(`${apiBase}/api/brands`, { credentials: "include" });
-      return r.json();
+      const j = await r.json();
+      return Array.isArray(j) ? j : [];
     },
   });
 
@@ -1444,7 +1445,9 @@ function BrandManager() {
     onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
   });
 
-  const companyMap = new Map((companies as any[]).map((c: any) => [c.id, c.name]));
+  const safeBrands = Array.isArray(brands) ? brands : [];
+  const safeCompanies = Array.isArray(companies) ? companies : [];
+  const companyMap = new Map(safeCompanies.map((c: any) => [c.id, c.name]));
 
   return (
     <Card className="border-0 shadow-sm">
@@ -1458,7 +1461,7 @@ function BrandManager() {
           <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
             value={form.companyId} onChange={e => setForm(f => ({ ...f, companyId: e.target.value }))}>
             <option value="">Pilih Perusahaan</option>
-            {(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {safeCompanies.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <Input placeholder="Nama Brand" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="h-9" />
           <Button size="sm" disabled={!form.companyId || !form.name || createMut.isPending}
@@ -1470,9 +1473,9 @@ function BrandManager() {
         {/* Brand list */}
         {isLoading ? <p className="text-sm text-muted-foreground">Memuat...</p> : (
           <div className="space-y-2">
-            {(brands as any[]).length === 0 ? (
+            {safeBrands.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">Belum ada brand</p>
-            ) : (brands as any[]).map((b: any) => (
+            ) : safeBrands.map((b: any) => (
               <div key={b.id} className="flex items-center justify-between gap-2 p-2.5 border rounded-lg">
                 {editId === b.id ? (
                   <>
@@ -1524,7 +1527,8 @@ function PlafonManager() {
     queryKey: ["/api/duty-meals/plafon"],
     queryFn: async () => {
       const r = await fetch(`${apiBase}/api/duty-meals/plafon`, { credentials: "include" });
-      return r.json();
+      const j = await r.json();
+      return Array.isArray(j) ? j : [];
     },
   });
 
