@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, integer, timestamp, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -13,6 +13,7 @@ export const usersTable = pgTable("users", {
   role: text("role").notNull().default("user"),
   superiorId: integer("superior_id"),
   hiredCompanyId: integer("hired_company_id"),
+  joinDate: date("join_date"),
   leaveAccrualStartMonth: integer("leave_accrual_start_month"),
   signature: text("signature"),
   isActive: boolean("is_active").notNull().default(true),

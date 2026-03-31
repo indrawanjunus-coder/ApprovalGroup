@@ -246,6 +246,7 @@ router.get("/duty-meal", async (req, res) => {
       "duty_meal_enabled", "duty_meal_company_id", "duty_meal_lock_date",
       "duty_meal_bank_account_number", "duty_meal_bank_account_name", "duty_meal_bank_name",
       "duty_meal_gdrive_folder", "duty_meal_gdrive_email", "duty_meal_gdrive_private_key",
+      "duty_meal_min_months",
     ];
     const rows = await Promise.all(keys.map(k => getSettingValue(k)));
     res.json({
@@ -258,6 +259,7 @@ router.get("/duty-meal", async (req, res) => {
       dutyMealGdriveFolder: rows[6] || "",
       dutyMealGdriveEmail: rows[7] || "",
       dutyMealGdrivePrivateKey: rows[8] ? "***configured***" : "",
+      dutyMealMinMonths: rows[9] ? parseInt(rows[9]) : 3,
     });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -266,7 +268,8 @@ router.put("/duty-meal", requireRole("admin"), async (req, res) => {
   try {
     const { dutyMealEnabled, dutyMealCompanyId, dutyMealLockDate,
       dutyMealBankAccountNumber, dutyMealBankAccountName, dutyMealBankName,
-      dutyMealGdriveFolder, dutyMealGdriveEmail, dutyMealGdrivePrivateKey } = req.body;
+      dutyMealGdriveFolder, dutyMealGdriveEmail, dutyMealGdrivePrivateKey,
+      dutyMealMinMonths } = req.body;
     if (dutyMealEnabled !== undefined) await upsertSetting("duty_meal_enabled", String(dutyMealEnabled));
     if (dutyMealCompanyId !== undefined) await upsertSetting("duty_meal_company_id", dutyMealCompanyId ? String(dutyMealCompanyId) : "");
     if (dutyMealLockDate !== undefined) await upsertSetting("duty_meal_lock_date", String(dutyMealLockDate));
@@ -278,6 +281,23 @@ router.put("/duty-meal", requireRole("admin"), async (req, res) => {
     if (dutyMealGdrivePrivateKey !== undefined && dutyMealGdrivePrivateKey && dutyMealGdrivePrivateKey !== "***configured***") {
       await upsertSetting("duty_meal_gdrive_private_key", dutyMealGdrivePrivateKey);
     }
+    if (dutyMealMinMonths !== undefined) await upsertSetting("duty_meal_min_months", String(parseInt(dutyMealMinMonths) || 3));
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// Leave minimum months (global setting — used across all companies)
+router.get("/leave-eligibility", async (req, res) => {
+  try {
+    const val = await getSettingValue("leave_min_months");
+    res.json({ leaveMinMonths: val ? parseInt(val) : 3 });
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
+router.put("/leave-eligibility", requireRole("admin"), async (req, res) => {
+  try {
+    const { leaveMinMonths } = req.body;
+    if (leaveMinMonths !== undefined) await upsertSetting("leave_min_months", String(parseInt(leaveMinMonths) || 3));
     res.json({ success: true });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });

@@ -142,6 +142,7 @@ router.get("/balances", requireAuth, async (req, res) => {
         position: usersTable.position,
         hiredCompanyId: usersTable.hiredCompanyId,
         leaveAccrualStartMonth: (usersTable as any).leaveAccrualStartMonth,
+        joinDate: (usersTable as any).joinDate,
       })
         .from(usersTable)
         .where(and(...conditions))
@@ -184,6 +185,7 @@ router.get("/balances", requireAuth, async (req, res) => {
         position: u.position,
         companyName: u.hiredCompanyId ? (companyMap.get(u.hiredCompanyId) || null) : null,
         leaveAccrualStartMonth: (u as any).leaveAccrualStartMonth ?? null,
+        joinDate: (u as any).joinDate ?? null,
         year: currentYear,
         balanceDays: balDays,
         carriedOverDays: carryDays,

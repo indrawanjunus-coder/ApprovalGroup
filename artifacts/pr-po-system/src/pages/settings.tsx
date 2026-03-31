@@ -1663,6 +1663,7 @@ function DutyMealSettings() {
   const [enabled, setEnabled] = useState(false);
   const [companyId, setCompanyId] = useState("");
   const [lockDate, setLockDate] = useState("10");
+  const [minMonths, setMinMonths] = useState("3");
   const [bankNumber, setBankNumber] = useState("");
   const [bankName, setBankName] = useState("");
   const [bankInstitution, setBankInstitution] = useState("");
@@ -1675,6 +1676,7 @@ function DutyMealSettings() {
       setEnabled(settings.dutyMealEnabled);
       setCompanyId(settings.dutyMealCompanyId ? String(settings.dutyMealCompanyId) : "");
       setLockDate(String(settings.dutyMealLockDate || 10));
+      setMinMonths(String((settings as any).dutyMealMinMonths ?? 3));
       setBankNumber(settings.dutyMealBankAccountNumber || "");
       setBankName(settings.dutyMealBankAccountName || "");
       setBankInstitution(settings.dutyMealBankName || "");
@@ -1700,6 +1702,7 @@ function DutyMealSettings() {
       dutyMealEnabled: enabled,
       dutyMealCompanyId: companyId ? parseInt(companyId) : null,
       dutyMealLockDate: parseInt(lockDate) || 10,
+      dutyMealMinMonths: parseInt(minMonths) || 3,
       dutyMealBankAccountNumber: bankNumber,
       dutyMealBankAccountName: bankName,
       dutyMealBankName: bankInstitution,
@@ -1749,6 +1752,16 @@ function DutyMealSettings() {
                 <Input type="number" min="1" max="28" value={lockDate} onChange={e => setLockDate(e.target.value)} className="w-24 h-10" />
                 <p className="text-sm text-muted-foreground">setiap bulan. Setelah tanggal ini, karyawan tidak bisa input Duty Meal untuk bulan sebelumnya.</p>
               </div>
+            </div>
+
+            {/* Minimum months eligibility */}
+            <div className="space-y-2">
+              <Label>Masa Kerja Minimum untuk Duty Meal (Bulan)</Label>
+              <div className="flex items-center gap-2">
+                <Input type="number" min="0" max="24" value={minMonths} onChange={e => setMinMonths(e.target.value)} className="w-24 h-10" />
+                <p className="text-sm text-muted-foreground">bulan setelah tanggal bergabung. Karyawan baru tidak bisa input Duty Meal sebelum masa ini terpenuhi.</p>
+              </div>
+              <p className="text-xs text-muted-foreground">Set 0 untuk menonaktifkan batasan masa kerja.</p>
             </div>
 
             {/* Bank account */}
@@ -1810,6 +1823,62 @@ function DutyMealSettings() {
         <Button onClick={handleSave} disabled={saveMut.isPending} className="shadow-md">
           {saveMut.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
           Simpan Pengaturan Duty Meal
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function LeaveEligibilitySettings() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [leaveMinMonths, setLeaveMinMonths] = useState("3");
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${apiBase}/api/settings/leave-eligibility`, { credentials: "include" })
+      .then(r => r.json())
+      .then(j => { setLeaveMinMonths(String(j.leaveMinMonths ?? 3)); setIsLoading(false); })
+      .catch(() => setIsLoading(false));
+  }, []);
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`${apiBase}/api/settings/leave-eligibility`, {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leaveMinMonths: parseInt(leaveMinMonths) || 3 }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Gagal menyimpan");
+      return j;
+    },
+    onSuccess: () => { qc.invalidateQueries(); toast({ title: "Pengaturan eligibilitas cuti disimpan" }); },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  if (isLoading) return null;
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Check className="h-5 w-5 text-green-600" /> Eligibilitas Cuti
+        </CardTitle>
+        <CardDescription>Masa kerja minimum sebelum karyawan berhak mengajukan cuti</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="space-y-2">
+          <Label>Masa Kerja Minimum untuk Cuti (Bulan)</Label>
+          <div className="flex items-center gap-2">
+            <Input type="number" min="0" max="24" value={leaveMinMonths} onChange={e => setLeaveMinMonths(e.target.value)} className="w-24 h-10" />
+            <p className="text-sm text-muted-foreground">bulan setelah tanggal bergabung. Akrual cuti tidak berjalan sebelum masa kerja ini terpenuhi.</p>
+          </div>
+          <p className="text-xs text-muted-foreground">Set 0 untuk menonaktifkan batasan masa kerja. Jika karyawan tidak memiliki tanggal bergabung, batasan ini diabaikan.</p>
+        </div>
+        <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending} className="shadow-md">
+          {saveMut.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Simpan Pengaturan Eligibilitas
         </Button>
       </CardContent>
     </Card>
@@ -1894,6 +1963,7 @@ export default function Settings() {
       <LocationManager />
       <CompanyManager />
       <CompanyLeaveManager />
+      <LeaveEligibilitySettings />
       <ApprovalRuleManager />
       <AppearanceSettings />
       <SmtpSettings />

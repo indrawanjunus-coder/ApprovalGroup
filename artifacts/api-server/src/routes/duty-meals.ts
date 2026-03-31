@@ -455,6 +455,23 @@ router.post("/", async (req, res) => {
     const enabled = await getSetting("duty_meal_enabled");
     if (enabled !== "true") { res.status(403).json({ error: "Fitur Duty Meal tidak aktif" }); return; }
 
+    // Check duty meal eligibility based on joinDate + minimum months setting
+    const joinDate: string | null = (user as any).joinDate ?? null;
+    if (joinDate) {
+      const minMonthsStr = await getSetting("duty_meal_min_months");
+      const minMonths = minMonthsStr ? parseInt(minMonthsStr) : 3;
+      const jd = new Date(joinDate);
+      const eligDate = new Date(jd.getFullYear(), jd.getMonth() + minMonths, jd.getDate());
+      if (new Date() < eligDate) {
+        const eligible = eligDate.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+        res.status(403).json({
+          error: `Duty Meal baru bisa diajukan setelah ${minMonths} bulan bekerja. Eligible mulai ${eligible}.`,
+          eligibleDate: eligDate.toISOString().split("T")[0],
+        });
+        return;
+      }
+    }
+
     const { brandId, mealDate, totalBillBeforeTax, description, receiptData, receiptFilename } = req.body;
     if (!mealDate || totalBillBeforeTax === undefined) { res.status(400).json({ error: "mealDate dan totalBillBeforeTax wajib diisi" }); return; }
 

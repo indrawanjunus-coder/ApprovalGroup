@@ -158,6 +158,7 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (Pr
 - **Enable/disable** toggle — if disabled, no access for non-admin
 - **Perusahaan sumber brand** — which company's brands to show in dropdown
 - **Tanggal lock** — day of month after which previous month entries are locked
+- **Masa kerja minimum (duty_meal_min_months)** — months after joinDate before employee can submit. 0 = disabled. Default 3. Checked on POST `/api/duty-meals`
 - **Rekening pembayaran** — bank name, account number, account name (shown when over-plafon)
 - **Google Drive** — folder ID + service account email (ready for future GDrive integration)
 
@@ -175,9 +176,20 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (Pr
 ### Settings
 - Feature toggles per company (PO feature on/off)
 - Company leave settings (accrual days/month, max carryover days, carryover expiry month/day)
+- **Leave Eligibility** (`/api/settings/leave-eligibility`): `leave_min_months` — months after joinDate before accrual starts. Default 3.
 - Approval rules management
 - SMTP email configuration (host, port, user, password, security, from)
-- **Duty Meal**: enable/disable, company source for brands, lock date, bank account, Google Drive config
+- **Duty Meal**: enable/disable, company source for brands, lock date, min months (eligibility), bank account, Google Drive config
+
+### User Master (`join_date` field)
+- `join_date` (date column) on `users` table — stored as `YYYY-MM-DD`
+- Exposed as `joinDate` in all user API responses
+- Admin can set/edit via User List form (Tanggal Bergabung date input)
+- Used for eligibility gating: duty meal (duty_meal_min_months), leave accrual (leave_min_months)
+- Leave accrual skips months before `joinDate + leave_min_months`; from eligible month accrual runs normally
+- Duty meal: backend blocks POST if today < `joinDate + duty_meal_min_months`; frontend shows warning banner + disables button
+- User List table shows "Tgl Bergabung" column
+- Leave Saldo table shows "Tgl Eligible Cuti" (calculated from joinDate + leave_min_months)
 
 ## PR Status Flow
 

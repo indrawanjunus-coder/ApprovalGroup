@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { usersTable, userCompaniesTable, companiesTable, userLeaveBalancesTable, companyLeaveSettingsTable } from "@workspace/db/schema";
+import { usersTable, userCompaniesTable, companiesTable, userLeaveBalancesTable, companyLeaveSettingsTable, settingsTable } from "@workspace/db/schema";
 import { eq, ilike, or, count, inArray, sql, and } from "drizzle-orm";
 import { hashPassword, requireAuth, requireRole } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
@@ -88,7 +88,7 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", requireRole("admin", "approver"), async (req, res) => {
   const requester = req.user!;
-  const { username, password, name, email, department, position, superiorId, hiredCompanyId, companies } = req.body;
+  const { username, password, name, email, department, position, superiorId, hiredCompanyId, companies, joinDate } = req.body;
   // Approver can only create "user" role; admin can set any role
   const role = requester.role === "approver" ? "user" : (req.body.role || "user");
   if (!username || !password || !name || !department || !position) {
@@ -101,7 +101,8 @@ router.post("/", requireRole("admin", "approver"), async (req, res) => {
       username, passwordHash: hashPassword(password), name, email: email || null,
       department, position, role, superiorId: superiorId || null,
       hiredCompanyId: hiredCompanyId || null, isActive: true,
-    }).returning();
+      joinDate: joinDate || null,
+    } as any).returning();
 
     if (Array.isArray(companies) && companies.length > 0) {
       const validCompanies = companies.filter((c: any) => c.companyId);
@@ -125,7 +126,7 @@ router.post("/", requireRole("admin", "approver"), async (req, res) => {
 router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
   const requester = req.user!;
   const id = parseInt(req.params.id);
-  const { name, email, department, position, superiorId, hiredCompanyId, isActive, password, companies } = req.body;
+  const { name, email, department, position, superiorId, hiredCompanyId, isActive, password, companies, joinDate } = req.body;
   // Approver can only set role "user" and cannot change password
   const role = requester.role === "approver" ? "user" : (req.body.role || "user");
   try {
@@ -133,6 +134,7 @@ router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
       name, email: email || null, department, position, role,
       superiorId: superiorId || null,
       hiredCompanyId: hiredCompanyId !== undefined ? (hiredCompanyId || null) : undefined,
+      joinDate: joinDate !== undefined ? (joinDate || null) : undefined,
       isActive: isActive !== undefined ? isActive : true, updatedAt: new Date(),
     };
     // Only admin can change password
@@ -211,11 +213,12 @@ router.get("/:id/leave-balance", async (req, res) => {
 
     const now = new Date();
     const currentMonth = now.getFullYear() === year ? now.getMonth() + 1 : 12;
+    const joinDate = (user as any).joinDate ?? null;
 
     if (!balance) {
-      balance = await initLeaveBalance(userId, year, user.hiredCompanyId);
+      balance = await initLeaveBalance(userId, year, user.hiredCompanyId, joinDate);
     } else {
-      balance = await accumulateLeave(balance, currentMonth, user.hiredCompanyId, year);
+      balance = await accumulateLeave(balance, currentMonth, user.hiredCompanyId, year, joinDate);
     }
 
     const available = parseFloat(balance.balanceDays) + parseFloat(balance.carriedOverDays) - parseFloat(balance.usedDays);
@@ -267,7 +270,28 @@ async function getAccrual(companyId: number): Promise<number> {
   return s ? parseFloat(s.accrualDaysPerMonth) : 1;
 }
 
-async function initLeaveBalance(userId: number, year: number, hiredCompanyId: number | null | undefined) {
+async function getLeaveMinMonths(): Promise<number> {
+  const [s] = await db.select().from(settingsTable).where(eq(settingsTable.key, "leave_min_months"));
+  return s?.value ? parseInt(s.value) : 3;
+}
+
+/**
+ * Returns the first month (1-12) from which leave accrues in `year`, based on joinDate + minMonths.
+ * Returns null if the employee is not yet eligible in that year.
+ * If joinDate is null, eligible from month 1.
+ */
+function computeLeaveEligibleStartMonth(joinDate: string | null | undefined, minMonths: number, year: number): number | null {
+  if (!joinDate) return 1;
+  const jd = new Date(joinDate);
+  if (isNaN(jd.getTime())) return 1;
+  // Add minMonths to joinDate
+  const eligDate = new Date(jd.getFullYear(), jd.getMonth() + minMonths, jd.getDate());
+  if (eligDate.getFullYear() > year) return null; // not eligible this year
+  if (eligDate.getFullYear() < year) return 1;    // eligible since before this year
+  return eligDate.getMonth() + 1;                 // eligible this year at this month
+}
+
+async function initLeaveBalance(userId: number, year: number, hiredCompanyId: number | null | undefined, joinDate?: string | null) {
   const prevYear = year - 1;
   const [prev] = await db.select().from(userLeaveBalancesTable)
     .where(and(eq(userLeaveBalancesTable.userId, userId), eq(userLeaveBalancesTable.year, prevYear)));
@@ -285,24 +309,44 @@ async function initLeaveBalance(userId: number, year: number, hiredCompanyId: nu
   }
 
   const now = new Date();
-  const currentMonth = now.getFullYear() === year ? now.getMonth() + 1 : 0;
+  const currentMonth = now.getFullYear() === year ? now.getMonth() + 1 : 12;
   const accrual = hiredCompanyId ? await getAccrual(hiredCompanyId) : 1;
-  const earned = currentMonth * accrual;
+
+  // Compute eligible start month using joinDate + leave_min_months
+  const minMonths = await getLeaveMinMonths();
+  const eligibleStart = computeLeaveEligibleStartMonth(joinDate, minMonths, year);
+  let earned = 0;
+  let lastAccMonth = 0;
+  if (eligibleStart !== null) {
+    const startMonth = Math.max(eligibleStart, 1);
+    const endMonth = Math.min(currentMonth, 12);
+    if (endMonth >= startMonth) {
+      earned = (endMonth - startMonth + 1) * accrual;
+      lastAccMonth = endMonth;
+    }
+  }
 
   const [nb] = await db.insert(userLeaveBalancesTable).values({
     userId, year, balanceDays: String(earned),
     carriedOverDays: String(carriedOver),
     carriedOverExpiry: carriedOverExpiry || undefined,
-    usedDays: "0", lastAccumulatedMonth: currentMonth,
+    usedDays: "0", lastAccumulatedMonth: lastAccMonth,
   }).returning();
   return nb;
 }
 
-async function accumulateLeave(balance: any, currentMonth: number, hiredCompanyId: number | null | undefined, year: number) {
+async function accumulateLeave(balance: any, currentMonth: number, hiredCompanyId: number | null | undefined, year: number, joinDate?: string | null) {
   if (balance.lastAccumulatedMonth >= currentMonth) return balance;
-  const start = balance.lastAccumulatedMonth + 1;
+
+  const minMonths = await getLeaveMinMonths();
+  const eligibleStart = computeLeaveEligibleStartMonth(joinDate, minMonths, year);
+  if (eligibleStart === null) return balance; // not eligible this year
+
+  // Start from whichever is later: after last accumulated month, or eligible start
+  const start = Math.max(balance.lastAccumulatedMonth + 1, eligibleStart);
   const end = Math.min(currentMonth, 12);
   if (start > end) return balance;
+
   const accrual = hiredCompanyId ? await getAccrual(hiredCompanyId) : 1;
   const earned = (end - start + 1) * accrual;
   const newBalance = parseFloat(balance.balanceDays) + earned;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,27 @@ export default function LeaveManagement() {
 
   const [activeTab, setActiveTab] = useState<Tab>("laporan");
   const currentYear = new Date().getFullYear();
+  const [leaveMinMonths, setLeaveMinMonths] = useState<number>(3);
+
+  // Load leave eligibility setting
+  const { data: leaveEligData } = useQuery<any>({
+    queryKey: ["/api/settings/leave-eligibility"],
+    queryFn: async () => {
+      const r = await fetch(`${apiBase}/api/settings/leave-eligibility`, { credentials: "include" });
+      return r.ok ? r.json() : { leaveMinMonths: 3 };
+    },
+  });
+  useEffect(() => {
+    if (leaveEligData?.leaveMinMonths !== undefined) setLeaveMinMonths(leaveEligData.leaveMinMonths);
+  }, [leaveEligData]);
+
+  const computeEligibleDate = (joinDate: string | null): string | null => {
+    if (!joinDate || leaveMinMonths === 0) return null;
+    const jd = new Date(joinDate);
+    if (isNaN(jd.getTime())) return null;
+    const ed = new Date(jd.getFullYear(), jd.getMonth() + leaveMinMonths, jd.getDate());
+    return ed.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+  };
 
   // Laporan filters
   const [reportYear, setReportYear] = useState(currentYear);
@@ -502,20 +523,6 @@ export default function LeaveManagement() {
                     />
                   </div>
                 </div>
-                <div className="col-span-2 space-y-1.5">
-                  <Label className="text-xs">Mulai Akrual Cuti (Bulan ke-)</Label>
-                  <select
-                    className="w-full border rounded-md px-3 py-2 text-sm bg-background"
-                    value={editState.leaveAccrualStartMonth ?? ""}
-                    onChange={e => setEditState(s => s ? { ...s, leaveAccrualStartMonth: e.target.value ? parseInt(e.target.value) : null } : s)}
-                  >
-                    <option value="">— Belum diset —</option>
-                    {MONTH_NAMES.map((m, i) => (
-                      <option key={i + 1} value={i + 1}>{m} (Bulan {i + 1})</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-muted-foreground">Setiap bulan setelah bulan ini, jatah cuti bertambah 1 hari</p>
-                </div>
                 <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-700 flex justify-between items-center">
                   <span>Sisa Cuti</span>
                   <strong className="text-lg">
@@ -572,7 +579,7 @@ export default function LeaveManagement() {
                           <th className="text-left p-3 font-medium text-muted-foreground">Karyawan</th>
                           <th className="text-left p-3 font-medium text-muted-foreground hidden md:table-cell">Departemen</th>
                           <th className="text-left p-3 font-medium text-muted-foreground hidden lg:table-cell">Perusahaan</th>
-                          <th className="text-center p-3 font-medium text-muted-foreground hidden xl:table-cell">Mulai Akrual</th>
+                          <th className="text-center p-3 font-medium text-muted-foreground hidden xl:table-cell">Tgl Eligible Cuti</th>
                           <th className="text-center p-3 font-medium text-muted-foreground">Jatah</th>
                           <th className="text-center p-3 font-medium text-muted-foreground">Carry Over</th>
                           <th className="text-center p-3 font-medium text-muted-foreground">Terpakai</th>
@@ -597,9 +604,9 @@ export default function LeaveManagement() {
                               ) : "-"}
                             </td>
                             <td className="p-3 text-center hidden xl:table-cell">
-                              {row.leaveAccrualStartMonth ? (
+                              {row.joinDate ? (
                                 <span className="text-xs font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
-                                  {MONTH_NAMES[row.leaveAccrualStartMonth - 1]}
+                                  {computeEligibleDate(row.joinDate) ?? "—"}
                                 </span>
                               ) : (
                                 <span className="text-xs text-muted-foreground">—</span>

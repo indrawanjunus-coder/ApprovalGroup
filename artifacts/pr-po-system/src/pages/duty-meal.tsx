@@ -341,6 +341,17 @@ export default function DutyMeal() {
   const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const isPeriodLocked = mealMonthStr < currentMonthStr && now.getDate() > lockDate;
 
+  // Employment eligibility check: joinDate + minMonths <= today
+  const meJoinDate: string | null = (me as any)?.joinDate ?? null;
+  const dutyMealMinMonths: number = (dmSettings as any)?.dutyMealMinMonths ?? 3;
+  let isEligibleForDutyMeal = true;
+  let dutyMealEligibleDate: Date | null = null;
+  if (meJoinDate && me) {
+    const jd = new Date(meJoinDate);
+    dutyMealEligibleDate = new Date(jd.getFullYear(), jd.getMonth() + dutyMealMinMonths, jd.getDate());
+    isEligibleForDutyMeal = now >= dutyMealEligibleDate;
+  }
+
   // File reading helper
   const readFileAsBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -434,6 +445,20 @@ export default function DutyMeal() {
       {/* ─── MY MEALS TAB ─────────────────────────────────────── */}
       {activeTab === "mine" && (
         <div className="space-y-4">
+          {/* Ineligibility banner */}
+          {!isEligibleForDutyMeal && dutyMealEligibleDate && (
+            <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <Ban className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold text-amber-800">Belum Eligible Duty Meal</p>
+                <p className="text-sm text-amber-700">
+                  Kamu baru bisa mengajukan Duty Meal setelah {dutyMealMinMonths} bulan bekerja.
+                  Eligible mulai <strong>{dutyMealEligibleDate.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</strong>.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Month navigator + Add button */}
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-2">
@@ -446,7 +471,7 @@ export default function DutyMeal() {
                 </span>
               )}
             </div>
-            <Button onClick={() => setShowAdd(true)} disabled={isPeriodLocked}
+            <Button onClick={() => setShowAdd(true)} disabled={isPeriodLocked || !isEligibleForDutyMeal}
               className="bg-orange-600 hover:bg-orange-700 text-white gap-2 disabled:opacity-50">
               <Plus className="h-4 w-4" /> Tambah Duty Meal
             </Button>

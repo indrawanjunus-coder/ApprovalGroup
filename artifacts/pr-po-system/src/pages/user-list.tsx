@@ -22,6 +22,7 @@ const ROLES = [
 const emptyForm = {
   username: "", password: "", name: "", email: "", department: "",
   position: "", role: "user" as any, superiorId: "" as any, hiredCompanyId: "" as any, isActive: true,
+  joinDate: "",
 };
 
 export default function UserList() {
@@ -103,6 +104,7 @@ export default function UserList() {
       superiorId: u.superiorId || "",
       hiredCompanyId: u.hiredCompanyId || "",
       isActive: u.isActive,
+      joinDate: u.joinDate || "",
     });
     setCompanies((u.companies || []).map((c: any) => ({ companyId: Number(c.companyId), department: c.department })));
     setShowModal(true);
@@ -195,15 +197,16 @@ export default function UserList() {
                   <TableHead className="font-semibold text-slate-700">Jabatan</TableHead>
                   <TableHead className="font-semibold text-slate-700">Perusahaan</TableHead>
                   <TableHead className="font-semibold text-slate-700">Role</TableHead>
+                  <TableHead className="font-semibold text-slate-700">Tgl Bergabung</TableHead>
                   <TableHead className="font-semibold text-slate-700">Status</TableHead>
                   <TableHead className="font-semibold text-slate-700 text-center">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Memuat data...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center h-24 text-muted-foreground">Memuat data...</TableCell></TableRow>
                 ) : data?.users?.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center h-24 text-muted-foreground">Tidak ada user ditemukan</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={9} className="text-center h-24 text-muted-foreground">Tidak ada user ditemukan</TableCell></TableRow>
                 ) : (
                   data?.users.map((user) => (
                     <TableRow key={user.id} className="hover:bg-slate-50">
@@ -228,6 +231,9 @@ export default function UserList() {
                         <Badge className={`capitalize border-none shadow-none ${roleColors[user.role] || "bg-slate-100 text-slate-700"}`}>
                           {user.role}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {(user as any).joinDate ? new Date((user as any).joinDate).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : <span className="text-slate-300">—</span>}
                       </TableCell>
                       <TableCell>
                         <Badge className={user.isActive ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100 border-none shadow-none" : "bg-slate-100 text-slate-600 hover:bg-slate-100 border-none shadow-none"}>
@@ -340,6 +346,10 @@ export default function UserList() {
                   </select>
                 </div>
               )}
+              <div className="space-y-1">
+                <Label className="text-xs">Tanggal Bergabung</Label>
+                <Input type="date" value={form.joinDate} onChange={e => setForm(f => ({ ...f, joinDate: e.target.value }))} />
+              </div>
               {editUser && (
                 <div className="flex items-center gap-3 md:col-span-2">
                   <Label className="text-xs">Status Aktif</Label>
