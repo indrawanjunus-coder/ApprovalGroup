@@ -239,6 +239,45 @@ router.put("/company-leave/:companyId", requireRole("admin"), async (req, res) =
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 });
 
+// Duty Meal settings
+router.get("/duty-meal", async (req, res) => {
+  try {
+    const keys = [
+      "duty_meal_enabled", "duty_meal_company_id", "duty_meal_lock_date",
+      "duty_meal_bank_account_number", "duty_meal_bank_account_name", "duty_meal_bank_name",
+      "duty_meal_gdrive_folder", "duty_meal_gdrive_email",
+    ];
+    const rows = await Promise.all(keys.map(k => getSettingValue(k)));
+    res.json({
+      dutyMealEnabled: rows[0] === "true",
+      dutyMealCompanyId: rows[1] ? parseInt(rows[1]) : null,
+      dutyMealLockDate: rows[2] ? parseInt(rows[2]) : 10,
+      dutyMealBankAccountNumber: rows[3] || "",
+      dutyMealBankAccountName: rows[4] || "",
+      dutyMealBankName: rows[5] || "",
+      dutyMealGdriveFolder: rows[6] || "",
+      dutyMealGdriveEmail: rows[7] || "",
+    });
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
+router.put("/duty-meal", requireRole("admin"), async (req, res) => {
+  try {
+    const { dutyMealEnabled, dutyMealCompanyId, dutyMealLockDate,
+      dutyMealBankAccountNumber, dutyMealBankAccountName, dutyMealBankName,
+      dutyMealGdriveFolder, dutyMealGdriveEmail } = req.body;
+    if (dutyMealEnabled !== undefined) await upsertSetting("duty_meal_enabled", String(dutyMealEnabled));
+    if (dutyMealCompanyId !== undefined) await upsertSetting("duty_meal_company_id", dutyMealCompanyId ? String(dutyMealCompanyId) : "");
+    if (dutyMealLockDate !== undefined) await upsertSetting("duty_meal_lock_date", String(dutyMealLockDate));
+    if (dutyMealBankAccountNumber !== undefined) await upsertSetting("duty_meal_bank_account_number", dutyMealBankAccountNumber || "");
+    if (dutyMealBankAccountName !== undefined) await upsertSetting("duty_meal_bank_account_name", dutyMealBankAccountName || "");
+    if (dutyMealBankName !== undefined) await upsertSetting("duty_meal_bank_name", dutyMealBankName || "");
+    if (dutyMealGdriveFolder !== undefined) await upsertSetting("duty_meal_gdrive_folder", dutyMealGdriveFolder || "");
+    if (dutyMealGdriveEmail !== undefined) await upsertSetting("duty_meal_gdrive_email", dutyMealGdriveEmail || "");
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: "Internal server error" }); }
+});
+
 // Appearance settings
 router.get("/appearance", requireRole("admin"), async (req, res) => {
   try {

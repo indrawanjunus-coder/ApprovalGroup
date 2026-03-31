@@ -18,6 +18,8 @@ import pembayaranRouter from "./pembayaran.js";
 import leaveManagementRouter from "./leave-management.js";
 import historyRouter from "./history.js";
 import locationsRouter from "./locations.js";
+import brandsRouter from "./brands.js";
+import dutyMealsRouter from "./duty-meals.js";
 
 const router = Router();
 
@@ -40,5 +42,7 @@ router.use("/pembayaran", pembayaranRouter);
 router.use("/leave", leaveManagementRouter);
 router.use("/history", historyRouter);
 router.use("/locations", locationsRouter);
+router.use("/brands", brandsRouter);
+router.use("/duty-meals", dutyMealsRouter);
 
 export default router;

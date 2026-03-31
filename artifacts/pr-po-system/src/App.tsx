@@ -21,6 +21,7 @@ import History from "./pages/history";
 import LeaveManagement from "./pages/leave-management";
 import AuditLogs from "./pages/audit-logs";
 import Profile from "./pages/profile";
+import DutyMeal from "./pages/duty-meal";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient();
@@ -62,6 +63,7 @@ function Router() {
       <ProtectedRoute path="/settings" component={Settings} />
       <ProtectedRoute path="/audit-logs" component={AuditLogs} />
       <ProtectedRoute path="/profile" component={Profile} />
+      <ProtectedRoute path="/duty-meal" component={DutyMeal} />
       
       <Route path="/">
         {() => {

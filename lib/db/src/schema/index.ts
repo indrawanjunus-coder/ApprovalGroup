@@ -8,3 +8,4 @@ export * from "./audit-logs";
 export * from "./leave";
 export * from "./pr-receiving";
 export * from "./master-data";
+export * from "./duty-meal";

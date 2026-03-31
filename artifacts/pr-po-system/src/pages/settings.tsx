@@ -14,7 +14,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin, Utensils, CreditCard } from "lucide-react";
+
+const apiBase = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 // Company Management
 function CompanyManager() {
@@ -1390,6 +1392,405 @@ function LocationManager() {
   );
 }
 
+// ─── Brand Manager ───────────────────────────────────────────────────────
+function BrandManager() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { data: companies = [] } = useGetCompanies();
+
+  const [form, setForm] = useState({ companyId: "", name: "" });
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", isActive: true });
+
+  const { data: brands = [], isLoading } = useQuery({
+    queryKey: ["/api/brands"],
+    queryFn: async () => {
+      const r = await fetch(`${apiBase}/api/brands`, { credentials: "include" });
+      return r.json();
+    },
+  });
+
+  const createMut = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await fetch(`${apiBase}/api/brands`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Gagal");
+      return j;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/brands"] }); setForm({ companyId: "", name: "" }); toast({ title: "Brand ditambahkan" }); },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: async ({ id, ...data }: any) => {
+      const r = await fetch(`${apiBase}/api/brands/${id}`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Gagal");
+      return j;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/brands"] }); setEditId(null); toast({ title: "Brand diupdate" }); },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`${apiBase}/api/brands/${id}`, { method: "DELETE", credentials: "include" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Gagal");
+      return j;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/brands"] }); toast({ title: "Brand dihapus" }); },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  const companyMap = new Map((companies as any[]).map((c: any) => [c.id, c.name]));
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2"><Utensils className="h-5 w-5 text-orange-600" /> Master Brand</CardTitle>
+        <CardDescription>Kelola brand per perusahaan untuk Duty Meal</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Add form */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 border rounded-lg bg-slate-50">
+          <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            value={form.companyId} onChange={e => setForm(f => ({ ...f, companyId: e.target.value }))}>
+            <option value="">Pilih Perusahaan</option>
+            {(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <Input placeholder="Nama Brand" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="h-9" />
+          <Button size="sm" disabled={!form.companyId || !form.name || createMut.isPending}
+            onClick={() => createMut.mutate({ companyId: parseInt(form.companyId), name: form.name })} className="gap-1">
+            <Plus className="h-3.5 w-3.5" /> Tambah
+          </Button>
+        </div>
+
+        {/* Brand list */}
+        {isLoading ? <p className="text-sm text-muted-foreground">Memuat...</p> : (
+          <div className="space-y-2">
+            {(brands as any[]).length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Belum ada brand</p>
+            ) : (brands as any[]).map((b: any) => (
+              <div key={b.id} className="flex items-center justify-between gap-2 p-2.5 border rounded-lg">
+                {editId === b.id ? (
+                  <>
+                    <Input value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} className="h-8 flex-1" />
+                    <div className="flex items-center gap-1">
+                      <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                        <input type="checkbox" checked={editForm.isActive} onChange={e => setEditForm(f => ({ ...f, isActive: e.target.checked }))} />
+                        Aktif
+                      </label>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600" onClick={() => updateMut.mutate({ id: b.id, name: editForm.name, isActive: editForm.isActive })} disabled={updateMut.isPending}><Check className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditId(null)}><X className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="text-sm font-medium truncate">{b.name}</span>
+                      <span className="text-xs text-muted-foreground">({companyMap.get(b.companyId) || `PT#${b.companyId}`})</span>
+                      {!b.isActive && <Badge variant="secondary" className="text-xs">Nonaktif</Badge>}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditId(b.id); setEditForm({ name: b.name, isActive: b.isActive }); }}><Pencil className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:text-red-700" onClick={() => { if (confirm("Hapus brand ini?")) deleteMut.mutate(b.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Plafon Manager ──────────────────────────────────────────────────────
+const DEFAULT_POSITIONS = ["General Manager", "Manager", "Assistant Manager", "Staff"];
+
+function PlafonManager() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { data: companies = [] } = useGetCompanies();
+
+  const [form, setForm] = useState({ companyId: "", positionName: DEFAULT_POSITIONS[3], customPosition: "", amount: "" });
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ amount: "" });
+
+  const { data: plafons = [], isLoading } = useQuery({
+    queryKey: ["/api/duty-meals/plafon"],
+    queryFn: async () => {
+      const r = await fetch(`${apiBase}/api/duty-meals/plafon`, { credentials: "include" });
+      return r.json();
+    },
+  });
+
+  const createMut = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await fetch(`${apiBase}/api/duty-meals/plafon`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Gagal");
+      return j;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/duty-meals/plafon"] }); setForm({ companyId: "", positionName: DEFAULT_POSITIONS[3], customPosition: "", amount: "" }); toast({ title: "Plafon ditambahkan" }); },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: async ({ id, amount }: any) => {
+      const r = await fetch(`${apiBase}/api/duty-meals/plafon/${id}`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Gagal");
+      return j;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/duty-meals/plafon"] }); setEditId(null); toast({ title: "Plafon diupdate" }); },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`${apiBase}/api/duty-meals/plafon/${id}`, { method: "DELETE", credentials: "include" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Gagal");
+      return j;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/duty-meals/plafon"] }); toast({ title: "Plafon dihapus" }); },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  const companyMap = new Map((companies as any[]).map((c: any) => [c.id, c.name]));
+  const positionName = form.positionName === "__custom__" ? form.customPosition : form.positionName;
+
+  function formatRupiah(n: number) {
+    return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
+  }
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2"><CreditCard className="h-5 w-5 text-orange-600" /> Master Plafon Duty Meal</CardTitle>
+        <CardDescription>Plafon makan dinas per jabatan dan perusahaan (akumulasi per bulan)</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Add form */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 border rounded-lg bg-slate-50">
+          <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            value={form.companyId} onChange={e => setForm(f => ({ ...f, companyId: e.target.value }))}>
+            <option value="">Pilih Perusahaan</option>
+            {(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <div>
+            <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={form.positionName} onChange={e => setForm(f => ({ ...f, positionName: e.target.value }))}>
+              {DEFAULT_POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+              <option value="__custom__">Jabatan Lain...</option>
+            </select>
+            {form.positionName === "__custom__" && (
+              <Input placeholder="Nama Jabatan" value={form.customPosition}
+                onChange={e => setForm(f => ({ ...f, customPosition: e.target.value }))} className="h-9 mt-1" />
+            )}
+          </div>
+          <Input type="number" placeholder="Plafon (Rp)" value={form.amount}
+            onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} className="h-9" />
+          <Button size="sm" disabled={!form.companyId || !positionName || !form.amount || createMut.isPending}
+            onClick={() => createMut.mutate({ companyId: parseInt(form.companyId), positionName, amount: parseFloat(form.amount) })} className="gap-1">
+            <Plus className="h-3.5 w-3.5" /> Tambah
+          </Button>
+        </div>
+
+        {/* Plafon list */}
+        {isLoading ? <p className="text-sm text-muted-foreground">Memuat...</p> : (
+          <div className="space-y-2">
+            {(plafons as any[]).length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">Belum ada plafon</p>
+            ) : (plafons as any[]).map((p: any) => (
+              <div key={p.id} className="flex items-center justify-between gap-2 p-2.5 border rounded-lg">
+                {editId === p.id ? (
+                  <>
+                    <div className="flex-1 text-sm">
+                      <span className="font-medium">{p.positionName}</span>
+                      <span className="text-muted-foreground ml-2">({companyMap.get(p.companyId) || `PT#${p.companyId}`})</span>
+                    </div>
+                    <Input type="number" value={editForm.amount} onChange={e => setEditForm({ amount: e.target.value })} className="h-8 w-32" />
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-green-600" onClick={() => updateMut.mutate({ id: p.id, amount: parseFloat(editForm.amount) })} disabled={updateMut.isPending}><Check className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditId(null)}><X className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium">{p.positionName}</span>
+                      <span className="text-xs text-muted-foreground ml-2">({companyMap.get(p.companyId) || `PT#${p.companyId}`})</span>
+                    </div>
+                    <span className="text-sm font-semibold text-orange-700">{formatRupiah(Number(p.amount))}</span>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setEditId(p.id); setEditForm({ amount: String(p.amount) }); }}><Pencil className="h-3.5 w-3.5" /></Button>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:text-red-700" onClick={() => { if (confirm("Hapus plafon ini?")) deleteMut.mutate(p.id); }}><Trash2 className="h-3.5 w-3.5" /></Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Duty Meal Global Settings ───────────────────────────────────────────
+function DutyMealSettings() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const { data: companies = [] } = useGetCompanies();
+
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ["/api/settings/duty-meal"],
+    queryFn: async () => {
+      const r = await fetch(`${apiBase}/api/settings/duty-meal`, { credentials: "include" });
+      return r.json();
+    },
+  });
+
+  const [enabled, setEnabled] = useState(false);
+  const [companyId, setCompanyId] = useState("");
+  const [lockDate, setLockDate] = useState("10");
+  const [bankNumber, setBankNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankInstitution, setBankInstitution] = useState("");
+  const [gdriveFolder, setGdriveFolder] = useState("");
+  const [gdriveEmail, setGdriveEmail] = useState("");
+
+  useEffect(() => {
+    if (settings) {
+      setEnabled(settings.dutyMealEnabled);
+      setCompanyId(settings.dutyMealCompanyId ? String(settings.dutyMealCompanyId) : "");
+      setLockDate(String(settings.dutyMealLockDate || 10));
+      setBankNumber(settings.dutyMealBankAccountNumber || "");
+      setBankName(settings.dutyMealBankAccountName || "");
+      setBankInstitution(settings.dutyMealBankName || "");
+      setGdriveFolder(settings.dutyMealGdriveFolder || "");
+      setGdriveEmail(settings.dutyMealGdriveEmail || "");
+    }
+  }, [settings]);
+
+  const saveMut = useMutation({
+    mutationFn: async (data: any) => {
+      const r = await fetch(`${apiBase}/api/settings/duty-meal`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Gagal menyimpan");
+      return j;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/settings/duty-meal"] }); toast({ title: "Pengaturan Duty Meal disimpan" }); },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  const handleSave = () => {
+    saveMut.mutate({
+      dutyMealEnabled: enabled,
+      dutyMealCompanyId: companyId ? parseInt(companyId) : null,
+      dutyMealLockDate: parseInt(lockDate) || 10,
+      dutyMealBankAccountNumber: bankNumber,
+      dutyMealBankAccountName: bankName,
+      dutyMealBankName: bankInstitution,
+      dutyMealGdriveFolder: gdriveFolder,
+      dutyMealGdriveEmail: gdriveEmail,
+    });
+  };
+
+  if (isLoading) return null;
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Utensils className="h-5 w-5 text-orange-600" /> Pengaturan Duty Meal
+        </CardTitle>
+        <CardDescription>Konfigurasi fitur makan dinas karyawan</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {/* Enable toggle */}
+        <div className="flex items-center justify-between rounded-xl border p-4 bg-slate-50/50">
+          <div>
+            <Label className="text-base font-semibold">Aktifkan Fitur Duty Meal</Label>
+            <p className="text-sm text-muted-foreground">Jika aktif, semua karyawan dapat mengakses menu Duty Meal</p>
+          </div>
+          <Switch checked={enabled} onCheckedChange={setEnabled} />
+        </div>
+
+        {enabled && (
+          <>
+            {/* Company for brands */}
+            <div className="space-y-2">
+              <Label>Perusahaan Sumber Brand</Label>
+              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={companyId} onChange={e => setCompanyId(e.target.value)}>
+                <option value="">Semua Perusahaan</option>
+                {(companies as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <p className="text-xs text-muted-foreground">Brand dari perusahaan ini yang akan tampil saat karyawan input Duty Meal</p>
+            </div>
+
+            {/* Lock date */}
+            <div className="space-y-2">
+              <Label>Tanggal Lock (Hari ke-)</Label>
+              <div className="flex items-center gap-2">
+                <Input type="number" min="1" max="28" value={lockDate} onChange={e => setLockDate(e.target.value)} className="w-24 h-10" />
+                <p className="text-sm text-muted-foreground">setiap bulan. Setelah tanggal ini, karyawan tidak bisa input Duty Meal untuk bulan sebelumnya.</p>
+              </div>
+            </div>
+
+            {/* Bank account */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold">Rekening Pembayaran Kelebihan Plafon</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Nama Bank</Label>
+                  <Input placeholder="Contoh: BCA" value={bankInstitution} onChange={e => setBankInstitution(e.target.value)} className="h-9" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Nomor Rekening</Label>
+                  <Input placeholder="Contoh: 1234567890" value={bankNumber} onChange={e => setBankNumber(e.target.value)} className="h-9" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Atas Nama</Label>
+                  <Input placeholder="Nama pemilik rekening" value={bankName} onChange={e => setBankName(e.target.value)} className="h-9" />
+                </div>
+              </div>
+            </div>
+
+            {/* Google Drive (placeholder for future integration) */}
+            <div className="space-y-3">
+              <Label className="text-sm font-semibold">Google Drive (Penyimpanan Bukti Pembayaran)</Label>
+              <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+                Integrasi Google Drive aktif bila email service account dikonfigurasi. Saat ini bukti pembayaran tersimpan di sistem internal.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Google Drive Folder ID</Label>
+                  <Input placeholder="ID Folder Google Drive" value={gdriveFolder} onChange={e => setGdriveFolder(e.target.value)} className="h-9" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Email Service Account</Label>
+                  <Input placeholder="serviceaccount@project.iam.gserviceaccount.com" value={gdriveEmail} onChange={e => setGdriveEmail(e.target.value)} className="h-9" />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        <Button onClick={handleSave} disabled={saveMut.isPending} className="shadow-md">
+          {saveMut.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Simpan Pengaturan Duty Meal
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data, isLoading } = useGetSettings();
   const { toast } = useToast();
@@ -1471,6 +1872,9 @@ export default function Settings() {
       <ApprovalRuleManager />
       <AppearanceSettings />
       <SmtpSettings />
+      <DutyMealSettings />
+      <BrandManager />
+      <PlafonManager />
     </div>
   );
 }

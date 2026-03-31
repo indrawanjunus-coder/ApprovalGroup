@@ -4,7 +4,7 @@ import { useGetMe, useLogout, useGetNotifications, useGetReceivingList, useGetSe
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, FileText, CheckSquare, ShoppingCart,
-  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound, Wallet, CalendarDays, History, UserCircle
+  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound, Wallet, CalendarDays, History, UserCircle, Utensils
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -101,6 +101,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { name: "Penerimaan Barang", href: "/receiving", icon: PackageCheck, roles: ["admin", "user", "purchasing"], badge: receivingCount > 0 ? receivingCount : null },
     { name: "Pembayaran", href: "/pembayaran", icon: Wallet, roles: ["admin"], departments: ["Finance"], badge: pembayaranCount > 0 ? pembayaranCount : null },
     { name: "Riwayat", href: "/history", icon: History, roles: ["admin", "user", "approver", "purchasing"] },
+    { name: "Duty Meal", href: "/duty-meal", icon: Utensils, roles: ["admin", "user", "approver", "purchasing"] },
     { name: "Manajemen Cuti", href: "/leave-management", icon: CalendarDays, roles: ["admin"] },
     { name: "User Management", href: "/users", icon: Users, roles: ["admin", "approver"] },
     { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"] },
