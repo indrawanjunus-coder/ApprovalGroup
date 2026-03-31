@@ -444,10 +444,18 @@ router.get("/", async (req, res) => {
       const approvedUsers = await db.select({ id: usersTable.id })
         .from(usersTable).where(inArray(usersTable.hiredCompanyId, approverCompanyIds));
       const approvedUserIds = approvedUsers.map(u => u.id);
-      const userFilter = userId
-        ? and(eq(dutyMealsTable.userId, Number(userId)), approvedUserIds.includes(Number(userId)) ? undefined : eq(dutyMealsTable.userId, -1))
-        : (approvedUserIds.length > 0 ? inArray(dutyMealsTable.userId, approvedUserIds) : eq(dutyMealsTable.userId, -1));
-      filters.push(userFilter as any);
+      // If specific userId requested, only allow if that user is in approver's companies
+      if (userId) {
+        const reqUid = Number(userId);
+        if (!approvedUserIds.includes(reqUid)) {
+          return res.json([]); // not in approver's scope
+        }
+        filters.push(eq(dutyMealsTable.userId, reqUid));
+      } else {
+        filters.push(approvedUserIds.length > 0
+          ? inArray(dutyMealsTable.userId, approvedUserIds)
+          : eq(dutyMealsTable.userId, -1));
+      }
       meals = filters.length
         ? await db.select().from(dutyMealsTable).where(and(...filters))
         : await db.select().from(dutyMealsTable);
