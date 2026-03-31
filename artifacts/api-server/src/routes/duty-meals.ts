@@ -103,7 +103,7 @@ async function uploadToGDrive(base64Data: string, filename: string): Promise<{ f
     } else if (msg.includes("invalid_grant") || msg.includes("Invalid JWT")) {
       friendlyMsg = "Private key service account tidak valid atau expired.";
     } else if (msg.includes("storage quota") || msg.includes("storageQuota")) {
-      friendlyMsg = "Shared Drive: service account harus ditambahkan sebagai MEMBER (bukan hanya Editor folder) di Shared Drive — klik Settings > Manage members di dalam Shared Drive Anda.";
+      friendlyMsg = "Service account tidak bisa upload ke My Drive. Solusi: buat Shared Drive baru di Google Drive → tambah email service account sebagai Member → gunakan ID Shared Drive (bukan folder di My Drive) di Settings.";
     } else if (msg.includes("403") || msg.includes("PERMISSION_DENIED")) {
       friendlyMsg = "Akses ditolak. Pastikan folder Drive sudah di-share ke email service account dengan akses Editor.";
     } else if (msg.includes("404") || msg.includes("notFound")) {
