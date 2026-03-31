@@ -579,6 +579,10 @@ router.post("/:id/upload-receipt", async (req, res) => {
     const [meal] = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.id, Number(req.params.id)));
     if (!meal) { res.status(404).json({ error: "Not found" }); return; }
     if (meal.userId !== user.id) { res.status(403).json({ error: "Forbidden" }); return; }
+    if (await isMonthLocked(meal.mealMonth!)) {
+      res.status(400).json({ error: "Periode bulan ini sudah terkunci. Tidak bisa upload struk." });
+      return;
+    }
 
     const { fileData, filename } = req.body;
     if (!fileData) { res.status(400).json({ error: "fileData required" }); return; }

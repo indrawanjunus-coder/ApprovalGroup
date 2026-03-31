@@ -337,6 +337,9 @@ export default function DutyMeal() {
   const mealLockDeadline = lockDeadline(mealMonthStr, lockDate);
   const showPaymentBtn = isOverPlafon && now >= mealLastDay && now <= mealLockDeadline && currentMonthPayment?.status !== "approved";
   const paymentExpired = isOverPlafon && now > mealLockDeadline && !currentMonthPayment;
+  // Period is locked: past month AND today's date > lockDate
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const isPeriodLocked = mealMonthStr < currentMonthStr && now.getDate() > lockDate;
 
   // File reading helper
   const readFileAsBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
@@ -437,8 +440,14 @@ export default function DutyMeal() {
               <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
               <span className="font-semibold text-base min-w-[140px] text-center">{MONTHS[month - 1]} {year}</span>
               <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+              {isPeriodLocked && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-600">
+                  <Ban className="h-3 w-3" /> Terkunci
+                </span>
+              )}
             </div>
-            <Button onClick={() => setShowAdd(true)} className="bg-orange-600 hover:bg-orange-700 text-white gap-2">
+            <Button onClick={() => setShowAdd(true)} disabled={isPeriodLocked}
+              className="bg-orange-600 hover:bg-orange-700 text-white gap-2 disabled:opacity-50">
               <Plus className="h-4 w-4" /> Tambah Duty Meal
             </Button>
           </div>
@@ -585,7 +594,7 @@ export default function DutyMeal() {
                             <Eye className="h-3.5 w-3.5" />
                           </Button>
                         ) : null}
-                        {m.status === "pending" && (
+                        {m.status === "pending" && !isPeriodLocked && (
                           <Button size="sm" variant="outline" className="gap-1"
                             onClick={() => { setShowReceipt(m); setReceiptFile(null); }}>
                             <Upload className="h-3.5 w-3.5" />
