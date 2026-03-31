@@ -325,9 +325,9 @@ export default function DutyMeal() {
     onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
   });
 
-  // Monthly summary
+  // Monthly summary — exclude rejected entries from total (reset per month)
   const plafonAmount = myPlafon?.amount || 0;
-  const monthTotal   = (myMeals as any[]).reduce((s: number, m: any) => s + Number(m.totalBillBeforeTax), 0);
+  const monthTotal   = (myMeals as any[]).filter((m: any) => m.status !== "rejected").reduce((s: number, m: any) => s + Number(m.totalBillBeforeTax), 0);
   const isOverPlafon = monthTotal > plafonAmount && plafonAmount > 0;
   const overAmount   = Math.max(0, monthTotal - plafonAmount);
 
@@ -627,7 +627,7 @@ export default function DutyMeal() {
           ) : (
             <div className="space-y-4">
               {rptGroups.map((group: any) => {
-                const groupTotal   = group.entries.reduce((s: number, e: any) => s + Number(e.totalBillBeforeTax), 0);
+                const groupTotal   = group.entries.filter((e: any) => e.status !== "rejected").reduce((s: number, e: any) => s + Number(e.totalBillBeforeTax), 0);
                 const groupOver    = groupTotal > group.plafon && group.plafon > 0;
                 const groupPayment = rptPaymentMap.get(group.userId) as any;
                 return (
