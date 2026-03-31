@@ -131,26 +131,36 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (Pr
 - Columns: timestamp, user, action (color-coded badge), entity type/ID, details
 - Paginated with PaginationControls
 
-### Duty Meal Module (NEW)
+### Duty Meal Module
 - Sidebar menu "Duty Meal" (Utensils icon) accessible by all roles at `/duty-meal`
 - **Employee tab**: Input duty meal entries (date, brand, total bill before tax, description), filter by month/year
 - **Monthly summary card**: Shows total spent, plafon, remaining sisa or over-plafon (red) with bank account info
 - **Over-plafon alert**: When monthly total exceeds plafon, shows red warning with over amount and bank transfer info
-- **Status flow**: pending → approved/rejected (by HRD)
+- **Status flow**: pending → approved/rejected (by Duty Meal Approver)
 - **Upload bukti pembayaran**: File upload as base64 stored in DB, viewable via preview modal
-- **HRD Report tab**: Users with `department=HRD` or `role=admin` see all employees' duty meal entries grouped by user
-- **HRD actions**: View proof image preview, approve, reject with reason
+- **Report tab**: Duty Meal Approvers see entries of users in their assigned companies; admin sees all
+
+#### Per-Company Duty Meal Approver System
+- **Table**: `duty_meal_company_approvers (id, company_id, user_id, created_at)` with unique(company_id, user_id)
+- Admin assigns specific users as approvers for specific PT via Settings → "Approver Duty Meal per PT"
+- `isDutyMealApprover` + `approverCompanyIds[]` exposed from `/api/auth/me`
+- Old `isHrd` pattern (department=HRD) fully replaced by per-company approver check
+- Approver sees/approves only entries from users whose `hiredCompanyId` is in their assigned companies
+- `canApproveForCompany(user, companyId)` helper used in all approve/reject/view endpoints
 
 #### API Endpoints - Duty Meal
-- `GET /api/duty-meals?month=YYYY-MM` — list (own for regular users, all for HRD/admin)
+- `GET /api/duty-meals?month=YYYY-MM` — list (own for regular, assigned companies for approver, all for admin)
 - `POST /api/duty-meals` — create entry (checks enabled flag + lock date)
 - `PUT /api/duty-meals/:id` — update own pending entry
 - `DELETE /api/duty-meals/:id` — delete own pending entry
 - `POST /api/duty-meals/:id/upload-proof` — upload proof (base64)
-- `PUT /api/duty-meals/:id/approve` — HRD approve
-- `PUT /api/duty-meals/:id/reject` — HRD reject
+- `PUT /api/duty-meals/:id/approve` — approve (checks canApproveForCompany)
+- `PUT /api/duty-meals/:id/reject` — reject (checks canApproveForCompany)
 - `GET /api/duty-meals/my-plafon` — get current user's plafon
 - `GET/POST/PUT/DELETE /api/duty-meals/plafon` — manage plafon per company/jabatan (admin)
+- `GET /api/duty-meals/company-approvers` — list all approver assignments (admin)
+- `POST /api/duty-meals/company-approvers` — assign user as approver for PT (admin)
+- `DELETE /api/duty-meals/company-approvers/:id` — remove approver assignment (admin)
 - `GET/POST/PUT/DELETE /api/brands` — manage brand master (admin)
 - `GET/PUT /api/settings/duty-meal` — duty meal settings
 
