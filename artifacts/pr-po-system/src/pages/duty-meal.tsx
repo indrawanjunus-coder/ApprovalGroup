@@ -54,8 +54,9 @@ export default function DutyMeal() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: me } = useGetMe({ query: { retry: false } });
-  const isHrd = (me as any)?.department?.toUpperCase() === "HRD" || (me as any)?.role === "admin";
+  const isDutyMealApprover = !!(me as any)?.isDutyMealApprover;
   const isAdmin = (me as any)?.role === "admin";
+  const isHrd = isDutyMealApprover; // kept for backward compat with existing JSX
 
   const now = new Date();
   const [activeTab, setActiveTab] = useState<"mine" | "report">("mine");

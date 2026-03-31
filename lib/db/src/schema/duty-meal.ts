@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, boolean, numeric, timestamp, date } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, boolean, numeric, timestamp, date, unique } from "drizzle-orm/pg-core";
 
 export const brandsTable = pgTable("brands", {
   id: serial("id").primaryKey(),
@@ -36,6 +36,13 @@ export const dutyMealsTable = pgTable("duty_meals", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+export const dutyMealCompanyApproversTable = pgTable("duty_meal_company_approvers", {
+  id: serial("id").primaryKey(),
+  companyId: integer("company_id").notNull(),
+  userId: integer("user_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => ({ uniq: unique().on(t.companyId, t.userId) }));
 
 export const dutyMealMonthlyPaymentsTable = pgTable("duty_meal_monthly_payments", {
   id: serial("id").primaryKey(),

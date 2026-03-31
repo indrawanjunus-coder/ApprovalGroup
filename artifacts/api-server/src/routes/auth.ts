@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db/schema";
+import { usersTable, dutyMealCompanyApproversTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword, requireAuth } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
@@ -48,8 +48,14 @@ router.get("/me", requireAuth, async (req, res) => {
     const [superior] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, user.superiorId));
     superiorName = superior?.name || null;
   }
+  // Duty meal approver info
+  const approverRows = await db.select({ companyId: dutyMealCompanyApproversTable.companyId })
+    .from(dutyMealCompanyApproversTable)
+    .where(eq(dutyMealCompanyApproversTable.userId, user.id));
+  const approverCompanyIds = approverRows.map(r => r.companyId);
+  const isDutyMealApprover = user.role === "admin" || approverCompanyIds.length > 0;
   const { passwordHash: _, ...userWithoutPassword } = user;
-  res.json({ ...userWithoutPassword, superiorName });
+  res.json({ ...userWithoutPassword, superiorName, isDutyMealApprover, approverCompanyIds });
 });
 
 router.put("/me/signature", requireAuth, async (req, res) => {

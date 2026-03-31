@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { dutyMealsTable, dutyMealPlafonTable, brandsTable, usersTable, dutyMealMonthlyPaymentsTable } from "@workspace/db/schema";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { dutyMealsTable, dutyMealPlafonTable, brandsTable, usersTable, dutyMealMonthlyPaymentsTable, dutyMealCompanyApproversTable, companiesTable } from "@workspace/db/schema";
+import { eq, and, sql, inArray, or } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
 import { google } from "googleapis";
@@ -27,6 +27,29 @@ async function isMonthLocked(mealMonth: string): Promise<boolean> {
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   if (mealMonth >= currentMonth) return false;
   return now.getDate() > lockDate;
+}
+
+/** Returns array of companyIds the user is a duty meal approver for */
+async function getApproverCompanyIds(userId: number): Promise<number[]> {
+  const rows = await db.select({ companyId: dutyMealCompanyApproversTable.companyId })
+    .from(dutyMealCompanyApproversTable)
+    .where(eq(dutyMealCompanyApproversTable.userId, userId));
+  return rows.map(r => r.companyId);
+}
+
+/** Returns true if user is admin OR is a duty meal approver for any company */
+async function isUserDutyMealApprover(user: any): Promise<boolean> {
+  if (user.role === "admin") return true;
+  const ids = await getApproverCompanyIds(user.id);
+  return ids.length > 0;
+}
+
+/** Returns true if user can approve entries for a specific companyId */
+async function canApproveForCompany(user: any, companyId: number | null | undefined): Promise<boolean> {
+  if (user.role === "admin") return true;
+  if (!companyId) return false;
+  const ids = await getApproverCompanyIds(user.id);
+  return ids.includes(companyId);
 }
 
 async function getUserPlafon(companyId: number, position: string): Promise<number> {
@@ -227,16 +250,34 @@ router.get("/my-plafon", async (req, res) => {
 router.get("/monthly-payments", async (req, res) => {
   try {
     const user = req.user as any;
-    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
+    const isAdmin = user.role === "admin";
+    const approverCompanyIds = await getApproverCompanyIds(user.id);
+    const isApprover = isAdmin || approverCompanyIds.length > 0;
     const { month } = req.query;
 
     const filters: any[] = [];
-    if (!isHrd) filters.push(eq(dutyMealMonthlyPaymentsTable.userId, user.id));
     if (month) filters.push(eq(dutyMealMonthlyPaymentsTable.mealMonth, String(month)));
 
-    const rows = filters.length
-      ? await db.select().from(dutyMealMonthlyPaymentsTable).where(filters.length === 1 ? filters[0] : and(...filters))
-      : await db.select().from(dutyMealMonthlyPaymentsTable);
+    let rows: any[];
+    if (isAdmin) {
+      rows = filters.length
+        ? await db.select().from(dutyMealMonthlyPaymentsTable).where(and(...filters))
+        : await db.select().from(dutyMealMonthlyPaymentsTable);
+    } else if (approverCompanyIds.length > 0) {
+      // Approver sees payments from users in their assigned companies
+      const approvedUsers = await db.select({ id: usersTable.id })
+        .from(usersTable).where(inArray(usersTable.hiredCompanyId, approverCompanyIds));
+      const approvedUserIds = approvedUsers.map(u => u.id);
+      const companyFilter = approvedUserIds.length > 0
+        ? inArray(dutyMealMonthlyPaymentsTable.userId, approvedUserIds)
+        : eq(dutyMealMonthlyPaymentsTable.userId, -1);
+      rows = await db.select().from(dutyMealMonthlyPaymentsTable)
+        .where(filters.length ? and(companyFilter, ...filters) : companyFilter);
+    } else {
+      filters.push(eq(dutyMealMonthlyPaymentsTable.userId, user.id));
+      rows = await db.select().from(dutyMealMonthlyPaymentsTable)
+        .where(and(...filters));
+    }
 
     // Enrich with user name
     const userIds = [...new Set(rows.map(r => r.userId))];
@@ -343,12 +384,15 @@ router.post("/monthly-payment/:month/upload", async (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 
-// PUT /api/duty-meals/monthly-payment/:id/approve (HRD)
+// PUT /api/duty-meals/monthly-payment/:id/approve (Duty Meal Approver / Admin)
 router.put("/monthly-payment/:id/approve", async (req, res) => {
   try {
     const user = req.user as any;
-    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
-    if (!isHrd) { res.status(403).json({ error: "Hanya HRD yang bisa approve" }); return; }
+    const [payment] = await db.select().from(dutyMealMonthlyPaymentsTable).where(eq(dutyMealMonthlyPaymentsTable.id, Number(req.params.id)));
+    if (!payment) { res.status(404).json({ error: "Not found" }); return; }
+    if (!await canApproveForCompany(user, payment.companyId)) {
+      res.status(403).json({ error: "Anda tidak memiliki akses untuk approve pembayaran PT ini" }); return;
+    }
     const [updated] = await db.update(dutyMealMonthlyPaymentsTable)
       .set({ status: "approved", approvedBy: user.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(eq(dutyMealMonthlyPaymentsTable.id, Number(req.params.id))).returning();
@@ -357,12 +401,15 @@ router.put("/monthly-payment/:id/approve", async (req, res) => {
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// PUT /api/duty-meals/monthly-payment/:id/reject (HRD)
+// PUT /api/duty-meals/monthly-payment/:id/reject (Duty Meal Approver / Admin)
 router.put("/monthly-payment/:id/reject", async (req, res) => {
   try {
     const user = req.user as any;
-    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
-    if (!isHrd) { res.status(403).json({ error: "Hanya HRD yang bisa reject" }); return; }
+    const [payment] = await db.select().from(dutyMealMonthlyPaymentsTable).where(eq(dutyMealMonthlyPaymentsTable.id, Number(req.params.id)));
+    if (!payment) { res.status(404).json({ error: "Not found" }); return; }
+    if (!await canApproveForCompany(user, payment.companyId)) {
+      res.status(403).json({ error: "Anda tidak memiliki akses untuk reject pembayaran PT ini" }); return;
+    }
     const { reason } = req.body;
     const [updated] = await db.update(dutyMealMonthlyPaymentsTable)
       .set({ status: "rejected", rejectionReason: reason || null, updatedAt: new Date() })
@@ -379,19 +426,35 @@ router.get("/", async (req, res) => {
   try {
     const user = req.user as any;
     const { month, userId } = req.query;
-    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
+    const isAdmin = user.role === "admin";
+    const approverCompanyIds = await getApproverCompanyIds(user.id);
+    const isApprover = isAdmin || approverCompanyIds.length > 0;
 
     const filters: any[] = [];
-    if (!isHrd) {
-      filters.push(eq(dutyMealsTable.userId, user.id));
-    } else if (userId) {
-      filters.push(eq(dutyMealsTable.userId, Number(userId)));
-    }
     if (month) filters.push(eq(dutyMealsTable.mealMonth, String(month)));
 
-    const meals = filters.length
-      ? await db.select().from(dutyMealsTable).where(filters.length === 1 ? filters[0] : and(...filters))
-      : await db.select().from(dutyMealsTable);
+    let meals: any[];
+    if (isAdmin) {
+      if (userId) filters.push(eq(dutyMealsTable.userId, Number(userId)));
+      meals = filters.length
+        ? await db.select().from(dutyMealsTable).where(and(...filters))
+        : await db.select().from(dutyMealsTable);
+    } else if (approverCompanyIds.length > 0) {
+      // Approver sees entries of users in their assigned companies
+      const approvedUsers = await db.select({ id: usersTable.id })
+        .from(usersTable).where(inArray(usersTable.hiredCompanyId, approverCompanyIds));
+      const approvedUserIds = approvedUsers.map(u => u.id);
+      const userFilter = userId
+        ? and(eq(dutyMealsTable.userId, Number(userId)), approvedUserIds.includes(Number(userId)) ? undefined : eq(dutyMealsTable.userId, -1))
+        : (approvedUserIds.length > 0 ? inArray(dutyMealsTable.userId, approvedUserIds) : eq(dutyMealsTable.userId, -1));
+      filters.push(userFilter as any);
+      meals = filters.length
+        ? await db.select().from(dutyMealsTable).where(and(...filters))
+        : await db.select().from(dutyMealsTable);
+    } else {
+      filters.push(eq(dutyMealsTable.userId, user.id));
+      meals = await db.select().from(dutyMealsTable).where(and(...filters));
+    }
 
     const userIds = [...new Set(meals.map(m => m.userId))];
     const brandIds = [...new Set(meals.map(m => m.brandId).filter(Boolean))];
@@ -535,14 +598,56 @@ router.post("/", async (req, res) => {
   }
 });
 
+// ─── COMPANY APPROVERS CRUD (must be before /:id) ──────────────────────────
+
+// GET /api/duty-meals/company-approvers
+router.get("/company-approvers", requireRole("admin"), async (_req, res) => {
+  try {
+    const rows = await db.select({
+      id: dutyMealCompanyApproversTable.id,
+      companyId: dutyMealCompanyApproversTable.companyId,
+      userId: dutyMealCompanyApproversTable.userId,
+      companyName: companiesTable.name,
+      userName: usersTable.name,
+      userUsername: usersTable.username,
+    })
+    .from(dutyMealCompanyApproversTable)
+    .leftJoin(companiesTable, eq(dutyMealCompanyApproversTable.companyId, companiesTable.id))
+    .leftJoin(usersTable, eq(dutyMealCompanyApproversTable.userId, usersTable.id));
+    res.json(rows);
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
+// POST /api/duty-meals/company-approvers
+router.post("/company-approvers", requireRole("admin"), async (req, res) => {
+  try {
+    const { companyId, userId } = req.body;
+    if (!companyId || !userId) { res.status(400).json({ error: "companyId dan userId diperlukan" }); return; }
+    const [existing] = await db.select().from(dutyMealCompanyApproversTable)
+      .where(and(eq(dutyMealCompanyApproversTable.companyId, companyId), eq(dutyMealCompanyApproversTable.userId, userId)));
+    if (existing) { res.status(409).json({ error: "User sudah menjadi approver untuk PT ini" }); return; }
+    const [created] = await db.insert(dutyMealCompanyApproversTable)
+      .values({ companyId: Number(companyId), userId: Number(userId) }).returning();
+    res.status(201).json(created);
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
+// DELETE /api/duty-meals/company-approvers/:id
+router.delete("/company-approvers/:id", requireRole("admin"), async (req, res) => {
+  try {
+    await db.delete(dutyMealCompanyApproversTable).where(eq(dutyMealCompanyApproversTable.id, Number(req.params.id)));
+    res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
 // GET /api/duty-meals/:id
 router.get("/:id", async (req, res) => {
   try {
     const user = req.user as any;
-    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
     const [meal] = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.id, Number(req.params.id)));
     if (!meal) { res.status(404).json({ error: "Not found" }); return; }
-    if (!isHrd && meal.userId !== user.id) { res.status(403).json({ error: "Forbidden" }); return; }
+    const isApprover = await canApproveForCompany(user, meal.companyId);
+    if (!isApprover && meal.userId !== user.id) { res.status(403).json({ error: "Forbidden" }); return; }
     res.json(meal);
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -645,14 +750,15 @@ router.post("/:id/upload-receipt", async (req, res) => {
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// PUT /api/duty-meals/:id/approve  (HRD only)
+// PUT /api/duty-meals/:id/approve  (Duty Meal Approver per PT / Admin)
 router.put("/:id/approve", async (req, res) => {
   try {
     const user = req.user as any;
-    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
-    if (!isHrd) { res.status(403).json({ error: "Hanya HRD yang bisa approve" }); return; }
     const [meal] = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.id, Number(req.params.id)));
     if (!meal) { res.status(404).json({ error: "Not found" }); return; }
+    if (!await canApproveForCompany(user, meal.companyId)) {
+      res.status(403).json({ error: "Anda tidak memiliki akses untuk approve entri PT ini" }); return;
+    }
     const [updated] = await db.update(dutyMealsTable)
       .set({ status: "approved", approvedBy: user.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(eq(dutyMealsTable.id, Number(req.params.id))).returning();
@@ -661,12 +767,15 @@ router.put("/:id/approve", async (req, res) => {
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
 
-// PUT /api/duty-meals/:id/reject  (HRD only)
+// PUT /api/duty-meals/:id/reject  (Duty Meal Approver per PT / Admin)
 router.put("/:id/reject", async (req, res) => {
   try {
     const user = req.user as any;
-    const isHrd = user.department?.toUpperCase() === "HRD" || user.role === "admin";
-    if (!isHrd) { res.status(403).json({ error: "Hanya HRD yang bisa reject" }); return; }
+    const [meal] = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.id, Number(req.params.id)));
+    if (!meal) { res.status(404).json({ error: "Not found" }); return; }
+    if (!await canApproveForCompany(user, meal.companyId)) {
+      res.status(403).json({ error: "Anda tidak memiliki akses untuk reject entri PT ini" }); return;
+    }
     const { reason } = req.body;
     const [updated] = await db.update(dutyMealsTable)
       .set({ status: "rejected", rejectionReason: reason || null, updatedAt: new Date() })

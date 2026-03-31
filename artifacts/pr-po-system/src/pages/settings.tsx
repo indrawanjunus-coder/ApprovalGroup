@@ -1885,6 +1885,100 @@ function LeaveEligibilitySettings() {
   );
 }
 
+// ─── Duty Meal Company Approvers ─────────────────────────────────────────
+function DutyMealApproversManager() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [selCompany, setSelCompany] = useState("");
+  const [selUser, setSelUser] = useState("");
+
+  const { data: approvers = [], isLoading } = useQuery<any[]>({
+    queryKey: [`${apiBase}/api/duty-meals/company-approvers`],
+    queryFn: () => fetch(`${apiBase}/api/duty-meals/company-approvers`, { credentials: "include" }).then(r => r.json()),
+  });
+  const { data: companies = [] } = useQuery<any[]>({
+    queryKey: [`${apiBase}/api/companies`],
+    queryFn: () => fetch(`${apiBase}/api/companies`, { credentials: "include" }).then(r => r.json()),
+  });
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: [`${apiBase}/api/users`],
+    queryFn: () => fetch(`${apiBase}/api/users`, { credentials: "include" }).then(r => r.json()),
+  });
+
+  const add = useMutation({
+    mutationFn: () => fetch(`${apiBase}/api/duty-meals/company-approvers`, {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ companyId: Number(selCompany), userId: Number(selUser) }),
+    }).then(async r => { if (!r.ok) throw new Error((await r.json()).error); return r.json(); }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: [`${apiBase}/api/duty-meals/company-approvers`] }); setSelCompany(""); setSelUser(""); toast({ title: "Approver ditambahkan" }); },
+    onError: (e: any) => toast({ title: "Gagal", description: e.message, variant: "destructive" }),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: number) => fetch(`${apiBase}/api/duty-meals/company-approvers/${id}`, { method: "DELETE", credentials: "include" }).then(r => r.json()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: [`${apiBase}/api/duty-meals/company-approvers`] }); toast({ title: "Approver dihapus" }); },
+    onError: () => toast({ title: "Gagal menghapus", variant: "destructive" }),
+  });
+
+  if (isLoading) return null;
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Utensils className="h-5 w-5 text-orange-600" /> Approver Duty Meal per PT
+        </CardTitle>
+        <CardDescription>Tentukan siapa yang bisa menyetujui Duty Meal untuk masing-masing perusahaan</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-2 items-end">
+          <div className="space-y-1 flex-1 min-w-[160px]">
+            <Label className="text-xs">Perusahaan</Label>
+            <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+              value={selCompany} onChange={e => setSelCompany(e.target.value)}>
+              <option value="">-- Pilih PT --</option>
+              {companies.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1 flex-1 min-w-[160px]">
+            <Label className="text-xs">User Approver</Label>
+            <select className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+              value={selUser} onChange={e => setSelUser(e.target.value)}>
+              <option value="">-- Pilih User --</option>
+              {users.map((u: any) => <option key={u.id} value={u.id}>{u.name} ({u.username})</option>)}
+            </select>
+          </div>
+          <Button size="sm" className="h-9" disabled={!selCompany || !selUser || add.isPending}
+            onClick={() => add.mutate()}>
+            {add.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />} Tambah
+          </Button>
+        </div>
+
+        {approvers.length === 0 ? (
+          <p className="text-sm text-muted-foreground italic">Belum ada approver yang ditambahkan.</p>
+        ) : (
+          <div className="space-y-2">
+            {approvers.map((a: any) => (
+              <div key={a.id} className="flex items-center justify-between rounded-lg border px-3 py-2 bg-slate-50/50">
+                <div>
+                  <span className="font-medium text-sm">{a.userName || "—"}</span>
+                  <span className="text-xs text-muted-foreground ml-2">({a.userUsername})</span>
+                  <span className="text-xs text-muted-foreground ml-2">→</span>
+                  <span className="text-xs font-semibold text-orange-700 ml-2">{a.companyName || `PT #${a.companyId}`}</span>
+                </div>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:text-red-600"
+                  onClick={() => remove.mutate(a.id)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data, isLoading } = useGetSettings();
   const { toast } = useToast();
@@ -1968,6 +2062,7 @@ export default function Settings() {
       <AppearanceSettings />
       <SmtpSettings />
       <DutyMealSettings />
+      <DutyMealApproversManager />
       <BrandManager />
       <PlafonManager />
     </div>
