@@ -210,6 +210,8 @@ export default function DutyMeal() {
       setReceiptFile(null);
       if (res.uploadedToGdrive) {
         toast({ title: "Struk berhasil diupload ke Google Drive" });
+      } else if (res.gdriveWarning) {
+        toast({ title: "Struk tersimpan di sistem", description: `Google Drive: ${res.gdriveWarning}`, variant: "destructive" });
       } else {
         toast({ title: "Struk berhasil diupload" });
       }
@@ -235,6 +237,8 @@ export default function DutyMeal() {
       setPaymentFile(null);
       if (res.uploadedToGdrive) {
         toast({ title: "Bukti pembayaran berhasil diupload ke Google Drive" });
+      } else if (res.gdriveWarning) {
+        toast({ title: "Bukti tersimpan di sistem", description: `Google Drive: ${res.gdriveWarning}`, variant: "destructive" });
       } else {
         toast({ title: "Bukti pembayaran berhasil diupload" });
       }

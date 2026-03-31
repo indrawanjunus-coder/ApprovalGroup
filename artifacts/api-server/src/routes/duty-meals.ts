@@ -52,14 +52,14 @@ async function getUserPlafon(companyId: number, position: string): Promise<numbe
   return Number(sorted[0].amount);
 }
 
-async function uploadToGDrive(base64Data: string, filename: string): Promise<{ fileId: string; fileUrl: string } | null> {
+async function uploadToGDrive(base64Data: string, filename: string): Promise<{ fileId: string; fileUrl: string; error?: string } | null> {
   try {
     const [folder, email, rawKey] = await Promise.all([
       getSetting("duty_meal_gdrive_folder"),
       getSetting("duty_meal_gdrive_email"),
       getSetting("duty_meal_gdrive_private_key"),
     ]);
-    if (!folder || !email || !rawKey) return null;
+    if (!folder || !email || !rawKey) return null; // not configured, silently skip
 
     const privateKey = rawKey.replace(/\\n/g, "\n");
     const auth = new google.auth.GoogleAuth({
@@ -85,9 +85,21 @@ async function uploadToGDrive(base64Data: string, filename: string): Promise<{ f
     });
 
     return { fileId: res.data.id!, fileUrl: res.data.webViewLink! };
-  } catch (err) {
-    console.error("[GDrive upload error]", err);
-    return null;
+  } catch (err: any) {
+    const cause = err?.cause || err;
+    const msg: string = cause?.message || err?.message || "Unknown error";
+    // Extract a short user-friendly message
+    let friendlyMsg = msg;
+    if (msg.includes("has not been used") || msg.includes("is disabled")) {
+      friendlyMsg = "Google Drive API belum diaktifkan di Google Cloud Console. Aktifkan di: https://console.developers.google.com/apis/api/drive.googleapis.com/overview";
+    } else if (msg.includes("invalid_grant") || msg.includes("Invalid JWT")) {
+      friendlyMsg = "Private key service account tidak valid atau expired.";
+    } else if (msg.includes("403") || msg.includes("PERMISSION_DENIED")) {
+      friendlyMsg = "Akses ditolak. Pastikan folder Drive sudah di-share ke email service account.";
+    }
+    console.error("[GDrive upload error]", friendlyMsg);
+    // Return a sentinel so callers know GDrive was attempted but failed
+    return { fileId: "", fileUrl: "", error: friendlyMsg };
   }
 }
 
@@ -194,6 +206,7 @@ router.post("/monthly-payment/:month/upload", async (req, res) => {
 
     // Upload to GDrive if configured
     const gdrive = await uploadToGDrive(fileData, filename || "bukti_pembayaran.jpg");
+    const gdriveOk = gdrive && !gdrive.error && !!gdrive.fileId;
 
     // Get current month total to calculate over amount
     const meals = await db.select().from(dutyMealsTable)
@@ -209,10 +222,10 @@ router.post("/monthly-payment/:month/upload", async (req, res) => {
 
     let record: any;
     const data: any = {
-      proofData: gdrive ? null : fileData,
+      proofData: gdriveOk ? null : fileData,
       proofFilename: filename || "bukti_pembayaran.jpg",
-      gdriveFileId: gdrive?.fileId || null,
-      gdriveFileUrl: gdrive?.fileUrl || null,
+      gdriveFileId: gdriveOk ? gdrive!.fileId : null,
+      gdriveFileUrl: gdriveOk ? gdrive!.fileUrl : null,
       overAmount: String(overAmount),
       status: "pending",
       updatedAt: new Date(),
@@ -233,8 +246,9 @@ router.post("/monthly-payment/:month/upload", async (req, res) => {
     res.json({
       success: true,
       record,
-      uploadedToGdrive: !!gdrive,
-      gdriveUrl: gdrive?.fileUrl || null,
+      uploadedToGdrive: gdriveOk,
+      gdriveUrl: gdriveOk ? gdrive!.fileUrl : null,
+      gdriveWarning: gdrive?.error || null,
     });
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
@@ -361,13 +375,15 @@ router.post("/", async (req, res) => {
     let receiptGdriveId: string | null = null;
     let receiptGdriveUrl: string | null = null;
     let storedReceiptData: string | null = null;
+    let gdriveWarning: string | null = null;
     if (receiptData) {
       const gdrive = await uploadToGDrive(receiptData, receiptFilename || "struk.jpg");
-      if (gdrive) {
+      if (gdrive && !gdrive.error && gdrive.fileId) {
         receiptGdriveId = gdrive.fileId;
         receiptGdriveUrl = gdrive.fileUrl;
       } else {
         storedReceiptData = receiptData;
+        if (gdrive?.error) gdriveWarning = gdrive.error;
       }
     }
 
@@ -384,7 +400,7 @@ router.post("/", async (req, res) => {
       receiptFilename: receiptFilename || null,
     } as any).returning();
 
-    res.json({ ...meal, receiptGdriveUrl });
+    res.json({ ...meal, receiptGdriveUrl, gdriveWarning });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Internal server error" });
@@ -454,10 +470,11 @@ router.post("/:id/upload-receipt", async (req, res) => {
     if (!fileData) { res.status(400).json({ error: "fileData required" }); return; }
 
     const gdrive = await uploadToGDrive(fileData, filename || "struk.jpg");
+    const gdriveOk = gdrive && !gdrive.error && !!gdrive.fileId;
 
     const [updated] = await db.update(dutyMealsTable)
       .set({
-        receiptData: gdrive ? null : fileData,
+        receiptData: gdriveOk ? null : fileData,
         receiptFilename: filename || "struk.jpg",
         updatedAt: new Date(),
       } as any)
@@ -467,8 +484,9 @@ router.post("/:id/upload-receipt", async (req, res) => {
     res.json({
       success: true,
       meal: updated,
-      uploadedToGdrive: !!gdrive,
-      gdriveUrl: gdrive?.fileUrl || null,
+      uploadedToGdrive: gdriveOk,
+      gdriveUrl: gdriveOk ? gdrive!.fileUrl : null,
+      gdriveWarning: gdrive?.error || null,
     });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
