@@ -54,7 +54,9 @@ async function getUserPlafon(companyId: number, position: string): Promise<numbe
 }
 
 interface GDriveUploadMeta {
-  mealDate?: string;    // "YYYY-MM-DD"
+  mealDate?: string;         // "YYYY-MM-DD" — used in filename and folder
+  folderYearMonth?: string;  // "YYYY-MM" — override folder path (used for monthly payment)
+  filePrefix?: string;       // prepend prefix e.g. "Pembayaran"
   brandName?: string;
   username?: string;
   fullName?: string;
@@ -99,6 +101,7 @@ async function uploadToGDrive(base64Data: string, originalFilename: string, meta
     let finalName: string;
     if (meta?.mealDate) {
       const parts = [
+        ...(meta.filePrefix ? [meta.filePrefix] : []),
         meta.mealDate,
         sanitizeForFilename(meta.brandName || ""),
         sanitizeForFilename(meta.username || ""),
@@ -110,12 +113,13 @@ async function uploadToGDrive(base64Data: string, originalFilename: string, meta
     }
 
     // ── Build folder hierarchy: rootFolder / YYYY / YYYY-MM ─────
+    // folderYearMonth overrides mealDate for folder path (e.g. monthly payment)
+    const folderYM = meta?.folderYearMonth || (meta?.mealDate ? meta.mealDate.substring(0, 7) : null);
     let targetFolder = rootFolder;
-    if (meta?.mealDate) {
-      const year = meta.mealDate.substring(0, 4);
-      const yearMonth = meta.mealDate.substring(0, 7);
+    if (folderYM) {
+      const year = folderYM.substring(0, 4);
       const yearFolder = await getOrCreateFolder(drive, year, rootFolder);
-      targetFolder = await getOrCreateFolder(drive, yearMonth, yearFolder);
+      targetFolder = await getOrCreateFolder(drive, folderYM, yearFolder);
     }
 
     // ── Upload file ─────────────────────────────────────────────
@@ -261,8 +265,34 @@ router.post("/monthly-payment/:month/upload", async (req, res) => {
     const { fileData, filename } = req.body;
     if (!fileData) { res.status(400).json({ error: "fileData required" }); return; }
 
+    // Look up brand name from user's meal entries this month
+    const userMeals = await db.select({ brandId: dutyMealsTable.brandId })
+      .from(dutyMealsTable)
+      .where(and(eq(dutyMealsTable.userId, user.id), eq(dutyMealsTable.mealMonth, mealMonth)));
+    const brandIdCounts = new Map<number, number>();
+    for (const m of userMeals) {
+      if (m.brandId) brandIdCounts.set(m.brandId, (brandIdCounts.get(m.brandId) || 0) + 1);
+    }
+    let brandNameForFile = "";
+    if (brandIdCounts.size > 0) {
+      const topBrandId = [...brandIdCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+      const [br] = await db.select({ name: brandsTable.name }).from(brandsTable).where(eq(brandsTable.id, topBrandId));
+      brandNameForFile = br?.name || "";
+    }
+
+    // Today's date for filename, mealMonth for folder
+    const today = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD"
+
     // Upload to GDrive if configured
-    const gdrive = await uploadToGDrive(fileData, filename || "bukti_pembayaran.jpg");
+    const gdrive = await uploadToGDrive(fileData, filename || "bukti_pembayaran.jpg", {
+      filePrefix: "Pembayaran",
+      mealDate: today,
+      folderYearMonth: mealMonth,
+      brandName: brandNameForFile,
+      username: user.username,
+      fullName: user.name || user.username,
+      originalFilename: filename || "bukti_pembayaran.jpg",
+    });
     const gdriveOk = gdrive && !gdrive.error && !!gdrive.fileId;
 
     // Get current month total to calculate over amount (exclude rejected)
