@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { dutyMealsTable, dutyMealPlafonTable, brandsTable, usersTable, dutyMealMonthlyPaymentsTable } from "@workspace/db/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
+import { createAuditLog } from "../lib/audit.js";
 import { google } from "googleapis";
 import { Readable } from "stream";
 
@@ -64,7 +65,7 @@ async function uploadToGDrive(base64Data: string, filename: string): Promise<{ f
     const privateKey = rawKey.replace(/\\n/g, "\n");
     const auth = new google.auth.GoogleAuth({
       credentials: { client_email: email, private_key: privateKey },
-      scopes: ["https://www.googleapis.com/auth/drive.file"],
+      scopes: ["https://www.googleapis.com/auth/drive"],
     });
     const drive = google.drive({ version: "v3", auth });
 
@@ -73,32 +74,42 @@ async function uploadToGDrive(base64Data: string, filename: string): Promise<{ f
     const buffer = Buffer.from(base64Content, "base64");
     const stream = Readable.from(buffer);
 
+    // supportsAllDrives required for Shared Drive (Team Drive) folders
     const res = await drive.files.create({
+      supportsAllDrives: true,
       requestBody: { name: filename, parents: [folder] },
       media: { mimeType, body: stream },
       fields: "id,webViewLink",
     });
 
-    await drive.permissions.create({
-      fileId: res.data.id!,
-      requestBody: { role: "reader", type: "anyone" },
-    });
+    // For Shared Drive files, permissions are inherited — this may fail silently
+    try {
+      await drive.permissions.create({
+        fileId: res.data.id!,
+        supportsAllDrives: true,
+        requestBody: { role: "reader", type: "anyone" },
+      });
+    } catch {
+      // Shared Drive may restrict public permission changes — ignore, file still uploaded
+    }
 
     return { fileId: res.data.id!, fileUrl: res.data.webViewLink! };
   } catch (err: any) {
     const cause = err?.cause || err;
     const msg: string = cause?.message || err?.message || "Unknown error";
-    // Extract a short user-friendly message
     let friendlyMsg = msg;
     if (msg.includes("has not been used") || msg.includes("is disabled")) {
-      friendlyMsg = "Google Drive API belum diaktifkan di Google Cloud Console. Aktifkan di: https://console.developers.google.com/apis/api/drive.googleapis.com/overview";
+      friendlyMsg = "Google Drive API belum diaktifkan di Google Cloud Console.";
     } else if (msg.includes("invalid_grant") || msg.includes("Invalid JWT")) {
       friendlyMsg = "Private key service account tidak valid atau expired.";
+    } else if (msg.includes("storage quota") || msg.includes("storageQuota")) {
+      friendlyMsg = "Shared Drive: service account harus ditambahkan sebagai MEMBER (bukan hanya Editor folder) di Shared Drive — klik Settings > Manage members di dalam Shared Drive Anda.";
     } else if (msg.includes("403") || msg.includes("PERMISSION_DENIED")) {
-      friendlyMsg = "Akses ditolak. Pastikan folder Drive sudah di-share ke email service account.";
+      friendlyMsg = "Akses ditolak. Pastikan folder Drive sudah di-share ke email service account dengan akses Editor.";
+    } else if (msg.includes("404") || msg.includes("notFound")) {
+      friendlyMsg = "Folder ID tidak ditemukan atau service account tidak punya akses ke folder tersebut.";
     }
-    console.error("[GDrive upload error]", friendlyMsg);
-    // Return a sentinel so callers know GDrive was attempted but failed
+    console.error("[GDrive upload error]", friendlyMsg, "|", msg);
     return { fileId: "", fileUrl: "", error: friendlyMsg };
   }
 }
@@ -243,6 +254,9 @@ router.post("/monthly-payment/:month/upload", async (req, res) => {
       }).returning();
     }
 
+    await createAuditLog(user.id, "UPLOAD_PAYMENT", "duty_meal_monthly_payment", record.id,
+      `Bukti pembayaran bulan ${mealMonth} diupload${gdriveOk ? " ke Google Drive" : ""}${gdrive?.error ? ` | GDrive error: ${gdrive.error}` : ""}`);
+
     res.json({
       success: true,
       record,
@@ -262,6 +276,7 @@ router.put("/monthly-payment/:id/approve", async (req, res) => {
     const [updated] = await db.update(dutyMealMonthlyPaymentsTable)
       .set({ status: "approved", approvedBy: user.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(eq(dutyMealMonthlyPaymentsTable.id, Number(req.params.id))).returning();
+    await createAuditLog(user.id, "APPROVE", "duty_meal_monthly_payment", Number(req.params.id), `Pembayaran bulanan disetujui oleh ${user.username}`);
     res.json(updated);
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -276,6 +291,7 @@ router.put("/monthly-payment/:id/reject", async (req, res) => {
     const [updated] = await db.update(dutyMealMonthlyPaymentsTable)
       .set({ status: "rejected", rejectionReason: reason || null, updatedAt: new Date() })
       .where(eq(dutyMealMonthlyPaymentsTable.id, Number(req.params.id))).returning();
+    await createAuditLog(user.id, "REJECT", "duty_meal_monthly_payment", Number(req.params.id), `Pembayaran bulanan ditolak: ${reason || "-"}`);
     res.json(updated);
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -400,6 +416,9 @@ router.post("/", async (req, res) => {
       receiptFilename: receiptFilename || null,
     } as any).returning();
 
+    await createAuditLog(user.id, "CREATE", "duty_meal", meal.id,
+      `Duty meal entry dibuat: ${mealDate}, Rp${Number(totalBillBeforeTax).toLocaleString("id-ID")}${gdriveWarning ? ` | GDrive warning: ${gdriveWarning}` : ""}`);
+
     res.json({ ...meal, receiptGdriveUrl, gdriveWarning });
   } catch (err) {
     console.error(err);
@@ -481,6 +500,9 @@ router.post("/:id/upload-receipt", async (req, res) => {
       .where(eq(dutyMealsTable.id, Number(req.params.id)))
       .returning();
 
+    await createAuditLog(user.id, "UPLOAD_RECEIPT", "duty_meal", Number(req.params.id),
+      gdriveOk ? `Struk diupload ke Google Drive` : `Struk disimpan di sistem${gdrive?.error ? ` | GDrive error: ${gdrive.error}` : ""}`);
+
     res.json({
       success: true,
       meal: updated,
@@ -502,6 +524,7 @@ router.put("/:id/approve", async (req, res) => {
     const [updated] = await db.update(dutyMealsTable)
       .set({ status: "approved", approvedBy: user.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(eq(dutyMealsTable.id, Number(req.params.id))).returning();
+    await createAuditLog(user.id, "APPROVE", "duty_meal", Number(req.params.id), `Duty meal entry disetujui oleh ${user.username}`);
     res.json(updated);
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -516,6 +539,7 @@ router.put("/:id/reject", async (req, res) => {
     const [updated] = await db.update(dutyMealsTable)
       .set({ status: "rejected", rejectionReason: reason || null, updatedAt: new Date() })
       .where(eq(dutyMealsTable.id, Number(req.params.id))).returning();
+    await createAuditLog(user.id, "REJECT", "duty_meal", Number(req.params.id), `Duty meal entry ditolak: ${reason || "-"}`);
     res.json(updated);
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
