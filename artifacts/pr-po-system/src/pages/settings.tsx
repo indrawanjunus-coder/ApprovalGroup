@@ -1900,9 +1900,10 @@ function DutyMealApproversManager() {
     queryKey: [`${apiBase}/api/companies`],
     queryFn: () => fetch(`${apiBase}/api/companies`, { credentials: "include" }).then(r => r.json()),
   });
-  const { data: users = [] } = useQuery<any[]>({
+  const { data: users = [] } = useQuery<any, any, any[]>({
     queryKey: [`${apiBase}/api/users`],
     queryFn: () => fetch(`${apiBase}/api/users`, { credentials: "include" }).then(r => r.json()),
+    select: (d: any) => Array.isArray(d) ? d : (d?.users ?? []),
   });
 
   const add = useMutation({
