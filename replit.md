@@ -131,11 +131,53 @@ pnpm workspace monorepo using TypeScript. Enterprise PR & PO Approval System (Pr
 - Columns: timestamp, user, action (color-coded badge), entity type/ID, details
 - Paginated with PaginationControls
 
+### Duty Meal Module (NEW)
+- Sidebar menu "Duty Meal" (Utensils icon) accessible by all roles at `/duty-meal`
+- **Employee tab**: Input duty meal entries (date, brand, total bill before tax, description), filter by month/year
+- **Monthly summary card**: Shows total spent, plafon, remaining sisa or over-plafon (red) with bank account info
+- **Over-plafon alert**: When monthly total exceeds plafon, shows red warning with over amount and bank transfer info
+- **Status flow**: pending → approved/rejected (by HRD)
+- **Upload bukti pembayaran**: File upload as base64 stored in DB, viewable via preview modal
+- **HRD Report tab**: Users with `department=HRD` or `role=admin` see all employees' duty meal entries grouped by user
+- **HRD actions**: View proof image preview, approve, reject with reason
+
+#### API Endpoints - Duty Meal
+- `GET /api/duty-meals?month=YYYY-MM` — list (own for regular users, all for HRD/admin)
+- `POST /api/duty-meals` — create entry (checks enabled flag + lock date)
+- `PUT /api/duty-meals/:id` — update own pending entry
+- `DELETE /api/duty-meals/:id` — delete own pending entry
+- `POST /api/duty-meals/:id/upload-proof` — upload proof (base64)
+- `PUT /api/duty-meals/:id/approve` — HRD approve
+- `PUT /api/duty-meals/:id/reject` — HRD reject
+- `GET /api/duty-meals/my-plafon` — get current user's plafon
+- `GET/POST/PUT/DELETE /api/duty-meals/plafon` — manage plafon per company/jabatan (admin)
+- `GET/POST/PUT/DELETE /api/brands` — manage brand master (admin)
+- `GET/PUT /api/settings/duty-meal` — duty meal settings
+
+#### Duty Meal Settings (in Settings page)
+- **Enable/disable** toggle — if disabled, no access for non-admin
+- **Perusahaan sumber brand** — which company's brands to show in dropdown
+- **Tanggal lock** — day of month after which previous month entries are locked
+- **Rekening pembayaran** — bank name, account number, account name (shown when over-plafon)
+- **Google Drive** — folder ID + service account email (ready for future GDrive integration)
+
+#### Master Brand (in Settings page)
+- Brand belongs to a company; many brands per company
+- Fields: companyId, name, isActive
+- Admin can create, edit (name + active status), delete
+
+#### Master Plafon (in Settings page)
+- Plafon per company + jabatan (position)
+- Default positions: General Manager (2jt), Manager (1.3jt), Assistant Manager (1jt), Staff (500rb)
+- Custom positions supported
+- Matching: exact first, then partial (contains "manager" etc.), fallback to Staff
+
 ### Settings
 - Feature toggles per company (PO feature on/off)
 - Company leave settings (accrual days/month, max carryover days, carryover expiry month/day)
 - Approval rules management
 - SMTP email configuration (host, port, user, password, security, from)
+- **Duty Meal**: enable/disable, company source for brands, lock date, bank account, Google Drive config
 
 ## PR Status Flow
 
@@ -242,3 +284,6 @@ artifacts-monorepo/
 - `departments` — Department list
 - `settings` — System settings key-value store
 - `company_leave_settings` — Per-company leave config (accrual, carryover, expiry)
+- `brands` — Brand master per company (id, company_id, name, is_active)
+- `duty_meal_plafon` — Duty meal plafon per company + position (id, company_id, position_name, amount)
+- `duty_meals` — Employee duty meal entries (id, user_id, company_id, brand_id, meal_month YYYY-MM, meal_date, total_bill_before_tax, description, status, payment_proof_data base64, approved_by, approved_at, rejection_reason)

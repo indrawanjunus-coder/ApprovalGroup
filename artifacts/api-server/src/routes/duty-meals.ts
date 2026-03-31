@@ -145,19 +145,22 @@ router.get("/", async (req, res) => {
     const companyIds = [...new Set(meals.map(m => m.companyId).filter(Boolean))];
 
     const [usersRows, brandsRows] = await Promise.all([
-      userIds.length ? db.execute(sql`SELECT id, name, position, department, hired_company_id FROM users WHERE id = ANY(${userIds})`) : { rows: [] },
-      brandIds.length ? db.select().from(brandsTable).where(sql`id = ANY(${brandIds})`) : [],
+      userIds.length
+        ? db.select({ id: usersTable.id, name: usersTable.name, position: usersTable.position, department: usersTable.department, hiredCompanyId: usersTable.hiredCompanyId })
+            .from(usersTable).where(inArray(usersTable.id, userIds))
+        : [],
+      brandIds.length ? db.select().from(brandsTable).where(inArray(brandsTable.id, brandIds as number[])) : [],
     ]);
 
-    const userMap = new Map((usersRows as any).rows.map((u: any) => [u.id, u]));
+    const userMap = new Map((usersRows as any[]).map((u: any) => [u.id, u]));
     const brandMap = new Map((brandsRows as any[]).map((b: any) => [b.id, b]));
 
     // For each user in results, fetch plafon
     const plafonMap = new Map<number, number>();
     for (const uid of userIds) {
       const u = userMap.get(uid) as any;
-      if (u?.hired_company_id) {
-        const p = await getUserPlafon(u.hired_company_id, u.position);
+      if (u?.hiredCompanyId) {
+        const p = await getUserPlafon(u.hiredCompanyId, u.position);
         plafonMap.set(uid, p);
       }
     }
