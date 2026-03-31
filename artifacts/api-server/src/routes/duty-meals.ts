@@ -265,10 +265,10 @@ router.post("/monthly-payment/:month/upload", async (req, res) => {
     const gdrive = await uploadToGDrive(fileData, filename || "bukti_pembayaran.jpg");
     const gdriveOk = gdrive && !gdrive.error && !!gdrive.fileId;
 
-    // Get current month total to calculate over amount
+    // Get current month total to calculate over amount (exclude rejected)
     const meals = await db.select().from(dutyMealsTable)
       .where(and(eq(dutyMealsTable.userId, user.id), eq(dutyMealsTable.mealMonth, mealMonth)));
-    const monthTotal = meals.reduce((s, m) => s + Number(m.totalBillBeforeTax), 0);
+    const monthTotal = meals.filter(m => m.status !== "rejected").reduce((s, m) => s + Number(m.totalBillBeforeTax), 0);
     const plafon = user.hiredCompanyId ? await getUserPlafon(user.hiredCompanyId, user.position) : 0;
     const overAmount = Math.max(0, monthTotal - plafon);
 
@@ -388,6 +388,7 @@ router.get("/", async (req, res) => {
 
     const monthlyTotals = new Map<string, number>();
     for (const m of meals) {
+      if (m.status === "rejected") continue; // exclude rejected from total
       const key = `${m.userId}:${m.mealMonth}`;
       monthlyTotals.set(key, (monthlyTotals.get(key) || 0) + Number(m.totalBillBeforeTax));
     }
@@ -529,10 +530,13 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const user = req.user as any;
+    const isAdmin = user.role === "admin";
     const [meal] = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.id, Number(req.params.id)));
     if (!meal) { res.status(404).json({ error: "Not found" }); return; }
-    if (meal.userId !== user.id && user.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
-    if (meal.status !== "pending") { res.status(400).json({ error: "Hanya bisa hapus entry pending" }); return; }
+    if (meal.userId !== user.id && !isAdmin) { res.status(403).json({ error: "Forbidden" }); return; }
+    // Admin can delete any status; regular user only pending
+    if (!isAdmin && meal.status !== "pending") { res.status(400).json({ error: "Hanya bisa hapus entry pending" }); return; }
+    await createAuditLog(user.id, "DELETE", "duty_meal", meal.id, `Duty meal dihapus oleh ${user.username} (status: ${meal.status})`);
     await db.delete(dutyMealsTable).where(eq(dutyMealsTable.id, Number(req.params.id)));
     res.json({ success: true });
   } catch { res.status(500).json({ error: "Internal server error" }); }

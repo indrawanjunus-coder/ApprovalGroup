@@ -55,6 +55,7 @@ export default function DutyMeal() {
   const { toast } = useToast();
   const { data: me } = useGetMe({ query: { retry: false } });
   const isHrd = (me as any)?.department?.toUpperCase() === "HRD" || (me as any)?.role === "admin";
+  const isAdmin = (me as any)?.role === "admin";
 
   const now = new Date();
   const [activeTab, setActiveTab] = useState<"mine" | "report">("mine");
@@ -585,17 +586,17 @@ export default function DutyMeal() {
                           </Button>
                         ) : null}
                         {m.status === "pending" && (
-                          <>
-                            <Button size="sm" variant="outline" className="gap-1"
-                              onClick={() => { setShowReceipt(m); setReceiptFile(null); }}>
-                              <Upload className="h-3.5 w-3.5" />
-                              <span className="hidden sm:inline">Upload Struk</span>
-                            </Button>
-                            <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                              onClick={() => { if (confirm("Hapus Duty Meal ini?")) deleteMutation.mutate(m.id); }}>
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </>
+                          <Button size="sm" variant="outline" className="gap-1"
+                            onClick={() => { setShowReceipt(m); setReceiptFile(null); }}>
+                            <Upload className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Upload Struk</span>
+                          </Button>
+                        )}
+                        {(m.status === "pending" || isAdmin) && (
+                          <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => { if (confirm(`Hapus Duty Meal ini${m.status !== "pending" ? ` (status: ${m.status})?` : "?"}`)) deleteMutation.mutate(m.id); }}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -725,6 +726,13 @@ export default function DutyMeal() {
                                     <span className="hidden sm:inline text-xs">Tolak</span>
                                   </Button>
                                 </>
+                              )}
+                              {isAdmin && (
+                                <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-700 hover:bg-red-50 h-7 w-7 p-0"
+                                  title="Hapus (Admin)"
+                                  onClick={() => { if (confirm(`Hapus Duty Meal ini (status: ${e.status})?`)) deleteMutation.mutate(e.id); }}>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
                               )}
                             </div>
                           </div>
