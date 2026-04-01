@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Search, RefreshCw, Eye, Paperclip, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, RefreshCw, Eye, Paperclip, ChevronLeft, ChevronRight, Package } from "lucide-react";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pending:   { label: "Menunggu", color: "bg-yellow-100 text-yellow-700" },
@@ -30,6 +30,16 @@ interface Invoice {
   createdAt: number;
 }
 
+interface InvoiceItem {
+  id: number;
+  itemCode: string;
+  itemName: string;
+  uomName: string;
+  qty: string;
+  pricePerUom: string;
+  subtotal: string;
+}
+
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 export default function InvoicesPage() {
@@ -38,6 +48,8 @@ export default function InvoicesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<Invoice | null>(null);
+  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -53,6 +65,15 @@ export default function InvoicesPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!selected) { setInvoiceItems([]); return; }
+    setItemsLoading(true);
+    apiGet(`/invoice-items/${selected.id}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setInvoiceItems(Array.isArray(d) ? d : []))
+      .finally(() => setItemsLoading(false));
+  }, [selected]);
 
   // Reset page on filter change
   useEffect(() => { setPage(1); }, [search, statusFilter, pageSize]);
@@ -209,32 +230,27 @@ export default function InvoicesPage() {
       </div>
 
       <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Invoice</DialogTitle>
           </DialogHeader>
           {selected && (
-            <div className="space-y-3 text-sm">
-              <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-4 text-sm">
+              {/* Info Header */}
+              <div className="grid grid-cols-3 gap-3 bg-muted/30 rounded-lg p-3">
                 <div>
                   <p className="text-xs text-muted-foreground mb-0.5">No. PO</p>
-                  <p className="font-mono font-medium">{selected.poNumber}</p>
+                  <p className="font-mono font-semibold">{selected.poNumber}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Tanggal</p>
+                  <p>{new Date(selected.createdAt).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-0.5">Status</p>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_LABELS[selected.status]?.color}`}>
                     {STATUS_LABELS[selected.status]?.label || selected.status}
                   </span>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Total Invoice</p>
-                  <p className="font-bold text-base">
-                    {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(Number(selected.totalInvoice))}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-0.5">Tanggal</p>
-                  <p>{new Date(selected.createdAt).toLocaleDateString("id-ID")}</p>
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground mb-0.5">PIC</p>
@@ -244,7 +260,59 @@ export default function InvoicesPage() {
                   <p className="text-xs text-muted-foreground mb-0.5">No. HP PIC</p>
                   <p>{selected.picPhone}</p>
                 </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-0.5">Total Invoice</p>
+                  <p className="font-bold text-base text-primary">
+                    {fmt(Number(selected.totalInvoice))}
+                  </p>
+                </div>
               </div>
+
+              {/* Items Table */}
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Package className="w-4 h-4 text-muted-foreground" />
+                  <p className="font-semibold text-sm">Item Invoice</p>
+                </div>
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="text-xs py-2">Kode</TableHead>
+                        <TableHead className="text-xs py-2">Nama Item</TableHead>
+                        <TableHead className="text-xs py-2 text-right">Qty</TableHead>
+                        <TableHead className="text-xs py-2">UoM</TableHead>
+                        <TableHead className="text-xs py-2 text-right">Harga/UoM</TableHead>
+                        <TableHead className="text-xs py-2 text-right">Subtotal</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {itemsLoading ? (
+                        <TableRow><TableCell colSpan={6} className="text-center py-4 text-xs text-muted-foreground">Memuat item...</TableCell></TableRow>
+                      ) : invoiceItems.length === 0 ? (
+                        <TableRow><TableCell colSpan={6} className="text-center py-4 text-xs text-muted-foreground">Tidak ada data item</TableCell></TableRow>
+                      ) : invoiceItems.map(item => (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-mono text-xs py-2 text-muted-foreground">{item.itemCode}</TableCell>
+                          <TableCell className="text-xs py-2 font-medium">{item.itemName}</TableCell>
+                          <TableCell className="text-xs py-2 text-right">{Number(item.qty).toLocaleString("id-ID")}</TableCell>
+                          <TableCell className="text-xs py-2">{item.uomName}</TableCell>
+                          <TableCell className="text-xs py-2 text-right">{fmt(Number(item.pricePerUom))}</TableCell>
+                          <TableCell className="text-xs py-2 text-right font-semibold">{fmt(Number(item.subtotal))}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {invoiceItems.length > 0 && (
+                    <div className="flex justify-end items-center gap-2 px-4 py-2.5 border-t bg-muted/20">
+                      <span className="text-xs text-muted-foreground">Total Invoice</span>
+                      <span className="font-bold text-sm text-primary">{fmt(Number(selected.totalInvoice))}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Attachment */}
               {isDriveLink(selected.attachment) && (
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Lampiran Invoice</p>
@@ -256,6 +324,8 @@ export default function InvoicesPage() {
                   </a>
                 </div>
               )}
+
+              {/* Admin Notes */}
               {selected.notes && (
                 <div>
                   <p className="text-xs text-muted-foreground mb-0.5">Catatan dari Admin</p>

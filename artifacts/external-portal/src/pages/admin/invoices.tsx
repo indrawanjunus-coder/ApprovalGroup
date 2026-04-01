@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, RefreshCw, CheckCircle2, Clock, Paperclip, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, RefreshCw, CheckCircle2, Clock, Paperclip, ChevronLeft, ChevronRight, Package } from "lucide-react";
 
 const STATUS = {
   pending:   { label: "Menunggu",  color: "bg-yellow-100 text-yellow-700", icon: Clock },
@@ -32,6 +32,16 @@ interface Invoice {
   vendorCompanyId: number;
 }
 
+interface InvoiceItem {
+  id: number;
+  itemCode: string;
+  itemName: string;
+  uomName: string;
+  qty: string;
+  pricePerUom: string;
+  subtotal: string;
+}
+
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 export default function AdminInvoicesPage() {
@@ -40,6 +50,8 @@ export default function AdminInvoicesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<Invoice | null>(null);
+  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
   const [newStatus, setNewStatus] = useState("");
   const [notes, setNotes] = useState("");
   const [updating, setUpdating] = useState(false);
@@ -58,6 +70,15 @@ export default function AdminInvoicesPage() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!selected) { setInvoiceItems([]); return; }
+    setItemsLoading(true);
+    apiGet(`/invoice-items/${selected.id}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setInvoiceItems(Array.isArray(d) ? d : []))
+      .finally(() => setItemsLoading(false));
+  }, [selected]);
 
   // Reset page on filter change
   useEffect(() => { setPage(1); }, [search, statusFilter, pageSize]);
@@ -234,19 +255,81 @@ export default function AdminInvoicesPage() {
 
       {/* Update Status Dialog */}
       <Dialog open={!!selected} onOpenChange={() => setSelected(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Update Status Invoice</DialogTitle>
+            <DialogTitle>Detail & Update Status Invoice</DialogTitle>
           </DialogHeader>
           {selected && (
-            <div className="space-y-4">
-              <div className="bg-muted/30 rounded-lg p-3 text-sm space-y-1">
-                <p className="font-medium">{selected.companyName}</p>
-                <p className="text-muted-foreground">No. PO: <span className="font-mono">{selected.poNumber}</span></p>
-                <p className="text-muted-foreground">PIC: {selected.picName} · {selected.picPhone}</p>
-                <p className="font-semibold mt-1">{fmt(Number(selected.totalInvoice))}</p>
+            <div className="space-y-4 text-sm">
+              {/* Invoice Header Info */}
+              <div className="bg-muted/30 rounded-lg p-3 grid grid-cols-2 gap-2">
+                <div>
+                  <p className="text-xs text-muted-foreground">Vendor</p>
+                  <p className="font-semibold">{selected.companyName}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">No. PO</p>
+                  <p className="font-mono font-medium">{selected.poNumber}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">PIC</p>
+                  <p>{selected.picName} · {selected.picPhone}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Tanggal</p>
+                  <p>{fmtDate(selected.createdAt)}</p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-xs text-muted-foreground">Total Invoice</p>
+                  <p className="font-bold text-base text-primary">{fmt(Number(selected.totalInvoice))}</p>
+                </div>
               </div>
 
+              {/* Items Table */}
+              <div>
+                <div className="flex items-center gap-2 mb-2">
+                  <Package className="w-4 h-4 text-muted-foreground" />
+                  <p className="font-semibold">Item Invoice</p>
+                </div>
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="text-xs py-2">Kode</TableHead>
+                        <TableHead className="text-xs py-2">Nama Item</TableHead>
+                        <TableHead className="text-xs py-2 text-right">Qty</TableHead>
+                        <TableHead className="text-xs py-2">UoM</TableHead>
+                        <TableHead className="text-xs py-2 text-right">Harga/UoM</TableHead>
+                        <TableHead className="text-xs py-2 text-right">Subtotal</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {itemsLoading ? (
+                        <TableRow><TableCell colSpan={6} className="text-center py-4 text-xs text-muted-foreground">Memuat item...</TableCell></TableRow>
+                      ) : invoiceItems.length === 0 ? (
+                        <TableRow><TableCell colSpan={6} className="text-center py-4 text-xs text-muted-foreground">Tidak ada data item</TableCell></TableRow>
+                      ) : invoiceItems.map(item => (
+                        <TableRow key={item.id}>
+                          <TableCell className="font-mono text-xs py-2 text-muted-foreground">{item.itemCode}</TableCell>
+                          <TableCell className="text-xs py-2 font-medium">{item.itemName}</TableCell>
+                          <TableCell className="text-xs py-2 text-right">{Number(item.qty).toLocaleString("id-ID")}</TableCell>
+                          <TableCell className="text-xs py-2">{item.uomName}</TableCell>
+                          <TableCell className="text-xs py-2 text-right">{fmt(Number(item.pricePerUom))}</TableCell>
+                          <TableCell className="text-xs py-2 text-right font-semibold">{fmt(Number(item.subtotal))}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {invoiceItems.length > 0 && (
+                    <div className="flex justify-end items-center gap-2 px-4 py-2.5 border-t bg-muted/20">
+                      <span className="text-xs text-muted-foreground">Total Invoice</span>
+                      <span className="font-bold text-sm text-primary">{fmt(Number(selected.totalInvoice))}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Attachment */}
               {isDriveLink(selected.attachment) && (
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Lampiran Invoice</p>
@@ -259,29 +342,33 @@ export default function AdminInvoicesPage() {
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <Label>Status Baru</Label>
-                <Select value={newStatus} onValueChange={setNewStatus}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Menunggu</SelectItem>
-                    <SelectItem value="process">Diproses</SelectItem>
-                    <SelectItem value="completed">Selesai</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Catatan</Label>
-                <Textarea placeholder="Catatan untuk vendor..." value={notes} onChange={e => setNotes(e.target.value)} rows={3} />
+              {/* Status Update */}
+              <div className="border-t pt-4 space-y-3">
+                <p className="font-semibold text-sm">Update Status</p>
+                <div className="space-y-1.5">
+                  <Label>Status Baru</Label>
+                  <Select value={newStatus} onValueChange={setNewStatus}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Menunggu</SelectItem>
+                      <SelectItem value="process">Diproses</SelectItem>
+                      <SelectItem value="completed">Selesai</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Catatan untuk Vendor</Label>
+                  <Textarea placeholder="Catatan opsional..." value={notes} onChange={e => setNotes(e.target.value)} rows={2} />
+                </div>
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelected(null)}>Batal</Button>
             <Button onClick={handleUpdateStatus} disabled={updating}>
-              {updating ? "Menyimpan..." : "Simpan"}
+              {updating ? "Menyimpan..." : "Simpan Status"}
             </Button>
           </DialogFooter>
         </DialogContent>
