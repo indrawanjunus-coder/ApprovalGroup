@@ -279,6 +279,26 @@ router.post("/auth/logout", (req, res) => {
   req.session.destroy(() => res.json({ success: true }));
 });
 
+// POST /api/external/auth/change-password — vendor ganti password sendiri
+router.post("/auth/change-password", requireVendor(), async (req, res) => {
+  try {
+    const sess = req.session as any;
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: "Password lama dan baru wajib diisi" });
+    if (newPassword.length < 6) return res.status(400).json({ error: "Password baru minimal 6 karakter" });
+
+    const [vendor] = await db.select().from(vendorCompaniesTable)
+      .where(and(eq(vendorCompaniesTable.id, sess.vendorId), eq(vendorCompaniesTable.passwordHash, hashPassword(currentPassword))));
+    if (!vendor) return res.status(401).json({ error: "Password lama tidak sesuai" });
+
+    await db.update(vendorCompaniesTable)
+      .set({ passwordHash: hashPassword(newPassword) })
+      .where(eq(vendorCompaniesTable.id, sess.vendorId));
+
+    res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
 // ─── Auth: External Users ──────────────────────────────────────────────────────
 
 // POST /api/external/auth/user-login

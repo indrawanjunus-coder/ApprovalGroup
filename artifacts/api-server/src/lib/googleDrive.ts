@@ -85,14 +85,17 @@ export async function uploadToGoogleDrive(opts: {
   const boundary = "----ProcureFlowBoundary" + Date.now();
   const metadata = JSON.stringify({ name: driveFilename, parents: [targetFolderId] });
 
+  // Decode base64 → binary bytes so the multipart body is ~25% smaller
+  const fileBuffer = Buffer.from(base64Data, "base64");
+
   const bodyParts: Buffer[] = [];
   bodyParts.push(Buffer.from(
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`
   ));
   bodyParts.push(Buffer.from(
-    `--${boundary}\r\nContent-Type: ${mimeType}\r\nContent-Transfer-Encoding: base64\r\n\r\n`
+    `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`
   ));
-  bodyParts.push(Buffer.from(base64Data));
+  bodyParts.push(fileBuffer);
   bodyParts.push(Buffer.from(`\r\n--${boundary}--`));
 
   const body = Buffer.concat(bodyParts);

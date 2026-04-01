@@ -24,10 +24,17 @@ export default function SubmitInvoicePage() {
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [k]: e.target.value }));
 
+  const MAX_FILE_MB = 5;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(""); setLoading(true);
     try {
+      if (file && file.size > MAX_FILE_MB * 1024 * 1024) {
+        setError(`Ukuran file maksimal ${MAX_FILE_MB}MB. File Anda: ${(file.size / 1024 / 1024).toFixed(1)}MB`);
+        return;
+      }
+
       let attachment: string | undefined;
       let attachmentFilename: string | undefined;
 

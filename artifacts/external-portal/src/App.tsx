@@ -8,6 +8,7 @@ import RegisterPage from "@/pages/register";
 import VerifyCodePage from "@/pages/verify-code";
 import InvoicesPage from "@/pages/invoices";
 import SubmitInvoicePage from "@/pages/submit-invoice";
+import ProfilePage from "@/pages/profile";
 import AdminInvoicesPage from "@/pages/admin/invoices";
 import AdminVendorsPage from "@/pages/admin/vendors";
 import AdminReportsPage from "@/pages/admin/reports";
@@ -61,6 +62,7 @@ function AppRoutes() {
       <Route path="/verify-code" component={VerifyCodePage} />
       <Route path="/invoices" component={InvoicesPage} />
       <Route path="/submit-invoice" component={SubmitInvoicePage} />
+      <Route path="/profile" component={ProfilePage} />
       <Route path="/admin/invoices" component={AdminInvoicesPage} />
       <Route path="/admin/vendors" component={AdminVendorsPage} />
       <Route path="/admin/reports" component={AdminReportsPage} />

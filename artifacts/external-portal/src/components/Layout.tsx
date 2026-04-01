@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
-import { FileText, BarChart2, Settings, LogOut, Building2, Menu } from "lucide-react";
+import { FileText, BarChart2, Settings, LogOut, Building2, Menu, User } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -16,6 +16,7 @@ interface NavItem {
 const vendorNav: NavItem[] = [
   { href: "/invoices", label: "Invoice Saya", icon: FileText },
   { href: "/submit-invoice", label: "Ajukan Invoice", icon: FileText },
+  { href: "/profile", label: "Profil & Password", icon: User },
 ];
 
 const userNav: NavItem[] = [
