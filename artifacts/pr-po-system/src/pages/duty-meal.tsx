@@ -59,11 +59,16 @@ export default function DutyMeal() {
   const isHrd = isDutyMealApprover; // kept for backward compat with existing JSX
 
   const now = new Date();
+  // Default to previous month (common use case: submit/review last month's expenses in early current month)
+  const _prevMonthNum = now.getMonth(); // 0=Jan..11=Dec; getMonth() of April=3, which is March as display=3 ✓
+  const defaultMonth  = _prevMonthNum === 0 ? 12 : _prevMonthNum;
+  const defaultYear   = _prevMonthNum === 0 ? now.getFullYear() - 1 : now.getFullYear();
+
   const [activeTab, setActiveTab] = useState<"mine" | "report">("mine");
-  const [month, setMonth] = useState(now.getMonth() + 1);
-  const [year, setYear]   = useState(now.getFullYear());
-  const [rptMonth, setRptMonth] = useState(now.getMonth() + 1);
-  const [rptYear, setRptYear]   = useState(now.getFullYear());
+  const [month, setMonth] = useState(defaultMonth);
+  const [year, setYear]   = useState(defaultYear);
+  const [rptMonth, setRptMonth] = useState(defaultMonth);
+  const [rptYear, setRptYear]   = useState(defaultYear);
 
   // Modals
   const [showAdd, setShowAdd]       = useState(false);
@@ -579,6 +584,7 @@ export default function DutyMeal() {
             <div className="text-center py-12 text-muted-foreground">
               <Utensils className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p>Belum ada Duty Meal untuk {MONTHS[month - 1]} {year}</p>
+              <p className="text-xs mt-1 opacity-70">Coba ganti bulan di atas jika data ada di bulan lain</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -658,6 +664,7 @@ export default function DutyMeal() {
             <div className="text-center py-12 text-muted-foreground">
               <Utensils className="h-10 w-10 mx-auto mb-3 opacity-30" />
               <p>Tidak ada data Duty Meal untuk {MONTHS[rptMonth - 1]} {rptYear}</p>
+              <p className="text-xs mt-1 opacity-70">Coba ganti bulan di atas jika data ada di bulan lain</p>
             </div>
           ) : (
             <div className="space-y-4">
