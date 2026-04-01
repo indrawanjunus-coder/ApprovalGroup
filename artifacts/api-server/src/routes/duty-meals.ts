@@ -457,13 +457,15 @@ router.get("/", async (req, res) => {
       const approvedUsers = await db.select({ id: usersTable.id })
         .from(usersTable).where(inArray(usersTable.hiredCompanyId, approverCompanyIds));
       const approvedUserIds = approvedUsers.map(u => u.id);
-      // If specific userId requested, only allow if that user is in approver's companies
+      // If specific userId requested
       if (userId) {
         const reqUid = Number(userId);
-        if (!approvedUserIds.includes(reqUid)) {
+        // Always allow approver to view their own entries
+        if (reqUid === user.id || approvedUserIds.includes(reqUid)) {
+          filters.push(eq(dutyMealsTable.userId, reqUid));
+        } else {
           return res.json([]); // not in approver's scope
         }
-        filters.push(eq(dutyMealsTable.userId, reqUid));
       } else {
         filters.push(approvedUserIds.length > 0
           ? inArray(dutyMealsTable.userId, approvedUserIds)

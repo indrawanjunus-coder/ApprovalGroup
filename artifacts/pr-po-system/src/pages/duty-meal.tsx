@@ -136,9 +136,10 @@ export default function DutyMeal() {
   };
 
   // Fetch my duty meals
+  const myUserId = (me as any)?.id;
   const { data: myMeals = [], isLoading: loadingMine } = useQuery({
-    queryKey: ["/api/duty-meals", "mine", mealMonthStr],
-    queryFn: () => fetchArray(`${apiBase}/api/duty-meals?month=${mealMonthStr}`),
+    queryKey: ["/api/duty-meals", "mine", mealMonthStr, myUserId],
+    queryFn: () => fetchArray(`${apiBase}/api/duty-meals?month=${mealMonthStr}${myUserId ? `&userId=${myUserId}` : ""}`),
     enabled: activeTab === "mine" && !!me,
   });
 
