@@ -30,16 +30,25 @@ function AppRoutes() {
     );
   }
 
-  const isPublicRoute = location === "/login" || location === "/register" || location === "/verify-code";
+  const isPublicRoute = location === "/login" || location === "/register";
+  const isVerifyRoute = location === "/verify-code";
 
+  // Not logged in: only allow login/register
   if (!user && !isPublicRoute) {
     return <Redirect to="/login" />;
   }
 
-  if (user?.type === "vendor" && (user as any).status === "pending" && location !== "/verify-code" && location !== "/login") {
+  // Vendor pending: must verify — keep them on verify-code only
+  if (user?.type === "vendor" && (user as any).status === "pending" && !isVerifyRoute) {
     return <Redirect to="/verify-code" />;
   }
 
+  // Active vendor lands on verify-code page — send to invoices
+  if (user?.type === "vendor" && (user as any).status !== "pending" && isVerifyRoute) {
+    return <Redirect to="/invoices" />;
+  }
+
+  // Any logged-in user on login/register — redirect to home
   if (user && isPublicRoute) {
     if (user.type === "vendor") return <Redirect to="/invoices" />;
     return <Redirect to="/admin/invoices" />;

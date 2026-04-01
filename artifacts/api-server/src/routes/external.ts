@@ -200,6 +200,7 @@ router.post("/auth/vendor-login", async (req, res) => {
 
     res.json({
       success: true,
+      needsVerification: vendor.status !== "active",
       vendor: {
         id: vendor.id,
         companyName: vendor.companyName,
@@ -257,9 +258,9 @@ router.get("/auth/me", async (req: any, res) => {
   }
   if (sess.vendorId) {
     try {
-      const [v] = await db.select({ name: vendorCompaniesTable.name, email: vendorCompaniesTable.email })
+      const [v] = await db.select({ companyName: vendorCompaniesTable.companyName, email: vendorCompaniesTable.email })
         .from(vendorCompaniesTable).where(eq(vendorCompaniesTable.id, sess.vendorId));
-      return res.json({ type: "vendor", id: sess.vendorId, status: sess.vendorStatus, name: v?.name || "Vendor", email: v?.email || "" });
+      return res.json({ type: "vendor", id: sess.vendorId, status: sess.vendorStatus, name: v?.companyName || "Vendor", email: v?.email || "" });
     } catch {
       return res.json({ type: "vendor", id: sess.vendorId, status: sess.vendorStatus, name: "Vendor", email: "" });
     }
