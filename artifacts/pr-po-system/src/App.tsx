@@ -24,7 +24,24 @@ import Profile from "./pages/profile";
 import DutyMeal from "./pages/duty-meal";
 import NotFound from "./pages/not-found";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failureCount, error: any) => {
+        if (error?.status === 401) return false;
+        return failureCount < 2;
+      },
+    },
+    mutations: {
+      onError: (error: any) => {
+        if (error?.status === 401) {
+          queryClient.clear();
+          window.location.href = "/login";
+        }
+      },
+    },
+  },
+});
 
 function ProtectedRoute({ component: Component, ...rest }: { component: React.ComponentType<any>, path: string }) {
   return (
