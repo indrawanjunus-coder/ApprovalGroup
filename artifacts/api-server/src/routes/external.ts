@@ -241,12 +241,18 @@ router.post("/auth/resend-code", requireVendor(), async (req, res) => {
     const authCode = generateAuthCode();
     const authCodeExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
     await db.update(vendorCompaniesTable).set({ authCode, authCodeExpiresAt }).where(eq(vendorCompaniesTable.id, vendor.id));
-    try {
-      await sendEmail(vendor.email, "Kode Aktivasi Baru - ProcureFlow",
-        `<p>Halo <b>${vendor.picName}</b>, kode aktivasi baru Anda: <b style="font-size:24px;letter-spacing:4px">${authCode}</b><br>Berlaku 24 jam.</p>`
-      );
-    } catch (e) { console.error("Email send error:", e); }
-    res.json({ success: true });
+    const smtp = await getExternalSmtp();
+    const smtpConfigured = !!(smtp.host && smtp.user);
+    let emailSent = false;
+    if (smtpConfigured) {
+      try {
+        await sendEmail(vendor.email, "Kode Aktivasi Baru - ProcureFlow",
+          `<p>Halo <b>${vendor.picName}</b>, kode aktivasi baru Anda: <b style="font-size:24px;letter-spacing:4px">${authCode}</b><br>Berlaku 24 jam.</p>`
+        );
+        emailSent = true;
+      } catch (e) { console.error("Email send error:", e); }
+    }
+    res.json({ success: true, emailSent, code: smtpConfigured ? undefined : authCode });
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 

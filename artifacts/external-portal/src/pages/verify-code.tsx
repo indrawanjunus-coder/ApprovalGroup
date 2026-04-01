@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { ShieldCheck, AlertCircle, RefreshCw } from "lucide-react";
+import { ShieldCheck, AlertCircle, RefreshCw, Mail, KeyRound } from "lucide-react";
 
 export default function VerifyCodePage() {
   const [, setLocation] = useLocation();
@@ -15,7 +15,7 @@ export default function VerifyCodePage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
-  const [resent, setResent] = useState(false);
+  const [resentState, setResentState] = useState<{ sent: boolean; emailSent: boolean; code?: string } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,10 +31,12 @@ export default function VerifyCodePage() {
   };
 
   const handleResend = async () => {
-    setResending(true); setResent(false);
+    setResending(true); setResentState(null);
     try {
-      await apiPost("/auth/resend-code", {});
-      setResent(true);
+      const res = await apiPost("/auth/resend-code", {});
+      const data = await res.json();
+      setResentState({ sent: true, emailSent: data.emailSent, code: data.code });
+      if (data.code) setCode(data.code);
     } catch {}
     finally { setResending(false); }
   };
@@ -75,10 +77,28 @@ export default function VerifyCodePage() {
                 </div>
               )}
 
-              {resent && (
-                <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg text-center">
-                  Kode baru telah dikirimkan ke email Anda
-                </div>
+              {resentState && (
+                resentState.emailSent ? (
+                  <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 p-3 rounded-lg">
+                    <Mail className="w-4 h-4 flex-shrink-0" />
+                    Kode baru telah dikirim ke email Anda.
+                  </div>
+                ) : (
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-medium text-amber-800">
+                      <KeyRound className="w-4 h-4 flex-shrink-0" />
+                      Email belum dikonfigurasi — gunakan kode berikut:
+                    </div>
+                    <div className="text-center bg-white border-2 border-dashed border-amber-300 rounded-lg py-3 px-4">
+                      <span className="text-3xl font-bold tracking-widest font-mono text-amber-700">
+                        {resentState.code}
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-600 text-center">
+                      Kode sudah diisi otomatis di atas. Klik Verifikasi untuk melanjutkan.
+                    </p>
+                  </div>
+                )
               )}
 
               <Button type="submit" className="w-full" disabled={loading || code.length !== 6}>
@@ -97,6 +117,10 @@ export default function VerifyCodePage() {
             </form>
           </CardContent>
         </Card>
+
+        <p className="text-center text-xs text-muted-foreground mt-4">
+          Butuh bantuan? Hubungi admin sistem Anda.
+        </p>
       </div>
     </div>
   );
