@@ -48,7 +48,21 @@ function ItemSearch({ uoms, onSelect }: {
   const [results, setResults] = useState<MasterItem[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const updateDropdownPosition = useCallback(() => {
+    if (!inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    setDropdownStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      zIndex: 9999,
+    });
+  }, []);
 
   const search = useCallback(async (q: string) => {
     setLoading(true);
@@ -67,8 +81,22 @@ function ItemSearch({ uoms, onSelect }: {
   }, [query, open, search]);
 
   useEffect(() => {
+    if (!open) return;
+    updateDropdownPosition();
+    window.addEventListener("scroll", updateDropdownPosition, true);
+    window.addEventListener("resize", updateDropdownPosition);
+    return () => {
+      window.removeEventListener("scroll", updateDropdownPosition, true);
+      window.removeEventListener("resize", updateDropdownPosition);
+    };
+  }, [open, updateDropdownPosition]);
+
+  useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (
+        wrapRef.current && !wrapRef.current.contains(e.target as Node) &&
+        !(e.target as Element)?.closest?.("[data-item-dropdown]")
+      ) setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -85,10 +113,11 @@ function ItemSearch({ uoms, onSelect }: {
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={wrapRef} className="relative">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <Input
+          ref={inputRef}
           className="pl-9 bg-white"
           placeholder="Ketik nama atau kode item..."
           value={query}
@@ -104,7 +133,11 @@ function ItemSearch({ uoms, onSelect }: {
         )}
       </div>
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-white border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
+        <div
+          data-item-dropdown
+          style={dropdownStyle}
+          className="bg-white border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto"
+        >
           {loading ? (
             <div className="px-4 py-3 text-sm text-muted-foreground">Mencari...</div>
           ) : results.length === 0 ? (
