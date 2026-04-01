@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { dutyMealsTable, dutyMealPlafonTable, brandsTable, usersTable, dutyMealMonthlyPaymentsTable, dutyMealCompanyApproversTable, companiesTable } from "@workspace/db/schema";
-import { eq, and, sql, inArray, or } from "drizzle-orm";
+import { eq, and, sql, inArray, or, lt } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
+import { sendDutyMealOverAmountEmail } from "../lib/email.js";
 import { google } from "googleapis";
 import { Readable } from "stream";
 
@@ -397,6 +398,18 @@ router.put("/monthly-payment/:id/approve", async (req, res) => {
       .set({ status: "approved", approvedBy: user.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(eq(dutyMealMonthlyPaymentsTable.id, Number(req.params.id))).returning();
     await createAuditLog(user.id, "APPROVE", "duty_meal_monthly_payment", Number(req.params.id), `Pembayaran bulanan disetujui oleh ${user.username}`);
+
+    // Send email notification to user if overAmount > 0
+    const overAmt = Number(updated.overAmount || 0);
+    if (overAmt > 0) {
+      const [userRecord] = await db.select({ email: usersTable.email, name: usersTable.name })
+        .from(usersTable).where(eq(usersTable.id, payment.userId));
+      if (userRecord?.email) {
+        sendDutyMealOverAmountEmail(userRecord.email, userRecord.name || "", payment.mealMonth!, overAmt, "approved")
+          .catch(e => console.error("[Email] duty meal over amount:", e));
+      }
+    }
+
     res.json(updated);
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -543,6 +556,49 @@ router.post("/", async (req, res) => {
       }
     }
 
+    // Check unpaid overAmount lock/warn setting
+    const unpaidLockMode = await getSetting("duty_meal_unpaid_lock"); // "lock" | "warn" | ""
+    if (unpaidLockMode === "lock" || unpaidLockMode === "warn") {
+      const maxUnpaidStr = await getSetting("duty_meal_unpaid_months");
+      const maxUnpaid = parseInt(maxUnpaidStr || "2");
+      const now2 = new Date();
+      const curMonth = `${now2.getFullYear()}-${String(now2.getMonth() + 1).padStart(2, "0")}`;
+      const allPayments = await db.select().from(dutyMealMonthlyPaymentsTable)
+        .where(eq(dutyMealMonthlyPaymentsTable.userId, user.id));
+      const approvedSet = new Set(allPayments.filter(p => p.status === "approved").map(p => p.mealMonth));
+      const pastEntries = await db.select().from(dutyMealsTable)
+        .where(and(eq(dutyMealsTable.userId, user.id), lt(dutyMealsTable.mealMonth, curMonth)));
+      const pastTotals = new Map<string, number>();
+      for (const e of pastEntries) {
+        if (e.status === "rejected") continue;
+        pastTotals.set(e.mealMonth!, (pastTotals.get(e.mealMonth!) || 0) + Number(e.totalBillBeforeTax));
+      }
+      const plafon2 = user.hiredCompanyId ? await getUserPlafon(user.hiredCompanyId, user.position) : 0;
+      let unpaidCount = 0;
+      for (const [m, total] of pastTotals) {
+        if (total > plafon2 && !approvedSet.has(m)) unpaidCount++;
+      }
+      if (unpaidCount >= maxUnpaid) {
+        if (unpaidLockMode === "lock") {
+          res.status(403).json({
+            error: `Anda memiliki kelebihan duty meal yang belum dibayar selama ${unpaidCount} bulan. Harap selesaikan pembayaran terlebih dahulu.`,
+            unpaidCount, locked: true,
+          });
+          return;
+        }
+        // "warn" mode: return warning flag but still allow in response (frontend handles warn)
+        // The frontend should show warning dialog. If user confirms, they pass `forceAdd: true`
+        if (!req.body.forceAdd) {
+          res.status(202).json({
+            warning: true,
+            message: `Anda memiliki kelebihan duty meal yang belum dibayar selama ${unpaidCount} bulan. Apakah Anda tetap ingin menambah entry baru?`,
+            unpaidCount,
+          });
+          return;
+        }
+      }
+    }
+
     const { brandId, mealDate, totalBillBeforeTax, description, receiptData, receiptFilename } = req.body;
     if (!mealDate || totalBillBeforeTax === undefined) { res.status(400).json({ error: "mealDate dan totalBillBeforeTax wajib diisi" }); return; }
 
@@ -645,6 +701,117 @@ router.delete("/company-approvers/:id", requireRole("admin"), async (req, res) =
   try {
     await db.delete(dutyMealCompanyApproversTable).where(eq(dutyMealCompanyApproversTable.id, Number(req.params.id)));
     res.json({ success: true });
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
+// ─── CARRY-OVER (unpaid overAmount from previous months) ────────────────────
+// GET /api/duty-meals/carry-over — returns user's months with unpaid over-amount
+router.get("/carry-over", async (req, res) => {
+  try {
+    const user = req.user as any;
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    // All payments for this user
+    const payments = await db.select().from(dutyMealMonthlyPaymentsTable)
+      .where(eq(dutyMealMonthlyPaymentsTable.userId, user.id));
+    const approvedMonths = new Set(payments.filter(p => p.status === "approved").map(p => p.mealMonth));
+    const paymentByMonth = new Map(payments.map(p => [p.mealMonth, p]));
+
+    // All entries for months BEFORE current month (non-rejected)
+    const entries = await db.select().from(dutyMealsTable)
+      .where(and(eq(dutyMealsTable.userId, user.id), lt(dutyMealsTable.mealMonth, currentMonth)));
+
+    const monthTotals = new Map<string, number>();
+    for (const m of entries) {
+      if (m.status === "rejected") continue;
+      monthTotals.set(m.mealMonth!, (monthTotals.get(m.mealMonth!) || 0) + Number(m.totalBillBeforeTax));
+    }
+
+    const plafon = user.hiredCompanyId ? await getUserPlafon(user.hiredCompanyId, user.position) : 0;
+    const unpaidMonths: any[] = [];
+    for (const [month, total] of monthTotals) {
+      const over = Math.max(0, total - plafon);
+      if (over > 0 && !approvedMonths.has(month)) {
+        unpaidMonths.push({ month, total, plafon, overAmount: over, paymentStatus: paymentByMonth.get(month)?.status || null });
+      }
+    }
+    unpaidMonths.sort((a, b) => a.month.localeCompare(b.month));
+    const totalCarryOver = unpaidMonths.reduce((s, m) => s + m.overAmount, 0);
+    res.json({ unpaidMonths, totalCarryOver, unpaidCount: unpaidMonths.length });
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
+// ─── MONTHLY REPORT ──────────────────────────────────────────────────────────
+// GET /api/duty-meals/monthly-report?month=YYYY-MM  (admin / approver only)
+router.get("/monthly-report", async (req, res) => {
+  try {
+    const user = req.user as any;
+    const isAdmin = user.role === "admin";
+    const approverCompanyIds = await getApproverCompanyIds(user.id);
+    if (!isAdmin && approverCompanyIds.length === 0) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+    const { month } = req.query;
+    if (!month) { res.status(400).json({ error: "month query required" }); return; }
+
+    // Get entries for this month
+    let entries: any[];
+    if (isAdmin) {
+      entries = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.mealMonth, String(month)));
+    } else {
+      const scopedUsers = await db.select({ id: usersTable.id })
+        .from(usersTable).where(inArray(usersTable.hiredCompanyId, approverCompanyIds));
+      const scopedIds = scopedUsers.map(u => u.id);
+      entries = scopedIds.length
+        ? await db.select().from(dutyMealsTable)
+            .where(and(eq(dutyMealsTable.mealMonth, String(month)), inArray(dutyMealsTable.userId, scopedIds)))
+        : [];
+    }
+
+    const userIds = [...new Set(entries.map(e => e.userId))];
+
+    const [usersData, payments, brandsData] = await Promise.all([
+      userIds.length ? db.select().from(usersTable).where(inArray(usersTable.id, userIds)) : [],
+      userIds.length ? db.select().from(dutyMealMonthlyPaymentsTable)
+        .where(and(eq(dutyMealMonthlyPaymentsTable.mealMonth, String(month)), inArray(dutyMealMonthlyPaymentsTable.userId, userIds))) : [],
+      db.select().from(companiesTable),
+    ]);
+    const userMap = new Map((usersData as any[]).map(u => [u.id, u]));
+    const paymentMap = new Map((payments as any[]).map(p => [p.userId, p]));
+    const companyMap = new Map((brandsData as any[]).map(c => [c.id, c]));
+
+    // Group by user
+    const byUser = new Map<number, any[]>();
+    for (const e of entries) {
+      if (e.status === "rejected") continue;
+      if (!byUser.has(e.userId)) byUser.set(e.userId, []);
+      byUser.get(e.userId)!.push(e);
+    }
+
+    const rows = [];
+    for (const [uid, ues] of byUser) {
+      const u = userMap.get(uid) as any;
+      const totalPemakaian = ues.reduce((s: number, e: any) => s + Number(e.totalBillBeforeTax), 0);
+      const plafon = u?.hiredCompanyId ? await getUserPlafon(u.hiredCompanyId, u.position) : 0;
+      const overAmount = Math.max(0, totalPemakaian - plafon);
+      const payment = paymentMap.get(uid) as any;
+      const company = u?.hiredCompanyId ? companyMap.get(u.hiredCompanyId) as any : null;
+      rows.push({
+        userId: uid, username: u?.username || "?", name: u?.name || "?",
+        position: u?.position || "", companyName: company?.name || "-",
+        totalPemakaian, plafon, overAmount,
+        paymentStatus: payment?.status || null,
+        isLunas: payment?.status === "approved",
+        entryCount: ues.length,
+      });
+    }
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+
+    const totalPemakaian  = rows.reduce((s, r) => s + r.totalPemakaian, 0);
+    const totalOverAmount = rows.reduce((s, r) => s + r.overAmount, 0);
+    const totalLunas      = rows.filter(r => r.isLunas).reduce((s, r) => s + r.overAmount, 0);
+    res.json({ rows, summary: { totalPemakaian, totalOverAmount, totalLunas, totalBelumLunas: totalOverAmount - totalLunas } });
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 

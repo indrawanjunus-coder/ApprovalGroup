@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Utensils, Plus, Upload, Eye, Check, X, Trash2, AlertTriangle, ChevronLeft, ChevronRight, FileImage, Ban, CreditCard, Clock } from "lucide-react";
+import { Utensils, Plus, Upload, Eye, Check, X, Trash2, AlertTriangle, ChevronLeft, ChevronRight, FileImage, Ban, CreditCard, Clock, CheckCircle2, Info, BarChart3 } from "lucide-react";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 
@@ -79,6 +79,7 @@ export default function DutyMeal() {
   const [rejectReason, setRejectReason] = useState("");
   const [rejectPayment, setRejectPayment] = useState<any>(null);
   const [rejectPaymentReason, setRejectPaymentReason] = useState("");
+  const [warnDialog, setWarnDialog] = useState<{ message: string; pendingData: any } | null>(null);
 
   // Add form state
   const [form, setForm] = useState({ mealDate: "", brandId: "", totalBill: "", description: "" });
@@ -155,11 +156,31 @@ export default function DutyMeal() {
     enabled: activeTab === "report" && isHrd,
   });
 
-  // Fetch report meals (HRD)
+  // Fetch report meals (HRD) — old grouped view
   const { data: rptMeals = [], isLoading: loadingRpt } = useQuery({
     queryKey: ["/api/duty-meals", "report", rptMonthStr],
     queryFn: () => fetchArray(`${apiBase}/api/duty-meals?month=${rptMonthStr}`),
     enabled: activeTab === "report" && isHrd,
+  });
+
+  // Fetch carry-over (unpaid overAmount from past months)
+  const { data: carryOver } = useQuery({
+    queryKey: ["/api/duty-meals/carry-over"],
+    queryFn: async () => {
+      const r = await fetch(`${apiBase}/api/duty-meals/carry-over`, { credentials: "include" });
+      return r.json();
+    },
+    enabled: !!me,
+  });
+
+  // Fetch monthly report (admin/approver, Laporan tab)
+  const { data: monthlyReport, isLoading: loadingReport } = useQuery({
+    queryKey: ["/api/duty-meals/monthly-report", rptMonthStr],
+    queryFn: async () => {
+      const r = await fetch(`${apiBase}/api/duty-meals/monthly-report?month=${rptMonthStr}`, { credentials: "include" });
+      return r.json();
+    },
+    enabled: activeTab === "laporan" && isHrd,
   });
 
   // Create duty meal
@@ -171,11 +192,18 @@ export default function DutyMeal() {
         body: JSON.stringify(data),
       });
       const json = await r.json();
+      // 202 = server wants to warn, not error; attach original data for re-submit
+      if (r.status === 202 && json.warning) return { ...json, _isWarning: true, _originalData: data };
       if (!r.ok) throw new Error(json.error || "Gagal menyimpan");
       return json;
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
+      if (result?._isWarning) {
+        setWarnDialog({ message: result.message, pendingData: result._originalData });
+        return;
+      }
       qc.invalidateQueries({ queryKey: ["/api/duty-meals"] });
+      qc.invalidateQueries({ queryKey: ["/api/duty-meals/carry-over"] });
       setShowAdd(false);
       setForm({ mealDate: "", brandId: "", totalBill: "", description: "" });
       setAddReceiptFile(null);
@@ -381,19 +409,28 @@ export default function DutyMeal() {
     setter({ data, filename: file.name });
   };
 
+  const buildSubmitPayload = (forceAdd = false) => ({
+    mealDate:           form.mealDate,
+    brandId:            form.brandId ? parseInt(form.brandId) : null,
+    totalBillBeforeTax: parseFloat(form.totalBill),
+    description:        form.description || null,
+    receiptData:        addReceiptFile?.data || null,
+    receiptFilename:    addReceiptFile?.filename || null,
+    forceAdd,
+  });
+
   const handleSubmitAdd = () => {
     if (!form.mealDate || !form.totalBill) {
       toast({ title: "Tanggal dan Total Bill wajib diisi", variant: "destructive" });
       return;
     }
-    createMutation.mutate({
-      mealDate:          form.mealDate,
-      brandId:           form.brandId ? parseInt(form.brandId) : null,
-      totalBillBeforeTax: parseFloat(form.totalBill),
-      description:       form.description || null,
-      receiptData:       addReceiptFile?.data || null,
-      receiptFilename:   addReceiptFile?.filename || null,
-    });
+    createMutation.mutate(buildSubmitPayload(false));
+  };
+
+  const handleForceAdd = () => {
+    if (!warnDialog?.pendingData) return;
+    createMutation.mutate({ ...warnDialog.pendingData, forceAdd: true });
+    setWarnDialog(null);
   };
 
   const prevMonth = () => { if (month === 1) { setMonth(12); setYear(y => y - 1); } else setMonth(m => m - 1); };
@@ -436,7 +473,7 @@ export default function DutyMeal() {
 
       {/* Tabs */}
       <div className="flex gap-2 border-b">
-        <button onClick={() => setActiveTab("mine")}
+        <button onClick={() => setActiveTab("mine" as any)}
           className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "mine" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
           Duty Meal Saya
         </button>
@@ -444,6 +481,12 @@ export default function DutyMeal() {
           <button onClick={() => setActiveTab("report")}
             className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "report" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             Report Duty Meal
+          </button>
+        )}
+        {isHrd && (
+          <button onClick={() => setActiveTab("laporan" as any)}
+            className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${(activeTab as string) === "laporan" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            <span className="flex items-center gap-1.5"><BarChart3 className="h-3.5 w-3.5" />Laporan Bulanan</span>
           </button>
         )}
       </div>
@@ -461,6 +504,26 @@ export default function DutyMeal() {
                   Kamu baru bisa mengajukan Duty Meal setelah {dutyMealMinMonths} bulan bekerja.
                   Eligible mulai <strong>{dutyMealEligibleDate.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</strong>.
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* Carry-over banner: unpaid overAmount from previous months */}
+          {(carryOver as any)?.unpaidCount > 0 && (
+            <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold text-red-800 text-sm">Kelebihan Pemakaian Belum Dibayar</p>
+                <div className="text-xs text-red-700 mt-1 space-y-0.5">
+                  {(carryOver as any).unpaidMonths.map((m: any) => (
+                    <p key={m.month}>
+                      <strong>{MONTHS[parseInt(m.month.split("-")[1]) - 1]} {m.month.split("-")[0]}</strong>:
+                      kelebihan <strong>{formatRupiah(m.overAmount)}</strong>
+                      {m.paymentStatus ? ` (Bukti pembayaran: ${m.paymentStatus === "pending" ? "menunggu verifikasi" : m.paymentStatus})` : " — belum upload bukti"}
+                    </p>
+                  ))}
+                  <p className="font-semibold mt-1">Total kelebihan belum lunas: {formatRupiah((carryOver as any).totalCarryOver)}</p>
+                </div>
               </div>
             </div>
           )}
@@ -485,8 +548,21 @@ export default function DutyMeal() {
 
           {/* Monthly Summary Card */}
           {plafonAmount > 0 && (
-            <Card className={isOverPlafon ? "border-red-300 bg-red-50" : "border-green-300 bg-green-50"}>
+            <Card className={
+              currentMonthPayment?.status === "approved" ? "border-green-400 bg-green-50" :
+              isOverPlafon ? "border-red-300 bg-red-50" : "border-green-300 bg-green-50"
+            }>
               <CardContent className="pt-4 pb-3">
+                {/* LUNAS badge — show when payment approved */}
+                {currentMonthPayment?.status === "approved" && (
+                  <div className="flex items-center gap-2 mb-3 p-2.5 bg-green-100 rounded-lg border border-green-300">
+                    <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                    <div>
+                      <p className="text-sm font-bold text-green-800">LUNAS</p>
+                      <p className="text-xs text-green-700">Pembayaran kelebihan bulan {MONTHS[month - 1]} {year} sudah diverifikasi.</p>
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
                     <p className="text-xs text-muted-foreground mb-1">Total Bulan Ini</p>
@@ -788,6 +864,135 @@ export default function DutyMeal() {
           )}
         </div>
       )}
+
+      {/* ─── LAPORAN BULANAN TAB ─────────────────────────────────── */}
+      {(activeTab as string) === "laporan" && isHrd && (
+        <div className="space-y-4">
+          {/* Month navigator for report */}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={prevRptMonth}><ChevronLeft className="h-4 w-4" /></Button>
+            <span className="font-semibold text-base min-w-[140px] text-center">{MONTHS[rptMonth - 1]} {rptYear}</span>
+            <Button variant="outline" size="icon" onClick={nextRptMonth}><ChevronRight className="h-4 w-4" /></Button>
+          </div>
+
+          {loadingReport ? (
+            <div className="text-center py-12 text-muted-foreground">Memuat laporan...</div>
+          ) : !monthlyReport || (monthlyReport as any).error ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <BarChart3 className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p>Tidak ada data laporan untuk {MONTHS[rptMonth - 1]} {rptYear}</p>
+              <p className="text-xs mt-1 opacity-70">Coba ganti bulan di atas jika data ada di bulan lain</p>
+            </div>
+          ) : (monthlyReport as any).rows?.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <BarChart3 className="h-10 w-10 mx-auto mb-3 opacity-30" />
+              <p>Belum ada data Duty Meal untuk {MONTHS[rptMonth - 1]} {rptYear}</p>
+            </div>
+          ) : (
+            <>
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: "Total Pemakaian", value: formatRupiah((monthlyReport as any).summary?.totalPemakaian || 0), color: "text-foreground" },
+                  { label: "Total Kelebihan", value: formatRupiah((monthlyReport as any).summary?.totalOverAmount || 0), color: "text-red-600" },
+                  { label: "Sudah Lunas", value: formatRupiah((monthlyReport as any).summary?.totalLunas || 0), color: "text-green-600" },
+                  { label: "Belum Lunas", value: formatRupiah((monthlyReport as any).summary?.totalBelumLunas || 0), color: "text-orange-600" },
+                ].map(s => (
+                  <Card key={s.label}>
+                    <CardContent className="pt-3 pb-3 text-center">
+                      <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
+                      <p className={`text-base font-bold ${s.color}`}>{s.value}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              {/* Detail Table */}
+              <Card>
+                <CardContent className="pt-0 pb-0 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="py-3 px-2 text-left font-semibold">Username</th>
+                        <th className="py-3 px-2 text-left font-semibold">Nama Lengkap</th>
+                        <th className="py-3 px-2 text-left font-semibold hidden md:table-cell">Perusahaan</th>
+                        <th className="py-3 px-2 text-right font-semibold">Jml Pemakaian</th>
+                        <th className="py-3 px-2 text-right font-semibold">Plafon</th>
+                        <th className="py-3 px-2 text-right font-semibold">Kelebihan</th>
+                        <th className="py-3 px-2 text-center font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(monthlyReport as any).rows.map((r: any) => (
+                        <tr key={r.userId} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="py-2.5 px-2 font-mono text-xs">{r.username}</td>
+                          <td className="py-2.5 px-2">{r.name}</td>
+                          <td className="py-2.5 px-2 hidden md:table-cell text-xs text-muted-foreground">{r.companyName}</td>
+                          <td className="py-2.5 px-2 text-right font-medium">{formatRupiah(r.totalPemakaian)}</td>
+                          <td className="py-2.5 px-2 text-right text-muted-foreground">{formatRupiah(r.plafon)}</td>
+                          <td className={`py-2.5 px-2 text-right font-semibold ${r.overAmount > 0 ? "text-red-600" : "text-green-600"}`}>
+                            {r.overAmount > 0 ? `+${formatRupiah(r.overAmount)}` : "-"}
+                          </td>
+                          <td className="py-2.5 px-2 text-center">
+                            {r.overAmount === 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                                <CheckCircle2 className="h-3 w-3" /> Dalam Plafon
+                              </span>
+                            ) : r.isLunas ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-300">
+                                <CheckCircle2 className="h-3 w-3" /> Lunas
+                              </span>
+                            ) : r.paymentStatus === "pending" ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                                <Clock className="h-3 w-3" /> Menunggu Verifikasi
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                <AlertTriangle className="h-3 w-3" /> Belum Lunas
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t bg-muted/50">
+                        <td colSpan={3} className="py-2.5 px-2 font-bold text-xs hidden md:table-cell">TOTAL</td>
+                        <td colSpan={3} className="py-2.5 px-2 font-bold text-xs md:hidden">TOTAL</td>
+                        <td className="py-2.5 px-2 text-right font-bold">{formatRupiah((monthlyReport as any).summary?.totalPemakaian || 0)}</td>
+                        <td className="py-2.5 px-2"></td>
+                        <td className="py-2.5 px-2 text-right font-bold text-red-600">
+                          {(monthlyReport as any).summary?.totalOverAmount > 0 ? `+${formatRupiah((monthlyReport as any).summary?.totalOverAmount || 0)}` : "-"}
+                        </td>
+                        <td className="py-2.5 px-2"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ─── WARN DIALOG: konfirmasi tambah meskipun ada hutang ───────────── */}
+      <Dialog open={!!warnDialog} onOpenChange={open => { if (!open) setWarnDialog(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-orange-700">
+              <AlertTriangle className="h-5 w-5 text-orange-500" /> Peringatan
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">{warnDialog?.message}</p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setWarnDialog(null)}>Batal</Button>
+            <Button className="bg-orange-600 hover:bg-orange-700 text-white" onClick={handleForceAdd}
+              disabled={createMutation.isPending}>
+              Tetap Tambahkan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── MODAL: Tambah Duty Meal ─────────────────────────────── */}
       <Dialog open={showAdd} onOpenChange={open => { setShowAdd(open); if (!open) setAddReceiptFile(null); }}>

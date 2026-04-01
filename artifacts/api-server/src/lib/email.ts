@@ -151,6 +151,40 @@ export async function sendTransferRecipientEmail(recipientEmail: string, recipie
   await sendEmail(recipientEmail, `[ProcureFlow] Transfer Barang ${prNumber} Disetujui — Konfirmasi Penerimaan`, html);
 }
 
+export async function sendDutyMealOverAmountEmail(
+  userEmail: string, userName: string, mealMonth: string, overAmount: number, paymentStatus: "submitted" | "approved"
+) {
+  const monthLabel = (() => {
+    const [y, m] = mealMonth.split("-");
+    const d = new Date(parseInt(y), parseInt(m) - 1, 1);
+    return d.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+  })();
+
+  const isApproved = paymentStatus === "approved";
+  const title   = isApproved ? "Pembayaran Kelebihan Duty Meal Disetujui" : "Notifikasi Kelebihan Pemakaian Duty Meal";
+  const color   = isApproved ? "#16a34a" : "#dc2626";
+  const headline = isApproved
+    ? `Pembayaran kelebihan Duty Meal Anda untuk bulan <b>${monthLabel}</b> telah <b style="color:#16a34a">disetujui</b>.`
+    : `Pemakaian Duty Meal Anda untuk bulan <b>${monthLabel}</b> melebihi plafon yang ditentukan.`;
+
+  const html = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
+      <h2 style="color:${color}">ProcureFlow — ${title}</h2>
+      <p>Yth. <b>${userName}</b>,</p>
+      <p>${headline}</p>
+      <table style="border-collapse:collapse;width:100%;margin:16px 0">
+        <tr><td style="padding:8px;background:#f1f5f9;font-weight:bold">Bulan</td><td style="padding:8px">${monthLabel}</td></tr>
+        <tr><td style="padding:8px;background:#f1f5f9;font-weight:bold">Jumlah Kelebihan</td>
+            <td style="padding:8px;color:${color};font-weight:bold">Rp ${overAmount.toLocaleString("id-ID")}</td></tr>
+        <tr><td style="padding:8px;background:#f1f5f9;font-weight:bold">Status Pembayaran</td>
+            <td style="padding:8px">${isApproved ? "✅ Lunas / Disetujui" : "⏳ Menunggu pembayaran"}</td></tr>
+      </table>
+      ${!isApproved ? `<p>Harap segera melunasi kelebihan pemakaian tersebut sesuai prosedur perusahaan.</p>` : `<p>Terima kasih telah menyelesaikan pembayaran kelebihan Duty Meal Anda.</p>`}
+      <p>Silakan login ke sistem ProcureFlow untuk informasi lebih lanjut.</p>
+    </div>`;
+  await sendEmail(userEmail, `[ProcureFlow] ${title} — ${monthLabel}`, html);
+}
+
 export async function sendNewUserEmail(userEmail: string, userName: string, username: string, password: string) {
   const html = `
     <div style="font-family:sans-serif;max-width:600px;margin:0 auto">

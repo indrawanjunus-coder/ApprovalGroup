@@ -1670,6 +1670,8 @@ function DutyMealSettings() {
   const [gdriveFolder, setGdriveFolder] = useState("");
   const [gdriveEmail, setGdriveEmail] = useState("");
   const [gdrivePrivateKey, setGdrivePrivateKey] = useState("");
+  const [unpaidLock, setUnpaidLock] = useState<"" | "warn" | "lock">("");
+  const [unpaidMonths, setUnpaidMonths] = useState("2");
 
   useEffect(() => {
     if (settings) {
@@ -1683,6 +1685,8 @@ function DutyMealSettings() {
       setGdriveFolder(settings.dutyMealGdriveFolder || "");
       setGdriveEmail(settings.dutyMealGdriveEmail || "");
       if (settings.dutyMealGdrivePrivateKey === "***configured***") setGdrivePrivateKey("***configured***");
+      setUnpaidLock(((settings as any).dutyMealUnpaidLock || "") as "" | "warn" | "lock");
+      setUnpaidMonths(String((settings as any).dutyMealUnpaidMonths ?? 2));
     }
   }, [settings]);
 
@@ -1709,6 +1713,8 @@ function DutyMealSettings() {
       dutyMealGdriveFolder: gdriveFolder,
       dutyMealGdriveEmail: gdriveEmail,
       dutyMealGdrivePrivateKey: gdrivePrivateKey,
+      dutyMealUnpaidLock: unpaidLock,
+      dutyMealUnpaidMonths: parseInt(unpaidMonths) || 2,
     });
   };
 
@@ -1762,6 +1768,31 @@ function DutyMealSettings() {
                 <p className="text-sm text-muted-foreground">bulan setelah tanggal bergabung. Karyawan baru tidak bisa input Duty Meal sebelum masa ini terpenuhi.</p>
               </div>
               <p className="text-xs text-muted-foreground">Set 0 untuk menonaktifkan batasan masa kerja.</p>
+            </div>
+
+            {/* Unpaid lock/warn setting */}
+            <div className="space-y-2">
+              <Label>Pembatasan Jika Kelebihan Belum Dibayar</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  { val: "", label: "Tidak Ada Batasan", desc: "Karyawan bisa terus input meski ada hutang" },
+                  { val: "warn", label: "Peringatan Saja", desc: "Tampilkan warning, karyawan bisa tetap input" },
+                  { val: "lock", label: "Kunci Tombol Add", desc: "Tombol Tambah Duty Meal dikunci sampai lunas" },
+                ].map(opt => (
+                  <button key={opt.val} type="button" onClick={() => setUnpaidLock(opt.val as any)}
+                    className={`text-left rounded-lg border p-3 text-sm transition-all ${unpaidLock === opt.val ? "border-orange-500 bg-orange-50 ring-1 ring-orange-400" : "border-border hover:bg-muted/30"}`}>
+                    <p className="font-semibold">{opt.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+              {unpaidLock !== "" && (
+                <div className="flex items-center gap-3 mt-2">
+                  <Label className="whitespace-nowrap text-sm">Berlaku setelah</Label>
+                  <Input type="number" min="1" max="12" value={unpaidMonths} onChange={e => setUnpaidMonths(e.target.value)} className="w-20 h-9" />
+                  <p className="text-sm text-muted-foreground">bulan berturut-turut belum bayar kelebihan</p>
+                </div>
+              )}
             </div>
 
             {/* Bank account */}

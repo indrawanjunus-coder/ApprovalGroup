@@ -246,7 +246,7 @@ router.get("/duty-meal", async (req, res) => {
       "duty_meal_enabled", "duty_meal_company_id", "duty_meal_lock_date",
       "duty_meal_bank_account_number", "duty_meal_bank_account_name", "duty_meal_bank_name",
       "duty_meal_gdrive_folder", "duty_meal_gdrive_email", "duty_meal_gdrive_private_key",
-      "duty_meal_min_months",
+      "duty_meal_min_months", "duty_meal_unpaid_lock", "duty_meal_unpaid_months",
     ];
     const rows = await Promise.all(keys.map(k => getSettingValue(k)));
     res.json({
@@ -260,6 +260,8 @@ router.get("/duty-meal", async (req, res) => {
       dutyMealGdriveEmail: rows[7] || "",
       dutyMealGdrivePrivateKey: rows[8] ? "***configured***" : "",
       dutyMealMinMonths: rows[9] ? parseInt(rows[9]) : 3,
+      dutyMealUnpaidLock: rows[10] || "",
+      dutyMealUnpaidMonths: rows[11] ? parseInt(rows[11]) : 2,
     });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -269,7 +271,7 @@ router.put("/duty-meal", requireRole("admin"), async (req, res) => {
     const { dutyMealEnabled, dutyMealCompanyId, dutyMealLockDate,
       dutyMealBankAccountNumber, dutyMealBankAccountName, dutyMealBankName,
       dutyMealGdriveFolder, dutyMealGdriveEmail, dutyMealGdrivePrivateKey,
-      dutyMealMinMonths } = req.body;
+      dutyMealMinMonths, dutyMealUnpaidLock, dutyMealUnpaidMonths } = req.body;
     if (dutyMealEnabled !== undefined) await upsertSetting("duty_meal_enabled", String(dutyMealEnabled));
     if (dutyMealCompanyId !== undefined) await upsertSetting("duty_meal_company_id", dutyMealCompanyId ? String(dutyMealCompanyId) : "");
     if (dutyMealLockDate !== undefined) await upsertSetting("duty_meal_lock_date", String(dutyMealLockDate));
@@ -282,6 +284,8 @@ router.put("/duty-meal", requireRole("admin"), async (req, res) => {
       await upsertSetting("duty_meal_gdrive_private_key", dutyMealGdrivePrivateKey);
     }
     if (dutyMealMinMonths !== undefined) await upsertSetting("duty_meal_min_months", String(parseInt(dutyMealMinMonths) || 3));
+    if (dutyMealUnpaidLock !== undefined) await upsertSetting("duty_meal_unpaid_lock", dutyMealUnpaidLock || "");
+    if (dutyMealUnpaidMonths !== undefined) await upsertSetting("duty_meal_unpaid_months", String(parseInt(dutyMealUnpaidMonths) || 2));
     res.json({ success: true });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
