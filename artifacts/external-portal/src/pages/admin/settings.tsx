@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, Plus, Trash2, Edit2, Save, Mail, HardDrive, Users } from "lucide-react";
+import { AlertCircle, Plus, Trash2, Edit2, Save, Mail, HardDrive, Users, FolderOpen, ExternalLink } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 interface ExtUser {
@@ -44,6 +44,8 @@ export default function AdminSettingsPage() {
 
   const [smtp, setSmtp] = useState<SmtpSettings>({ host: "", port: "587", user: "", pass: "", security: "tls", fromEmail: "", fromName: "Vendor Portal" });
   const [fileSettings, setFileSettings] = useState<FileSettings>({ maxSizeMb: "5", allowedTypes: "jpg,jpeg,png,pdf" });
+  const [gdriveFolderUrl, setGdriveFolderUrl] = useState("https://drive.google.com/drive/folders/0AAxCInqK40uzUk9PVA");
+  const [gdriveMsg, setGdriveMsg] = useState("");
   const [users, setUsers] = useState<ExtUser[]>([]);
   const [smtpLoading, setSmtpLoading] = useState(false);
   const [smtpMsg, setSmtpMsg] = useState("");
@@ -70,6 +72,7 @@ export default function AdminSettingsPage() {
         maxSizeMb: d.maxFileSizeMb || "5",
         allowedTypes: d.allowedFileTypes || "jpg,jpeg,png,pdf",
       });
+      if (d.gdriveFolderUrl) setGdriveFolderUrl(d.gdriveFolderUrl);
     }
   };
 
@@ -100,6 +103,12 @@ export default function AdminSettingsPage() {
       allowedFileTypes: fileSettings.allowedTypes,
     });
     setFileMsg(res.ok ? "Pengaturan file disimpan" : "Gagal menyimpan");
+  };
+
+  const saveGdrive = async () => {
+    setGdriveMsg("");
+    const res = await apiPut("/settings", { gdriveFolderUrl });
+    setGdriveMsg(res.ok ? "Folder Google Drive disimpan" : "Gagal menyimpan");
   };
 
   const openNewUser = () => {
@@ -155,6 +164,7 @@ export default function AdminSettingsPage() {
             <TabsTrigger value="users" className="gap-2"><Users className="w-3.5 h-3.5" />Pengguna</TabsTrigger>
             {isAdmin && <TabsTrigger value="smtp" className="gap-2"><Mail className="w-3.5 h-3.5" />Email SMTP</TabsTrigger>}
             {isAdmin && <TabsTrigger value="file" className="gap-2"><HardDrive className="w-3.5 h-3.5" />Batasan File</TabsTrigger>}
+            {isAdmin && <TabsTrigger value="gdrive" className="gap-2"><FolderOpen className="w-3.5 h-3.5" />Google Drive</TabsTrigger>}
           </TabsList>
 
           {/* Users Tab */}
@@ -305,6 +315,55 @@ export default function AdminSettingsPage() {
                   <Button onClick={saveFile} className="gap-2">
                     <Save className="w-4 h-4" />
                     Simpan Pengaturan File
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {/* Google Drive Tab */}
+          {isAdmin && (
+            <TabsContent value="gdrive" className="mt-4">
+              <Card className="border-0 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4 text-blue-600" />
+                    Penyimpanan Google Drive
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded-lg bg-blue-50 border border-blue-200 p-4 text-sm text-blue-800">
+                    Setiap file yang diunggah (invoice attachment, KTP vendor) akan otomatis disimpan ke folder Google Drive yang ditentukan. Link file Google Drive akan disimpan di database.
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>URL Folder Google Drive</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="https://drive.google.com/drive/folders/..."
+                        value={gdriveFolderUrl}
+                        onChange={e => setGdriveFolderUrl(e.target.value)}
+                        className="flex-1"
+                      />
+                      {gdriveFolderUrl && (
+                        <a
+                          href={gdriveFolderUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border rounded-md hover:bg-muted transition-colors"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                          Buka
+                        </a>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Salin URL folder dari Google Drive. Contoh: https://drive.google.com/drive/folders/0AAxCInqK40uzUk9PVA
+                    </p>
+                  </div>
+                  {gdriveMsg && <p className={`text-sm ${gdriveMsg.includes("Gagal") ? "text-destructive" : "text-green-600"}`}>{gdriveMsg}</p>}
+                  <Button onClick={saveGdrive} className="gap-2">
+                    <Save className="w-4 h-4" />
+                    Simpan Folder Google Drive
                   </Button>
                 </CardContent>
               </Card>

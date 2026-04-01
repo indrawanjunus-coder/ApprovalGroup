@@ -4,6 +4,7 @@ import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable } from "@
 import { eq, and, desc, gte, lte, ne } from "drizzle-orm";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import { uploadToGoogleDrive, guessMimeType } from "../lib/googleDrive";
 
 const router = Router();
 
@@ -127,12 +128,29 @@ router.post("/auth/register", async (req, res) => {
     const authCode = generateAuthCode();
     const authCodeExpiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24h
 
+    let finalKtpAttachment: string | null = ktpAttachment || null;
+    if (ktpAttachment && ktpFilename) {
+      try {
+        const folderSetting = await getSettingValue("ext_gdrive_folder");
+        const folderId = folderSetting || "0AAxCInqK40uzUk9PVA";
+        const gdrive = await uploadToGoogleDrive({
+          base64Data: ktpAttachment,
+          filename: `ktp_${companyName.replace(/\s+/g, "_")}_${Date.now()}_${ktpFilename}`,
+          mimeType: guessMimeType(ktpFilename),
+          folderIdOrUrl: folderId,
+        });
+        finalKtpAttachment = gdrive.webViewLink;
+      } catch (e) {
+        console.error("GDrive upload error (ktp):", e);
+      }
+    }
+
     const [vendor] = await db.insert(vendorCompaniesTable).values({
       companyName, companyAddress, picName, picPhone,
       officePhone: officePhone || picPhone,
       email: email.toLowerCase(),
       passwordHash: hashPassword(password),
-      ktpAttachment: ktpAttachment || null,
+      ktpAttachment: finalKtpAttachment,
       ktpFilename: ktpFilename || null,
       status: "pending",
       authCode,
@@ -308,12 +326,32 @@ router.post("/invoices", requireVendor(), async (req, res) => {
     const { poNumber, picName, picPhone, totalInvoice, attachment, attachmentFilename } = req.body;
     if (!poNumber || !picName || !picPhone || !totalInvoice) return res.status(400).json({ error: "Semua field wajib diisi" });
 
+    let finalAttachment: string | null = attachment || null;
+    let finalAttachmentFilename: string | null = attachmentFilename || null;
+
+    if (attachment && attachmentFilename) {
+      try {
+        const folderSetting = await getSettingValue("ext_gdrive_folder");
+        const folderId = folderSetting || "0AAxCInqK40uzUk9PVA";
+        const gdrive = await uploadToGoogleDrive({
+          base64Data: attachment,
+          filename: `invoice_${vendor.companyName.replace(/\s+/g, "_")}_${Date.now()}_${attachmentFilename}`,
+          mimeType: guessMimeType(attachmentFilename),
+          folderIdOrUrl: folderId,
+        });
+        finalAttachment = gdrive.webViewLink;
+        finalAttachmentFilename = attachmentFilename;
+      } catch (e) {
+        console.error("GDrive upload error (invoice):", e);
+      }
+    }
+
     const [inv] = await db.insert(vendorInvoicesTable).values({
       vendorCompanyId: sess.vendorId,
       companyName: vendor.companyName,
       poNumber, picName, picPhone, totalInvoice,
-      attachment: attachment || null,
-      attachmentFilename: attachmentFilename || null,
+      attachment: finalAttachment,
+      attachmentFilename: finalAttachmentFilename,
       status: "pending",
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -560,7 +598,7 @@ async function upsertSetting(key: string, value: string) {
 // GET /api/external/settings
 router.get("/settings", requireExtUser("admin"), async (req, res) => {
   try {
-    const keys = ["ext_smtp_host", "ext_smtp_port", "ext_smtp_user", "ext_smtp_security", "ext_max_file_size", "ext_allowed_file_types"];
+    const keys = ["ext_smtp_host", "ext_smtp_port", "ext_smtp_user", "ext_smtp_security", "ext_max_file_size", "ext_allowed_file_types", "ext_gdrive_folder"];
     const vals = await Promise.all(keys.map(k => getSettingValue(k)));
     res.json({
       smtpHost: vals[0] || "",
@@ -569,6 +607,7 @@ router.get("/settings", requireExtUser("admin"), async (req, res) => {
       smtpSecurity: vals[3] || "STARTTLS",
       maxFileSizeMb: vals[4] || "5",
       allowedFileTypes: vals[5] || "jpg,jpeg,png,pdf",
+      gdriveFolderUrl: vals[6] || "https://drive.google.com/drive/folders/0AAxCInqK40uzUk9PVA",
     });
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -576,7 +615,7 @@ router.get("/settings", requireExtUser("admin"), async (req, res) => {
 // PUT /api/external/settings
 router.put("/settings", requireExtUser("admin"), async (req, res) => {
   try {
-    const { smtpHost, smtpPort, smtpUser, smtpPass, smtpSecurity, maxFileSizeMb, allowedFileTypes } = req.body;
+    const { smtpHost, smtpPort, smtpUser, smtpPass, smtpSecurity, maxFileSizeMb, allowedFileTypes, gdriveFolderUrl } = req.body;
     if (smtpHost !== undefined) await upsertSetting("ext_smtp_host", smtpHost);
     if (smtpPort !== undefined) await upsertSetting("ext_smtp_port", smtpPort);
     if (smtpUser !== undefined) await upsertSetting("ext_smtp_user", smtpUser);
@@ -584,6 +623,7 @@ router.put("/settings", requireExtUser("admin"), async (req, res) => {
     if (smtpSecurity !== undefined) await upsertSetting("ext_smtp_security", smtpSecurity);
     if (maxFileSizeMb !== undefined) await upsertSetting("ext_max_file_size", String(maxFileSizeMb));
     if (allowedFileTypes !== undefined) await upsertSetting("ext_allowed_file_types", allowedFileTypes);
+    if (gdriveFolderUrl !== undefined) await upsertSetting("ext_gdrive_folder", gdriveFolderUrl);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 });
