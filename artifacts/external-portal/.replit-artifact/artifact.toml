@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/external-portal/"
+title = "External Vendor Portal"
+version = "1.0.0"
+id = "artifacts/external-portal"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/external-portal/" ]
+localPort = 18536
+
+[services.development]
+run = "pnpm --filter @workspace/external-portal run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/external-portal", "run", "build" ]
+publicDir = "artifacts/external-portal/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18536"
+BASE_PATH = "/external-portal/"

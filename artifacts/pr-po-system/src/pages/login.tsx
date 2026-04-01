@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ArrowRight } from "lucide-react";
+import { Loader2, ArrowRight, Building2, ExternalLink } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
@@ -96,6 +96,27 @@ export default function Login() {
               <p className="text-primary-foreground/80 text-lg max-w-sm">
                 {effectiveSubtitle}
               </p>
+              <div className="pt-4 border-t border-white/20 space-y-2">
+                <p className="text-sm text-primary-foreground/70 font-medium">Portal Eksternal</p>
+                <div className="flex flex-col gap-2">
+                  <a
+                    href="/external-portal/login"
+                    className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors border border-white/20"
+                  >
+                    <Building2 className="w-4 h-4" />
+                    Login Portal Vendor
+                    <ExternalLink className="w-3.5 h-3.5 ml-auto opacity-70" />
+                  </a>
+                  <a
+                    href="/external-portal/register"
+                    className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/15 text-white/80 text-sm font-medium transition-colors border border-white/10"
+                  >
+                    <Building2 className="w-4 h-4" />
+                    Daftar sebagai Vendor
+                    <ExternalLink className="w-3.5 h-3.5 ml-auto opacity-70" />
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
         </div>

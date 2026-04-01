@@ -20,6 +20,7 @@ import historyRouter from "./history.js";
 import locationsRouter from "./locations.js";
 import brandsRouter from "./brands.js";
 import dutyMealsRouter from "./duty-meals.js";
+import externalRouter from "./external.js";
 
 const router = Router();
 
@@ -44,5 +45,6 @@ router.use("/history", historyRouter);
 router.use("/locations", locationsRouter);
 router.use("/brands", brandsRouter);
 router.use("/duty-meals", dutyMealsRouter);
+router.use("/external", externalRouter);
 
 export default router;
