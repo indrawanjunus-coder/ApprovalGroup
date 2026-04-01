@@ -113,11 +113,13 @@ async function getFileConfig() {
 // POST /api/external/auth/register
 router.post("/auth/register", async (req, res) => {
   try {
-    const { companyName, companyAddress, picName, picPhone, officePhone, email, password, ktpAttachment, ktpFilename } = req.body;
-    if (!companyName || !companyAddress || !picName || !picPhone || !officePhone || !email || !password) {
+    const {
+      companyName, companyAddress, picName, picPhone,
+      officePhone, email, password, ktpAttachment, ktpFilename,
+    } = req.body;
+    if (!companyName || !companyAddress || !picName || !picPhone || !email || !password) {
       return res.status(400).json({ error: "Semua field wajib diisi" });
     }
-    if (!ktpAttachment) return res.status(400).json({ error: "Attachment KTP wajib diunggah" });
 
     const existing = await db.select().from(vendorCompaniesTable).where(eq(vendorCompaniesTable.email, email.toLowerCase()));
     if (existing.length > 0) return res.status(409).json({ error: "Email sudah terdaftar" });
@@ -126,10 +128,12 @@ router.post("/auth/register", async (req, res) => {
     const authCodeExpiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24h
 
     const [vendor] = await db.insert(vendorCompaniesTable).values({
-      companyName, companyAddress, picName, picPhone, officePhone,
+      companyName, companyAddress, picName, picPhone,
+      officePhone: officePhone || picPhone,
       email: email.toLowerCase(),
       passwordHash: hashPassword(password),
-      ktpAttachment, ktpFilename: ktpFilename || "ktp.jpg",
+      ktpAttachment: ktpAttachment || null,
+      ktpFilename: ktpFilename || null,
       status: "pending",
       authCode,
       authCodeExpiresAt,

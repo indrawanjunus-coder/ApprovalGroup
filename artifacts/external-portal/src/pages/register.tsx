@@ -10,9 +10,14 @@ import { Building2, AlertCircle, CheckCircle2, ArrowLeft } from "lucide-react";
 export default function RegisterPage() {
   const [, setLocation] = useLocation();
   const [form, setForm] = useState({
-    name: "", email: "", phone: "", address: "",
-    contactPerson: "", npwp: "", bankName: "", bankAccount: "", bankAccountName: "",
-    password: "", confirmPassword: "",
+    companyName: "",
+    email: "",
+    picPhone: "",
+    officePhone: "",
+    companyAddress: "",
+    picName: "",
+    password: "",
+    confirmPassword: "",
   });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
@@ -28,7 +33,8 @@ export default function RegisterPage() {
     if (form.password.length < 8) { setError("Password minimal 8 karakter"); return; }
     setLoading(true);
     try {
-      const res = await apiPost("/auth/register", form);
+      const { confirmPassword, ...payload } = form;
+      const res = await apiPost("/auth/register", payload);
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Pendaftaran gagal"); return; }
       setSuccess(true);
@@ -79,45 +85,33 @@ export default function RegisterPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2 space-y-1.5">
                     <Label>Nama Perusahaan <span className="text-destructive">*</span></Label>
-                    <Input placeholder="PT. Nama Perusahaan" value={form.name} onChange={set("name")} required />
+                    <Input placeholder="PT. Nama Perusahaan" value={form.companyName} onChange={set("companyName")} required />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Email <span className="text-destructive">*</span></Label>
                     <Input type="email" placeholder="email@perusahaan.com" value={form.email} onChange={set("email")} required />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Telepon</Label>
-                    <Input placeholder="021-XXXXXXX" value={form.phone} onChange={set("phone")} />
+                    <Label>Telepon Kantor</Label>
+                    <Input placeholder="021-XXXXXXX" value={form.officePhone} onChange={set("officePhone")} />
                   </div>
                   <div className="md:col-span-2 space-y-1.5">
-                    <Label>Alamat</Label>
-                    <Input placeholder="Jl. ..." value={form.address} onChange={set("address")} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Contact Person</Label>
-                    <Input placeholder="Nama PIC" value={form.contactPerson} onChange={set("contactPerson")} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>NPWP</Label>
-                    <Input placeholder="XX.XXX.XXX.X-XXX.XXX" value={form.npwp} onChange={set("npwp")} />
+                    <Label>Alamat Perusahaan <span className="text-destructive">*</span></Label>
+                    <Input placeholder="Jl. ..." value={form.companyAddress} onChange={set("companyAddress")} required />
                   </div>
                 </div>
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Informasi Bank</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Person in Charge (PIC)</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label>Nama Bank</Label>
-                    <Input placeholder="BCA, BNI, Mandiri..." value={form.bankName} onChange={set("bankName")} />
+                    <Label>Nama PIC <span className="text-destructive">*</span></Label>
+                    <Input placeholder="Nama lengkap PIC" value={form.picName} onChange={set("picName")} required />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Nomor Rekening</Label>
-                    <Input placeholder="XXXXXXXXXX" value={form.bankAccount} onChange={set("bankAccount")} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Atas Nama</Label>
-                    <Input placeholder="Nama pemilik rekening" value={form.bankAccountName} onChange={set("bankAccountName")} />
+                    <Label>Telepon PIC <span className="text-destructive">*</span></Label>
+                    <Input placeholder="08XXXXXXXXXX" value={form.picPhone} onChange={set("picPhone")} required />
                   </div>
                 </div>
               </div>
