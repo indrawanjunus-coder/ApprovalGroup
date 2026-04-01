@@ -13,6 +13,8 @@ import AdminInvoicesPage from "@/pages/admin/invoices";
 import AdminVendorsPage from "@/pages/admin/vendors";
 import AdminReportsPage from "@/pages/admin/reports";
 import AdminSettingsPage from "@/pages/admin/settings";
+import AdminItemsPage from "@/pages/admin/items";
+import AdminUomsPage from "@/pages/admin/uoms";
 
 const queryClient = new QueryClient();
 
@@ -66,6 +68,8 @@ function AppRoutes() {
       <Route path="/admin/invoices" component={AdminInvoicesPage} />
       <Route path="/admin/vendors" component={AdminVendorsPage} />
       <Route path="/admin/reports" component={AdminReportsPage} />
+      <Route path="/admin/items" component={AdminItemsPage} />
+      <Route path="/admin/uoms" component={AdminUomsPage} />
       <Route path="/admin/settings" component={AdminSettingsPage} />
       <Route>
         {user

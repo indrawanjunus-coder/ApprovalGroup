@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
-import { FileText, BarChart2, Settings, LogOut, Building2, Menu, User } from "lucide-react";
+import { FileText, BarChart2, Settings, LogOut, Building2, Menu, User, Package, Ruler } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -23,6 +23,8 @@ const userNav: NavItem[] = [
   { href: "/admin/invoices", label: "Semua Invoice", icon: FileText },
   { href: "/admin/vendors", label: "Daftar Vendor", icon: Building2 },
   { href: "/admin/reports", label: "Laporan", icon: BarChart2 },
+  { href: "/admin/items", label: "Master Item", icon: Package },
+  { href: "/admin/uoms", label: "Master Satuan", icon: Ruler },
   { href: "/admin/settings", label: "Pengaturan", icon: Settings },
 ];
 

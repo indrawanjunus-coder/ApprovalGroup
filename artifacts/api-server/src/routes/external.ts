@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable } from "@workspace/db/schema";
-import { eq, and, desc, gte, lte, ne } from "drizzle-orm";
+import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable, masterItemsTable, masterUomsTable, vendorInvoiceItemsTable } from "@workspace/db/schema";
+import { eq, and, desc, gte, lte, ne, ilike, or, sql } from "drizzle-orm";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { uploadToGoogleDrive, guessMimeType } from "../lib/googleDrive";
@@ -374,8 +374,22 @@ router.post("/invoices", requireVendor(), async (req, res) => {
     const [vendor] = await db.select().from(vendorCompaniesTable).where(eq(vendorCompaniesTable.id, sess.vendorId));
     if (!vendor) return res.status(404).json({ error: "Vendor tidak ditemukan" });
 
-    const { poNumber, picName, picPhone, totalInvoice, attachment, attachmentFilename } = req.body;
-    if (!poNumber || !picName || !picPhone || !totalInvoice) return res.status(400).json({ error: "Semua field wajib diisi" });
+    const { poNumber, picName, picPhone, attachment, attachmentFilename, items } = req.body;
+    if (!poNumber || !picName || !picPhone) return res.status(400).json({ error: "Semua field wajib diisi" });
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Minimal satu item harus diisi" });
+
+    // Validate and calculate total from items
+    let totalCalc = 0;
+    for (const item of items) {
+      if (!item.itemId || !item.uomId || !item.qty || !item.pricePerUom) {
+        return res.status(400).json({ error: "Data item tidak lengkap (itemId, uomId, qty, pricePerUom wajib)" });
+      }
+      const qty = Number(item.qty);
+      const price = Number(item.pricePerUom);
+      if (qty <= 0 || price < 0) return res.status(400).json({ error: "Qty dan harga harus bernilai positif" });
+      totalCalc += qty * price;
+    }
+    const totalInvoice = String(Math.round(totalCalc));
 
     let finalAttachment: string | null = attachment || null;
     let finalAttachmentFilename: string | null = attachmentFilename || null;
@@ -413,6 +427,24 @@ router.post("/invoices", requireVendor(), async (req, res) => {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     }).returning();
+
+    // Insert invoice items
+    for (const item of items) {
+      const qty = Number(item.qty);
+      const price = Number(item.pricePerUom);
+      const subtotal = qty * price;
+      await db.insert(vendorInvoiceItemsTable).values({
+        invoiceId: inv.id,
+        itemId: Number(item.itemId),
+        itemCode: item.itemCode || "",
+        itemName: item.itemName || "",
+        uomId: Number(item.uomId),
+        uomName: item.uomName || "",
+        qty: String(qty),
+        pricePerUom: String(price),
+        subtotal: String(subtotal),
+      });
+    }
 
     // Notify internal users
     try {
@@ -682,6 +714,179 @@ router.put("/settings", requireExtUser("admin"), async (req, res) => {
     if (allowedFileTypes !== undefined) await upsertSetting("ext_allowed_file_types", allowedFileTypes);
     if (gdriveFolderUrl !== undefined) await upsertSetting("ext_gdrive_folder", gdriveFolderUrl);
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// ─── Master UoM ───────────────────────────────────────────────────────────────
+
+// GET /api/external/master/uoms
+router.get("/master/uoms", requireExternal(), async (req, res) => {
+  try {
+    const uoms = await db.select().from(masterUomsTable)
+      .where(eq(masterUomsTable.isActive, true))
+      .orderBy(masterUomsTable.name);
+    res.json(uoms);
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// GET /api/external/master/uoms/all (admin - include inactive)
+router.get("/master/uoms/all", requireExtUser("admin"), async (req, res) => {
+  try {
+    const uoms = await db.select().from(masterUomsTable).orderBy(masterUomsTable.name);
+    res.json(uoms);
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// POST /api/external/master/uoms
+router.post("/master/uoms", requireExtUser("admin"), async (req, res) => {
+  try {
+    const { code, name } = req.body;
+    if (!code || !name) return res.status(400).json({ error: "Kode dan nama wajib diisi" });
+    const [uom] = await db.insert(masterUomsTable).values({ code: code.toUpperCase(), name, createdAt: Date.now() }).returning();
+    res.json({ uom });
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// PUT /api/external/master/uoms/:id
+router.put("/master/uoms/:id", requireExtUser("admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { code, name, isActive } = req.body;
+    const updates: any = {};
+    if (code !== undefined) updates.code = code.toUpperCase();
+    if (name !== undefined) updates.name = name;
+    if (isActive !== undefined) updates.isActive = isActive;
+    await db.update(masterUomsTable).set(updates).where(eq(masterUomsTable.id, id));
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// DELETE /api/external/master/uoms/:id
+router.delete("/master/uoms/:id", requireExtUser("admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await db.update(masterUomsTable).set({ isActive: false }).where(eq(masterUomsTable.id, id));
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// ─── Master Items ──────────────────────────────────────────────────────────────
+
+// GET /api/external/master/items?q=search
+router.get("/master/items", requireExternal(), async (req, res) => {
+  try {
+    const q = (req.query.q as string || "").trim();
+    let items;
+    if (q) {
+      items = await db.select().from(masterItemsTable)
+        .where(and(
+          eq(masterItemsTable.isActive, true),
+          or(ilike(masterItemsTable.name, `%${q}%`), ilike(masterItemsTable.code, `%${q}%`))
+        ))
+        .orderBy(masterItemsTable.name)
+        .limit(20);
+    } else {
+      items = await db.select().from(masterItemsTable)
+        .where(eq(masterItemsTable.isActive, true))
+        .orderBy(masterItemsTable.name)
+        .limit(50);
+    }
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// GET /api/external/master/items/all (admin)
+router.get("/master/items/all", requireExtUser("admin"), async (req, res) => {
+  try {
+    const q = (req.query.q as string || "").trim();
+    let items;
+    if (q) {
+      items = await db.select().from(masterItemsTable)
+        .where(or(ilike(masterItemsTable.name, `%${q}%`), ilike(masterItemsTable.code, `%${q}%`)))
+        .orderBy(masterItemsTable.name);
+    } else {
+      items = await db.select().from(masterItemsTable).orderBy(masterItemsTable.name);
+    }
+    res.json(items);
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// POST /api/external/master/items
+router.post("/master/items", requireExtUser("admin"), async (req, res) => {
+  try {
+    const { code, name, description, defaultUomId } = req.body;
+    if (!code || !name) return res.status(400).json({ error: "Kode dan nama wajib diisi" });
+    const [item] = await db.insert(masterItemsTable).values({
+      code: code.toUpperCase(), name, description: description || null,
+      defaultUomId: defaultUomId ? Number(defaultUomId) : null,
+      createdAt: Date.now(),
+    }).returning();
+    res.json({ item });
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// PUT /api/external/master/items/:id
+router.put("/master/items/:id", requireExtUser("admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { code, name, description, defaultUomId, isActive } = req.body;
+    const updates: any = {};
+    if (code !== undefined) updates.code = code.toUpperCase();
+    if (name !== undefined) updates.name = name;
+    if (description !== undefined) updates.description = description;
+    if (defaultUomId !== undefined) updates.defaultUomId = defaultUomId ? Number(defaultUomId) : null;
+    if (isActive !== undefined) updates.isActive = isActive;
+    await db.update(masterItemsTable).set(updates).where(eq(masterItemsTable.id, id));
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// DELETE /api/external/master/items/:id
+router.delete("/master/items/:id", requireExtUser("admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    await db.update(masterItemsTable).set({ isActive: false }).where(eq(masterItemsTable.id, id));
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// POST /api/external/master/items/import-csv  (admin, CSV body as text)
+router.post("/master/items/import-csv", requireExtUser("admin"), async (req, res) => {
+  try {
+    const { csvText } = req.body;
+    if (!csvText) return res.status(400).json({ error: "CSV kosong" });
+
+    const lines = csvText.split(/\r?\n/).filter((l: string) => l.trim());
+    // Skip header row if starts with non-numeric (code, name...)
+    const dataLines = lines[0]?.toLowerCase().includes("code") ? lines.slice(1) : lines;
+
+    const uoms = await db.select().from(masterUomsTable);
+    const uomByCode = Object.fromEntries(uoms.map((u: any) => [u.code.toLowerCase(), u.id]));
+
+    let imported = 0; let skipped = 0;
+    for (const line of dataLines) {
+      const cols = line.split(",").map((c: string) => c.trim().replace(/^"|"$/g, ""));
+      // Expected: code, name, description (opt), uom_code (opt)
+      const [code, name, description, uomCode] = cols;
+      if (!code || !name) { skipped++; continue; }
+      const defaultUomId = uomCode ? (uomByCode[uomCode.toLowerCase()] || null) : null;
+      await db.insert(masterItemsTable).values({
+        code: code.toUpperCase(), name, description: description || null,
+        defaultUomId, isActive: true, createdAt: Date.now(),
+      }).onConflictDoNothing();
+      imported++;
+    }
+    res.json({ imported, skipped });
+  } catch (err) { console.error(err); res.status(500).json({ error: "Gagal import CSV" }); }
+});
+
+// GET /api/external/invoice-items/:invoiceId
+router.get("/invoice-items/:invoiceId", requireExternal(), async (req, res) => {
+  try {
+    const invoiceId = Number(req.params.invoiceId);
+    const items = await db.select().from(vendorInvoiceItemsTable)
+      .where(eq(vendorInvoiceItemsTable.invoiceId, invoiceId));
+    res.json(items);
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 });
 

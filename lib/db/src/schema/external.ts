@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, bigint } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, bigint, numeric } from "drizzle-orm/pg-core";
 
 export const vendorCompaniesTable = pgTable("vendor_companies", {
   id: serial("id").primaryKey(),
@@ -47,4 +47,35 @@ export const externalUsersTable = pgTable("external_users", {
   role: text("role").notNull().default("user"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
+export const masterUomsTable = pgTable("master_uoms", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
+export const masterItemsTable = pgTable("master_items", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  description: text("description"),
+  defaultUomId: integer("default_uom_id"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
+export const vendorInvoiceItemsTable = pgTable("vendor_invoice_items", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull(),
+  itemId: integer("item_id").notNull(),
+  itemCode: text("item_code").notNull(),
+  itemName: text("item_name").notNull(),
+  uomId: integer("uom_id").notNull(),
+  uomName: text("uom_name").notNull(),
+  qty: numeric("qty", { precision: 18, scale: 4 }).notNull(),
+  pricePerUom: numeric("price_per_uom", { precision: 18, scale: 2 }).notNull(),
+  subtotal: numeric("subtotal", { precision: 18, scale: 2 }).notNull(),
 });
