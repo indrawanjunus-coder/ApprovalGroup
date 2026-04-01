@@ -26,6 +26,18 @@ async function getSettingValue(key: string): Promise<string | null> {
   } catch { return null; }
 }
 
+/** Kumpulkan email vendor + semua internal user aktif untuk GDrive sharing */
+async function getShareEmails(vendorEmail?: string): Promise<string[]> {
+  try {
+    const internalUsers = await db.select({ email: externalUsersTable.email })
+      .from(externalUsersTable)
+      .where(eq(externalUsersTable.isActive, true));
+    const emails = internalUsers.map(u => u.email).filter(Boolean) as string[];
+    if (vendorEmail) emails.push(vendorEmail);
+    return [...new Set(emails)];
+  } catch { return vendorEmail ? [vendorEmail] : []; }
+}
+
 async function getExternalSmtp() {
   const [host, port, user, pass, security] = await Promise.all([
     getSettingValue("ext_smtp_host"),
@@ -135,7 +147,10 @@ router.post("/auth/register", async (req, res) => {
 
     let finalKtpAttachment: string = ktpAttachment;
     try {
-      const folderSetting = await getSettingValue("ext_gdrive_folder");
+      const [folderSetting, shareEmails] = await Promise.all([
+        getSettingValue("ext_gdrive_folder"),
+        getShareEmails(email.toLowerCase()),
+      ]);
       const folderIdOrUrl = folderSetting || "0AAxCInqK40uzUk9PVA";
       const gdrive = await uploadToGoogleDrive({
         base64Data: ktpAttachment,
@@ -144,6 +159,7 @@ router.post("/auth/register", async (req, res) => {
         folderIdOrUrl,
         companyName,
         label: "KTP",
+        shareWithEmails: shareEmails,
       });
       finalKtpAttachment = gdrive.webViewLink;
     } catch (e) {
@@ -366,7 +382,10 @@ router.post("/invoices", requireVendor(), async (req, res) => {
 
     if (attachment && attachmentFilename) {
       try {
-        const folderSetting = await getSettingValue("ext_gdrive_folder");
+        const [folderSetting, shareEmails] = await Promise.all([
+          getSettingValue("ext_gdrive_folder"),
+          getShareEmails(vendor.email),
+        ]);
         const folderIdOrUrl = folderSetting || "0AAxCInqK40uzUk9PVA";
         const gdrive = await uploadToGoogleDrive({
           base64Data: attachment,
@@ -375,6 +394,7 @@ router.post("/invoices", requireVendor(), async (req, res) => {
           folderIdOrUrl,
           companyName: vendor.companyName,
           label: poNumber,
+          shareWithEmails: shareEmails,
         });
         finalAttachment = gdrive.webViewLink;
         finalAttachmentFilename = attachmentFilename;

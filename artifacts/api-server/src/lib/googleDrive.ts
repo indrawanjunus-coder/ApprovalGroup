@@ -73,8 +73,10 @@ export async function uploadToGoogleDrive(opts: {
   folderIdOrUrl: string;
   companyName: string;
   label: string;
+  /** Emails yang boleh baca file (vendor + internal users). Jika kosong, file tetap private. */
+  shareWithEmails?: string[];
 }): Promise<{ fileId: string; webViewLink: string; webContentLink: string }> {
-  const { base64Data, filename, mimeType = "application/octet-stream", folderIdOrUrl, companyName, label } = opts;
+  const { base64Data, filename, mimeType = "application/octet-stream", folderIdOrUrl, companyName, label, shareWithEmails = [] } = opts;
   const rootFolderId = extractFolderId(folderIdOrUrl);
   const connectors = new ReplitConnectors();
   const now = new Date();
@@ -120,11 +122,19 @@ export async function uploadToGoogleDrive(opts: {
 
   const result = await uploadResp.json() as { id: string; webViewLink: string; webContentLink: string };
 
-  await connectors.proxy("google-drive", `/drive/v3/files/${result.id}/permissions?supportsAllDrives=true`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role: "reader", type: "anyone" }),
-  }).catch(() => {});
+  // Share hanya dengan email tertentu (vendor + internal users), bukan public
+  const uniqueEmails = [...new Set(shareWithEmails.filter(e => e && e.includes("@")))];
+  for (const email of uniqueEmails) {
+    await connectors.proxy(
+      "google-drive",
+      `/drive/v3/files/${result.id}/permissions?supportsAllDrives=true&sendNotificationEmail=false`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "reader", type: "user", emailAddress: email }),
+      }
+    ).catch((e: any) => console.error(`GDrive share gagal untuk ${email}:`, e?.message));
+  }
 
   return {
     fileId: result.id,
