@@ -781,7 +781,11 @@ router.get("/master/items", requireExternal(), async (req, res) => {
       items = await db.select().from(masterItemsTable)
         .where(and(
           eq(masterItemsTable.isActive, true),
-          or(ilike(masterItemsTable.name, `%${q}%`), ilike(masterItemsTable.code, `%${q}%`))
+          or(
+            ilike(masterItemsTable.name, `%${q}%`),
+            ilike(masterItemsTable.code, `%${q}%`),
+            ilike(masterItemsTable.description, `%${q}%`)
+          )
         ))
         .orderBy(masterItemsTable.name)
         .limit(20);
@@ -802,7 +806,11 @@ router.get("/master/items/all", requireExtUser("admin"), async (req, res) => {
     let items;
     if (q) {
       items = await db.select().from(masterItemsTable)
-        .where(or(ilike(masterItemsTable.name, `%${q}%`), ilike(masterItemsTable.code, `%${q}%`)))
+        .where(or(
+          ilike(masterItemsTable.name, `%${q}%`),
+          ilike(masterItemsTable.code, `%${q}%`),
+          ilike(masterItemsTable.description, `%${q}%`)
+        ))
         .orderBy(masterItemsTable.name);
     } else {
       items = await db.select().from(masterItemsTable).orderBy(masterItemsTable.name);

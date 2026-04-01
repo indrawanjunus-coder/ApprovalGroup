@@ -34,6 +34,12 @@ interface InvoiceItem {
   pricePerUom: string;
 }
 
+/** Nama tampilan item: gunakan description jika name = code atau name berupa angka */
+function getItemDisplayName(item: MasterItem): string {
+  const nameIsCode = item.name === item.code || /^\d+$/.test(item.name.trim());
+  return nameIsCode && item.description ? item.description : item.name;
+}
+
 function ItemSearch({ uoms, onSelect }: {
   uoms: MasterUom[];
   onSelect: (item: MasterItem, uom: MasterUom | null) => void;
@@ -84,7 +90,7 @@ function ItemSearch({ uoms, onSelect }: {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <Input
           className="pl-9 bg-white"
-          placeholder="Ketik nama / kode item..."
+          placeholder="Ketik nama atau kode item..."
           value={query}
           onChange={e => setQuery(e.target.value)}
           onFocus={handleFocus}
@@ -98,25 +104,33 @@ function ItemSearch({ uoms, onSelect }: {
         )}
       </div>
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-white border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-white border border-border rounded-lg shadow-lg max-h-64 overflow-y-auto">
           {loading ? (
             <div className="px-4 py-3 text-sm text-muted-foreground">Mencari...</div>
           ) : results.length === 0 ? (
             <div className="px-4 py-3 text-sm text-muted-foreground">
               {query ? "Tidak ada item ditemukan" : "Mulai ketik untuk mencari item"}
             </div>
-          ) : results.map(item => (
-            <button key={item.id}
-              className="w-full text-left px-4 py-2.5 hover:bg-muted transition-colors border-b border-border/50 last:border-0"
-              onMouseDown={e => { e.preventDefault(); handleSelect(item); }}
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded text-muted-foreground">{item.code}</span>
-                <span className="text-sm font-medium text-foreground">{item.name}</span>
-              </div>
-              {item.description && <p className="text-xs text-muted-foreground mt-0.5 pl-0.5 truncate">{item.description}</p>}
-            </button>
-          ))}
+          ) : results.map(item => {
+            const displayName = getItemDisplayName(item);
+            const showSecondary = displayName !== item.name && item.name !== item.code;
+            return (
+              <button key={item.id}
+                className="w-full text-left px-4 py-2.5 hover:bg-blue-50 transition-colors border-b border-border/40 last:border-0"
+                onMouseDown={e => { e.preventDefault(); handleSelect(item); }}
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-xs font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 flex-shrink-0 mt-0.5">{item.code}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground leading-tight">{displayName}</p>
+                    {showSecondary && (
+                      <p className="text-xs text-muted-foreground mt-0.5">{item.name}</p>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -159,7 +173,14 @@ export default function SubmitInvoicePage() {
 
   const handleItemSelect = (key: string, item: MasterItem, uom: MasterUom | null) => {
     setItems(prev => prev.map(it => it.key === key
-      ? { ...it, itemId: item.id, itemCode: item.code, itemName: item.name, uomId: uom?.id || null, uomName: uom?.name || "" }
+      ? {
+          ...it,
+          itemId: item.id,
+          itemCode: item.code,
+          itemName: getItemDisplayName(item),
+          uomId: uom?.id || null,
+          uomName: uom?.name || "",
+        }
       : it
     ));
   };
