@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { dutyMealsTable, dutyMealPlafonTable, brandsTable, usersTable, dutyMealMonthlyPaymentsTable, dutyMealCompanyApproversTable, companiesTable } from "@workspace/db/schema";
-import { eq, and, sql, inArray, or, lt } from "drizzle-orm";
+import { eq, and, sql, inArray, or, lt, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { createAuditLog } from "../lib/audit.js";
 import { sendDutyMealOverAmountEmail } from "../lib/email.js";
@@ -745,7 +745,7 @@ router.get("/carry-over", async (req, res) => {
 });
 
 // ─── MONTHLY REPORT ──────────────────────────────────────────────────────────
-// GET /api/duty-meals/monthly-report?month=YYYY-MM  (admin / approver only)
+// GET /api/duty-meals/monthly-report?month=YYYY-MM&companyId=  (admin / approver only)
 router.get("/monthly-report", async (req, res) => {
   try {
     const user = req.user as any;
@@ -754,26 +754,41 @@ router.get("/monthly-report", async (req, res) => {
     if (!isAdmin && approverCompanyIds.length === 0) {
       res.status(403).json({ error: "Forbidden" }); return;
     }
-    const { month } = req.query;
+    const { month, companyId } = req.query;
     if (!month) { res.status(400).json({ error: "month query required" }); return; }
 
-    // Get entries for this month
-    let entries: any[];
+    // Determine which companyIds to scope to
+    let scopeCompanyIds: number[] | null = null;  // null = all
     if (isAdmin) {
-      entries = await db.select().from(dutyMealsTable).where(eq(dutyMealsTable.mealMonth, String(month)));
+      if (companyId) scopeCompanyIds = [Number(companyId)];
     } else {
-      const scopedUsers = await db.select({ id: usersTable.id })
-        .from(usersTable).where(inArray(usersTable.hiredCompanyId, approverCompanyIds));
-      const scopedIds = scopedUsers.map(u => u.id);
-      entries = scopedIds.length
-        ? await db.select().from(dutyMealsTable)
-            .where(and(eq(dutyMealsTable.mealMonth, String(month)), inArray(dutyMealsTable.userId, scopedIds)))
-        : [];
+      // Approver: intersect with their approved companies
+      scopeCompanyIds = companyId
+        ? approverCompanyIds.filter(id => id === Number(companyId))
+        : approverCompanyIds;
     }
+
+    // Get users in scope
+    let scopedUserIds: number[] | null = null;
+    if (scopeCompanyIds !== null) {
+      const scopedUsers = scopeCompanyIds.length
+        ? await db.select({ id: usersTable.id }).from(usersTable)
+            .where(inArray(usersTable.hiredCompanyId, scopeCompanyIds))
+        : [];
+      scopedUserIds = scopedUsers.map(u => u.id);
+      if (scopedUserIds.length === 0) {
+        return res.json({ rows: [], summary: { totalPemakaian: 0, totalOverAmount: 0, totalLunas: 0, totalBelumLunas: 0 } });
+      }
+    }
+
+    // Get entries for this month
+    const entryConditions: any[] = [eq(dutyMealsTable.mealMonth, String(month))];
+    if (scopedUserIds !== null) entryConditions.push(inArray(dutyMealsTable.userId, scopedUserIds));
+    const entries = await db.select().from(dutyMealsTable).where(and(...entryConditions));
 
     const userIds = [...new Set(entries.map(e => e.userId))];
 
-    const [usersData, payments, brandsData] = await Promise.all([
+    const [usersData, payments, allCompanies] = await Promise.all([
       userIds.length ? db.select().from(usersTable).where(inArray(usersTable.id, userIds)) : [],
       userIds.length ? db.select().from(dutyMealMonthlyPaymentsTable)
         .where(and(eq(dutyMealMonthlyPaymentsTable.mealMonth, String(month)), inArray(dutyMealMonthlyPaymentsTable.userId, userIds))) : [],
@@ -781,7 +796,7 @@ router.get("/monthly-report", async (req, res) => {
     ]);
     const userMap = new Map((usersData as any[]).map(u => [u.id, u]));
     const paymentMap = new Map((payments as any[]).map(p => [p.userId, p]));
-    const companyMap = new Map((brandsData as any[]).map(c => [c.id, c]));
+    const companyMap = new Map((allCompanies as any[]).map(c => [c.id, c]));
 
     // Group by user
     const byUser = new Map<number, any[]>();
@@ -801,7 +816,8 @@ router.get("/monthly-report", async (req, res) => {
       const company = u?.hiredCompanyId ? companyMap.get(u.hiredCompanyId) as any : null;
       rows.push({
         userId: uid, username: u?.username || "?", name: u?.name || "?",
-        position: u?.position || "", companyName: company?.name || "-",
+        position: u?.position || "", department: u?.department || "",
+        companyId: u?.hiredCompanyId || null, companyName: company?.name || "-",
         totalPemakaian, plafon, overAmount,
         paymentStatus: payment?.status || null,
         isLunas: payment?.status === "approved",
@@ -814,6 +830,95 @@ router.get("/monthly-report", async (req, res) => {
     const totalOverAmount = rows.reduce((s, r) => s + r.overAmount, 0);
     const totalLunas      = rows.filter(r => r.isLunas).reduce((s, r) => s + r.overAmount, 0);
     res.json({ rows, summary: { totalPemakaian, totalOverAmount, totalLunas, totalBelumLunas: totalOverAmount - totalLunas } });
+  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+});
+
+// GET /api/duty-meals/outstanding?companyId=  (admin / approver only)
+// Returns users with unpaid over-limit (overAmount > 0 and not approved) across all months
+router.get("/outstanding", async (req, res) => {
+  try {
+    const user = req.user as any;
+    const isAdmin = user.role === "admin";
+    const approverCompanyIds = await getApproverCompanyIds(user.id);
+    if (!isAdmin && approverCompanyIds.length === 0) {
+      res.status(403).json({ error: "Forbidden" }); return;
+    }
+    const { companyId } = req.query;
+
+    let scopeCompanyIds: number[] | null = null;
+    if (isAdmin) {
+      if (companyId) scopeCompanyIds = [Number(companyId)];
+    } else {
+      scopeCompanyIds = companyId
+        ? approverCompanyIds.filter(id => id === Number(companyId))
+        : approverCompanyIds;
+    }
+
+    // Get users in scope
+    let scopedUserIds: number[];
+    if (scopeCompanyIds !== null) {
+      if (scopeCompanyIds.length === 0) return res.json([]);
+      const scopedUsers = await db.select({ id: usersTable.id }).from(usersTable)
+        .where(inArray(usersTable.hiredCompanyId, scopeCompanyIds));
+      scopedUserIds = scopedUsers.map(u => u.id);
+    } else {
+      const allUsers = await db.select({ id: usersTable.id }).from(usersTable);
+      scopedUserIds = allUsers.map(u => u.id);
+    }
+    if (scopedUserIds.length === 0) return res.json([]);
+
+    // Get all non-rejected entries for these users
+    const entries = await db.select().from(dutyMealsTable)
+      .where(and(inArray(dutyMealsTable.userId, scopedUserIds), ne(dutyMealsTable.status, "rejected" as any)));
+
+    // Group by user+month
+    const byUserMonth = new Map<string, any[]>();
+    for (const e of entries) {
+      const key = `${e.userId}:${e.mealMonth}`;
+      if (!byUserMonth.has(key)) byUserMonth.set(key, []);
+      byUserMonth.get(key)!.push(e);
+    }
+
+    // Get all monthly payments for these users
+    const allPayments = await db.select().from(dutyMealMonthlyPaymentsTable)
+      .where(inArray(dutyMealMonthlyPaymentsTable.userId, scopedUserIds));
+    const paymentMap = new Map<string, any>();
+    for (const p of allPayments) paymentMap.set(`${p.userId}:${p.mealMonth}`, p);
+
+    // Get users and companies data
+    const [usersData, allCompanies] = await Promise.all([
+      db.select().from(usersTable).where(inArray(usersTable.id, scopedUserIds)),
+      db.select().from(companiesTable),
+    ]);
+    const userMap = new Map((usersData as any[]).map(u => [u.id, u]));
+    const companyMap = new Map((allCompanies as any[]).map(c => [c.id, c]));
+
+    // Build outstanding rows: one row per user-month with overAmount > 0 and not lunas
+    const rows: any[] = [];
+    for (const [key, ues] of byUserMonth) {
+      const [uidStr, mealMonth] = key.split(":");
+      const uid = Number(uidStr);
+      const u = userMap.get(uid) as any;
+      if (!u) continue;
+      const totalPemakaian = ues.reduce((s: number, e: any) => s + Number(e.totalBillBeforeTax), 0);
+      const plafon = u.hiredCompanyId ? await getUserPlafon(u.hiredCompanyId, u.position) : 0;
+      const overAmount = Math.max(0, totalPemakaian - plafon);
+      if (overAmount === 0) continue;
+      const payment = paymentMap.get(key) as any;
+      if (payment?.status === "approved") continue; // lunas, skip
+      const company = u.hiredCompanyId ? companyMap.get(u.hiredCompanyId) as any : null;
+      rows.push({
+        userId: uid, username: u.username || "?", name: u.name || "?",
+        position: u.position || "", department: u.department || "",
+        companyId: u.hiredCompanyId || null, companyName: company?.name || "-",
+        mealMonth, totalPemakaian, plafon, overAmount,
+        paymentStatus: payment?.status || null,
+      });
+    }
+
+    // Sort by name then month
+    rows.sort((a, b) => a.name.localeCompare(b.name) || a.mealMonth.localeCompare(b.mealMonth));
+    res.json(rows);
   } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 

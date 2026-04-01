@@ -9,7 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Utensils, Plus, Upload, Eye, Check, X, Trash2, AlertTriangle, ChevronLeft, ChevronRight, FileImage, Ban, CreditCard, Clock, CheckCircle2, Info, BarChart3 } from "lucide-react";
+import { Utensils, Plus, Upload, Eye, Check, X, Trash2, AlertTriangle, ChevronLeft, ChevronRight, FileImage, Ban, CreditCard, Clock, CheckCircle2, Info, BarChart3, Download, AlertCircle } from "lucide-react";
+import { exportToExcel, formatCurrency } from "@/lib/exportExcel";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import { id as localeId } from "date-fns/locale";
 
@@ -64,11 +66,13 @@ export default function DutyMeal() {
   const defaultMonth  = _prevMonthNum === 0 ? 12 : _prevMonthNum;
   const defaultYear   = _prevMonthNum === 0 ? now.getFullYear() - 1 : now.getFullYear();
 
-  const [activeTab, setActiveTab] = useState<"mine" | "report">("mine");
+  const [activeTab, setActiveTab] = useState<"mine" | "report" | "laporan" | "outstanding">("mine");
   const [month, setMonth] = useState(defaultMonth);
   const [year, setYear]   = useState(defaultYear);
   const [rptMonth, setRptMonth] = useState(defaultMonth);
   const [rptYear, setRptYear]   = useState(defaultYear);
+  const [rptCompanyId, setRptCompanyId] = useState<string>("all");
+  const [outCompanyId, setOutCompanyId] = useState<string>("all");
 
   // Modals
   const [showAdd, setShowAdd]       = useState(false);
@@ -174,14 +178,38 @@ export default function DutyMeal() {
     enabled: !!me,
   });
 
+  // Fetch companies list (for filter dropdown)
+  const { data: companiesList = [] } = useQuery({
+    queryKey: ["/api/companies"],
+    queryFn: async () => {
+      const r = await fetch(`${apiBase}/api/companies`, { credentials: "include" });
+      const d = await r.json();
+      return Array.isArray(d) ? d : (d?.companies ?? []);
+    },
+    enabled: isHrd,
+  });
+
   // Fetch monthly report (admin/approver, Laporan tab)
   const { data: monthlyReport, isLoading: loadingReport } = useQuery({
-    queryKey: ["/api/duty-meals/monthly-report", rptMonthStr],
+    queryKey: ["/api/duty-meals/monthly-report", rptMonthStr, rptCompanyId],
     queryFn: async () => {
-      const r = await fetch(`${apiBase}/api/duty-meals/monthly-report?month=${rptMonthStr}`, { credentials: "include" });
+      const cParam = rptCompanyId !== "all" ? `&companyId=${rptCompanyId}` : "";
+      const r = await fetch(`${apiBase}/api/duty-meals/monthly-report?month=${rptMonthStr}${cParam}`, { credentials: "include" });
       return r.json();
     },
     enabled: activeTab === "laporan" && isHrd,
+  });
+
+  // Fetch outstanding report (admin/approver)
+  const { data: outstandingData = [], isLoading: loadingOutstanding } = useQuery({
+    queryKey: ["/api/duty-meals/outstanding", outCompanyId],
+    queryFn: async () => {
+      const cParam = outCompanyId !== "all" ? `?companyId=${outCompanyId}` : "";
+      const r = await fetch(`${apiBase}/api/duty-meals/outstanding${cParam}`, { credentials: "include" });
+      const d = await r.json();
+      return Array.isArray(d) ? d : [];
+    },
+    enabled: activeTab === "outstanding" && isHrd,
   });
 
   // Create duty meal
@@ -488,6 +516,12 @@ export default function DutyMeal() {
           <button onClick={() => setActiveTab("laporan" as any)}
             className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${(activeTab as string) === "laporan" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
             <span className="flex items-center gap-1.5"><BarChart3 className="h-3.5 w-3.5" />Laporan Bulanan</span>
+          </button>
+        )}
+        {isHrd && (
+          <button onClick={() => setActiveTab("outstanding" as any)}
+            className={`pb-2 px-3 text-sm font-medium border-b-2 transition-colors ${(activeTab as string) === "outstanding" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+            <span className="flex items-center gap-1.5"><AlertCircle className="h-3.5 w-3.5 text-red-500" />Outstanding</span>
           </button>
         )}
       </div>
@@ -869,11 +903,41 @@ export default function DutyMeal() {
       {/* ─── LAPORAN BULANAN TAB ─────────────────────────────────── */}
       {(activeTab as string) === "laporan" && isHrd && (
         <div className="space-y-4">
-          {/* Month navigator for report */}
-          <div className="flex items-center gap-2">
+          {/* Month navigator + company filter + export */}
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="icon" onClick={prevRptMonth}><ChevronLeft className="h-4 w-4" /></Button>
             <span className="font-semibold text-base min-w-[140px] text-center">{MONTHS[rptMonth - 1]} {rptYear}</span>
             <Button variant="outline" size="icon" onClick={nextRptMonth}><ChevronRight className="h-4 w-4" /></Button>
+            <Select value={rptCompanyId} onValueChange={setRptCompanyId}>
+              <SelectTrigger className="h-9 w-48 text-sm">
+                <SelectValue placeholder="Semua Perusahaan" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Perusahaan</SelectItem>
+                {(companiesList as any[]).map((c: any) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(monthlyReport as any)?.rows?.length > 0 && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => {
+                const rows = (monthlyReport as any).rows;
+                exportToExcel(rows, [
+                  { key: "username", label: "Username" },
+                  { key: "name", label: "Nama Lengkap" },
+                  { key: "position", label: "Jabatan" },
+                  { key: "department", label: "Departemen" },
+                  { key: "companyName", label: "Perusahaan" },
+                  { key: "entryCount", label: "Jml Transaksi" },
+                  { key: "totalPemakaian", label: "Total Pemakaian (Rp)", format: formatCurrency },
+                  { key: "plafon", label: "Plafon (Rp)", format: formatCurrency },
+                  { key: "overAmount", label: "Kelebihan (Rp)", format: formatCurrency },
+                  { key: "paymentStatus", label: "Status Pembayaran", format: (v: any) => v === "approved" ? "Lunas" : v === "pending" ? "Menunggu Verifikasi" : "Belum Lunas" },
+                ], `Laporan_DutyMeal_${rptMonthStr}${rptCompanyId !== "all" ? `_${rptCompanyId}` : ""}`);
+              }}>
+                <Download className="h-3.5 w-3.5" /> Export Excel
+              </Button>
+            )}
           </div>
 
           {loadingReport ? (
@@ -966,6 +1030,139 @@ export default function DutyMeal() {
                           {(monthlyReport as any).summary?.totalOverAmount > 0 ? `+${formatRupiah((monthlyReport as any).summary?.totalOverAmount || 0)}` : "-"}
                         </td>
                         <td className="py-2.5 px-2"></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ─── OUTSTANDING TAB ─────────────────────────────────── */}
+      {(activeTab as string) === "outstanding" && isHrd && (
+        <div className="space-y-4">
+          {/* Filter + export */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={outCompanyId} onValueChange={setOutCompanyId}>
+              <SelectTrigger className="h-9 w-48 text-sm">
+                <SelectValue placeholder="Semua Perusahaan" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Perusahaan</SelectItem>
+                {(companiesList as any[]).map((c: any) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(outstandingData as any[]).length > 0 && (
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => {
+                exportToExcel(outstandingData as any[], [
+                  { key: "username", label: "Username" },
+                  { key: "name", label: "Nama Lengkap" },
+                  { key: "position", label: "Jabatan" },
+                  { key: "department", label: "Departemen" },
+                  { key: "companyName", label: "Perusahaan" },
+                  { key: "mealMonth", label: "Bulan" },
+                  { key: "totalPemakaian", label: "Total Pemakaian (Rp)", format: formatCurrency },
+                  { key: "plafon", label: "Plafon (Rp)", format: formatCurrency },
+                  { key: "overAmount", label: "Kelebihan (Rp)", format: formatCurrency },
+                  { key: "paymentStatus", label: "Status", format: (v: any) => v === "pending" ? "Menunggu Verifikasi" : "Belum Lunas" },
+                ], `Outstanding_DutyMeal${outCompanyId !== "all" ? `_${outCompanyId}` : ""}`);
+              }}>
+                <Download className="h-3.5 w-3.5" /> Export Excel
+              </Button>
+            )}
+          </div>
+
+          {loadingOutstanding ? (
+            <div className="text-center py-12 text-muted-foreground">Memuat data outstanding...</div>
+          ) : (outstandingData as any[]).length === 0 ? (
+            <div className="text-center py-16 text-muted-foreground">
+              <CheckCircle2 className="h-10 w-10 mx-auto mb-3 text-green-400 opacity-60" />
+              <p className="font-medium">Tidak ada outstanding kelebihan plafon</p>
+              <p className="text-xs mt-1 opacity-70">Semua kelebihan sudah lunas atau belum ada yang melebihi plafon</p>
+            </div>
+          ) : (
+            <>
+              {/* Summary row */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <Card>
+                  <CardContent className="pt-3 pb-3 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Jumlah Karyawan</p>
+                    <p className="text-base font-bold text-red-600">
+                      {new Set((outstandingData as any[]).map((r: any) => r.userId)).size} orang
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-3 pb-3 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Total Kelebihan Outstanding</p>
+                    <p className="text-base font-bold text-red-600">
+                      {formatRupiah((outstandingData as any[]).reduce((s: number, r: any) => s + r.overAmount, 0))}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card className="col-span-2 md:col-span-1">
+                  <CardContent className="pt-3 pb-3 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Jumlah Bulan Outstanding</p>
+                    <p className="text-base font-bold text-orange-600">{(outstandingData as any[]).length} baris</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Table */}
+              <Card>
+                <CardContent className="pt-0 pb-0 overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="py-3 px-2 text-left font-semibold">Nama</th>
+                        <th className="py-3 px-2 text-left font-semibold hidden md:table-cell">Jabatan</th>
+                        <th className="py-3 px-2 text-left font-semibold hidden md:table-cell">Perusahaan</th>
+                        <th className="py-3 px-2 text-center font-semibold">Bulan</th>
+                        <th className="py-3 px-2 text-right font-semibold">Pemakaian</th>
+                        <th className="py-3 px-2 text-right font-semibold">Kelebihan</th>
+                        <th className="py-3 px-2 text-center font-semibold">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(outstandingData as any[]).map((r: any, idx: number) => (
+                        <tr key={`${r.userId}-${r.mealMonth}-${idx}`} className="border-b last:border-0 hover:bg-muted/30">
+                          <td className="py-2.5 px-2">
+                            <p className="font-medium">{r.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{r.username}</p>
+                          </td>
+                          <td className="py-2.5 px-2 hidden md:table-cell text-xs text-muted-foreground">{r.position}</td>
+                          <td className="py-2.5 px-2 hidden md:table-cell text-xs text-muted-foreground">{r.companyName}</td>
+                          <td className="py-2.5 px-2 text-center text-xs font-medium">
+                            {(() => { const [y, m] = r.mealMonth.split("-"); return `${MONTHS[Number(m)-1]} ${y}`; })()}
+                          </td>
+                          <td className="py-2.5 px-2 text-right">{formatRupiah(r.totalPemakaian)}</td>
+                          <td className="py-2.5 px-2 text-right font-semibold text-red-600">+{formatRupiah(r.overAmount)}</td>
+                          <td className="py-2.5 px-2 text-center">
+                            {r.paymentStatus === "pending" ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+                                <Clock className="h-3 w-3" /> Menunggu Verifikasi
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                <AlertTriangle className="h-3 w-3" /> Belum Lunas
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t bg-muted/50">
+                        <td colSpan={5} className="py-2.5 px-2 font-bold text-xs hidden md:table-cell">TOTAL</td>
+                        <td colSpan={5} className="py-2.5 px-2 font-bold text-xs md:hidden">TOTAL</td>
+                        <td className="py-2.5 px-2 text-right font-bold text-red-600">
+                          +{formatRupiah((outstandingData as any[]).reduce((s: number, r: any) => s + r.overAmount, 0))}
+                        </td>
+                        <td />
                       </tr>
                     </tfoot>
                   </table>
