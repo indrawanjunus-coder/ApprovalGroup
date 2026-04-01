@@ -120,7 +120,7 @@ export default function AdminItemsPage() {
       const res = await apiFetch("/master/items/import-csv", { method: "POST", body: JSON.stringify({ csvText }) });
       const d = await res.json();
       if (res.ok) {
-        toast({ title: `Import selesai: ${d.imported} item berhasil, ${d.skipped} dilewati` });
+        toast({ title: `Import selesai: ${d.imported} item baru, ${d.updated ?? 0} diperbarui, ${d.skipped} dilewati` });
         load();
       } else {
         toast({ title: d.error || "Gagal import CSV", variant: "destructive" });

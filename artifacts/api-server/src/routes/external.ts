@@ -869,22 +869,47 @@ router.post("/master/items/import-csv", requireExtUser("admin"), async (req, res
     const dataLines = lines[0]?.toLowerCase().includes("code") ? lines.slice(1) : lines;
 
     const uoms = await db.select().from(masterUomsTable);
-    const uomByCode = Object.fromEntries(uoms.map((u: any) => [u.code.toLowerCase(), u.id]));
+    // Lookup UoM by code (KG) OR by name (Kilogram) — case-insensitive
+    const uomLookup: Record<string, number> = {};
+    for (const u of uoms) {
+      uomLookup[u.code.toLowerCase()] = u.id;
+      uomLookup[u.name.toLowerCase()] = u.id;
+    }
 
-    let imported = 0; let skipped = 0;
+    const resolveUomId = (cols: string[]): number | null => {
+      // Try col[3], then col[4], then col[5] — first non-empty wins
+      for (let i = 3; i <= 5; i++) {
+        const v = (cols[i] || "").trim().replace(/^"|"$/g, "");
+        if (v) return uomLookup[v.toLowerCase()] ?? null;
+      }
+      return null;
+    };
+
+    let imported = 0; let skipped = 0; let updated = 0;
     for (const line of dataLines) {
       const cols = line.split(",").map((c: string) => c.trim().replace(/^"|"$/g, ""));
-      // Expected: code, name, description (opt), uom_code (opt)
-      const [code, name, description, uomCode] = cols;
+      // Format: code, name, description (opt), uom (opt — by code or name, may be in col 3 or 4+)
+      const [code, name, description] = cols;
       if (!code || !name) { skipped++; continue; }
-      const defaultUomId = uomCode ? (uomByCode[uomCode.toLowerCase()] || null) : null;
-      await db.insert(masterItemsTable).values({
-        code: code.toUpperCase(), name, description: description || null,
-        defaultUomId, isActive: true, createdAt: Date.now(),
-      }).onConflictDoNothing();
-      imported++;
+      const defaultUomId = resolveUomId(cols);
+      const existing = await db.select({ id: masterItemsTable.id })
+        .from(masterItemsTable).where(eq(masterItemsTable.code, code.toUpperCase())).limit(1);
+      if (existing.length > 0) {
+        // Update description and defaultUomId on re-import
+        await db.update(masterItemsTable).set({
+          name, description: description || null,
+          ...(defaultUomId !== null ? { defaultUomId } : {}),
+        }).where(eq(masterItemsTable.code, code.toUpperCase()));
+        updated++;
+      } else {
+        await db.insert(masterItemsTable).values({
+          code: code.toUpperCase(), name, description: description || null,
+          defaultUomId, isActive: true, createdAt: Date.now(),
+        });
+        imported++;
+      }
     }
-    res.json({ imported, skipped });
+    res.json({ imported, updated, skipped });
   } catch (err) { console.error(err); res.status(500).json({ error: "Gagal import CSV" }); }
 });
 
