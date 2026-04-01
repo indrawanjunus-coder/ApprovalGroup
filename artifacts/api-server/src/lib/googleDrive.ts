@@ -2,10 +2,11 @@ import { ReplitConnectors } from "@replit/connectors-sdk";
 
 // Google Drive upload helper using Replit Connectors SDK
 // Connection: google-drive (conn_google-drive_01KN40MHJ6570ERFM8BBWQRK4V)
+// Supports both My Drive folders and Shared Drives (supportsAllDrives=true)
 
 function extractFolderId(urlOrId: string): string {
   const match = urlOrId.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  return match ? match[1] : urlOrId;
+  return match ? match[1] : urlOrId.trim();
 }
 
 /** Find a subfolder by name inside parentId, or create it if missing. */
@@ -14,18 +15,24 @@ async function findOrCreateFolder(connectors: ReplitConnectors, name: string, pa
   const query = encodeURIComponent(
     `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
   );
-  const listResp = await connectors.proxy("google-drive", `/drive/v3/files?q=${query}&fields=files(id,name)`, {
-    method: "GET",
-  });
+  const listResp = await connectors.proxy(
+    "google-drive",
+    `/drive/v3/files?q=${query}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    { method: "GET" }
+  );
   const listData = await listResp.json() as { files: { id: string; name: string }[] };
   if (listData.files && listData.files.length > 0) {
     return listData.files[0].id;
   }
-  const createResp = await connectors.proxy("google-drive", "/drive/v3/files?fields=id", {
+  const createResp = await connectors.proxy("google-drive", "/drive/v3/files?fields=id&supportsAllDrives=true", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: safeName, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }),
   });
+  if (!createResp.ok) {
+    const errText = await createResp.text();
+    throw new Error(`Gagal membuat folder "${safeName}" (${createResp.status}): ${errText}`);
+  }
   const created = await createResp.json() as { id: string };
   return created.id;
 }
@@ -92,7 +99,7 @@ export async function uploadToGoogleDrive(opts: {
 
   const uploadResp = await connectors.proxy(
     "google-drive",
-    "/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,webContentLink",
+    "/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,webContentLink&supportsAllDrives=true",
     {
       method: "POST",
       headers: {
@@ -105,12 +112,12 @@ export async function uploadToGoogleDrive(opts: {
 
   if (!uploadResp.ok) {
     const errText = await uploadResp.text();
-    throw new Error(`Google Drive upload failed (${uploadResp.status}): ${errText}`);
+    throw new Error(`Google Drive upload gagal (${uploadResp.status}): ${errText}`);
   }
 
   const result = await uploadResp.json() as { id: string; webViewLink: string; webContentLink: string };
 
-  await connectors.proxy("google-drive", `/drive/v3/files/${result.id}/permissions`, {
+  await connectors.proxy("google-drive", `/drive/v3/files/${result.id}/permissions?supportsAllDrives=true`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ role: "reader", type: "anyone" }),
