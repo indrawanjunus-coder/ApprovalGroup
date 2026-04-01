@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Search, RefreshCw, Eye } from "lucide-react";
+import { Plus, Search, RefreshCw, Eye, Paperclip, ChevronLeft, ChevronRight } from "lucide-react";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   pending:   { label: "Menunggu", color: "bg-yellow-100 text-yellow-700" },
@@ -25,8 +25,12 @@ interface Invoice {
   totalInvoice: string;
   status: string;
   notes: string | null;
+  attachment: string | null;
+  attachmentFilename: string | null;
   createdAt: number;
 }
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -34,6 +38,8 @@ export default function InvoicesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<Invoice | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const load = async () => {
     setLoading(true);
@@ -48,6 +54,9 @@ export default function InvoicesPage() {
 
   useEffect(() => { load(); }, []);
 
+  // Reset page on filter change
+  useEffect(() => { setPage(1); }, [search, statusFilter, pageSize]);
+
   const filtered = invoices.filter(inv => {
     const matchSearch =
       inv.poNumber.toLowerCase().includes(search.toLowerCase()) ||
@@ -56,8 +65,13 @@ export default function InvoicesPage() {
     return matchSearch && matchStatus;
   });
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+
   const fmt = (n: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
   const fmtDate = (ms: number) => new Date(ms).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+
+  const isDriveLink = (url: string | null) => url && url.startsWith("http");
 
   return (
     <Layout>
@@ -122,15 +136,16 @@ export default function InvoicesPage() {
                   <TableHead>Total Invoice</TableHead>
                   <TableHead>Tanggal</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Lampiran</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">Memuat...</TableCell></TableRow>
-                ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">Belum ada invoice</TableCell></TableRow>
-                ) : filtered.map(inv => {
+                  <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Memuat...</TableCell></TableRow>
+                ) : paginated.length === 0 ? (
+                  <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Belum ada invoice</TableCell></TableRow>
+                ) : paginated.map(inv => {
                   const cfg = STATUS_LABELS[inv.status] || { label: inv.status, color: "bg-gray-100 text-gray-700" };
                   return (
                     <TableRow key={inv.id} className="cursor-pointer hover:bg-muted/30" onClick={() => setSelected(inv)}>
@@ -143,6 +158,17 @@ export default function InvoicesPage() {
                           {cfg.label}
                         </span>
                       </TableCell>
+                      <TableCell onClick={e => e.stopPropagation()}>
+                        {isDriveLink(inv.attachment) ? (
+                          <a href={inv.attachment!} target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 hover:underline">
+                            <Paperclip className="w-3.5 h-3.5" />
+                            {inv.attachmentFilename || "Lihat"}
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Eye className="w-4 h-4 text-muted-foreground" />
                       </TableCell>
@@ -151,6 +177,33 @@ export default function InvoicesPage() {
                 })}
               </TableBody>
             </Table>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between px-4 py-3 border-t text-sm text-muted-foreground">
+            <div className="flex items-center gap-2">
+              <span>Tampilkan</span>
+              <Select value={String(pageSize)} onValueChange={v => setPageSize(Number(v))}>
+                <SelectTrigger className="w-20 h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZE_OPTIONS.map(n => (
+                    <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span>per halaman · {filtered.length} total</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <span className="px-2">Hal {page} / {totalPages}</span>
+              <Button variant="ghost" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
           </div>
         </Card>
       </div>
@@ -192,6 +245,17 @@ export default function InvoicesPage() {
                   <p>{selected.picPhone}</p>
                 </div>
               </div>
+              {isDriveLink(selected.attachment) && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Lampiran Invoice</p>
+                  <a href={selected.attachment!} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-medium transition-colors w-full">
+                    <Paperclip className="w-4 h-4 flex-shrink-0" />
+                    <span className="truncate">{selected.attachmentFilename || "Buka Lampiran"}</span>
+                    <span className="ml-auto text-blue-500">↗</span>
+                  </a>
+                </div>
+              )}
               {selected.notes && (
                 <div>
                   <p className="text-xs text-muted-foreground mb-0.5">Catatan dari Admin</p>
