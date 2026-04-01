@@ -116,10 +116,15 @@ router.post("/auth/register", async (req, res) => {
   try {
     const {
       companyName, companyAddress, picName, picPhone,
-      officePhone, email, password, ktpAttachment, ktpFilename,
+      officePhone, email, password,
+      ktpAttachment, ktpFilename,
+      bankName, bankAccount, bankAccountName,
     } = req.body;
     if (!companyName || !companyAddress || !picName || !picPhone || !email || !password) {
       return res.status(400).json({ error: "Semua field wajib diisi" });
+    }
+    if (!ktpAttachment || !ktpFilename) {
+      return res.status(400).json({ error: "Foto KTP wajib diunggah" });
     }
 
     const existing = await db.select().from(vendorCompaniesTable).where(eq(vendorCompaniesTable.email, email.toLowerCase()));
@@ -128,21 +133,21 @@ router.post("/auth/register", async (req, res) => {
     const authCode = generateAuthCode();
     const authCodeExpiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24h
 
-    let finalKtpAttachment: string | null = ktpAttachment || null;
-    if (ktpAttachment && ktpFilename) {
-      try {
-        const folderSetting = await getSettingValue("ext_gdrive_folder");
-        const folderId = folderSetting || "0AAxCInqK40uzUk9PVA";
-        const gdrive = await uploadToGoogleDrive({
-          base64Data: ktpAttachment,
-          filename: `ktp_${companyName.replace(/\s+/g, "_")}_${Date.now()}_${ktpFilename}`,
-          mimeType: guessMimeType(ktpFilename),
-          folderIdOrUrl: folderId,
-        });
-        finalKtpAttachment = gdrive.webViewLink;
-      } catch (e) {
-        console.error("GDrive upload error (ktp):", e);
-      }
+    let finalKtpAttachment: string = ktpAttachment;
+    try {
+      const folderSetting = await getSettingValue("ext_gdrive_folder");
+      const folderIdOrUrl = folderSetting || "0AAxCInqK40uzUk9PVA";
+      const gdrive = await uploadToGoogleDrive({
+        base64Data: ktpAttachment,
+        filename: ktpFilename,
+        mimeType: guessMimeType(ktpFilename),
+        folderIdOrUrl,
+        companyName,
+        label: "KTP",
+      });
+      finalKtpAttachment = gdrive.webViewLink;
+    } catch (e) {
+      console.error("GDrive upload error (ktp):", e);
     }
 
     const [vendor] = await db.insert(vendorCompaniesTable).values({
@@ -152,6 +157,9 @@ router.post("/auth/register", async (req, res) => {
       passwordHash: hashPassword(password),
       ktpAttachment: finalKtpAttachment,
       ktpFilename: ktpFilename || null,
+      bankName: bankName || null,
+      bankAccount: bankAccount || null,
+      bankAccountName: bankAccountName || null,
       status: "pending",
       authCode,
       authCodeExpiresAt,
@@ -332,12 +340,14 @@ router.post("/invoices", requireVendor(), async (req, res) => {
     if (attachment && attachmentFilename) {
       try {
         const folderSetting = await getSettingValue("ext_gdrive_folder");
-        const folderId = folderSetting || "0AAxCInqK40uzUk9PVA";
+        const folderIdOrUrl = folderSetting || "0AAxCInqK40uzUk9PVA";
         const gdrive = await uploadToGoogleDrive({
           base64Data: attachment,
-          filename: `invoice_${vendor.companyName.replace(/\s+/g, "_")}_${Date.now()}_${attachmentFilename}`,
+          filename: attachmentFilename,
           mimeType: guessMimeType(attachmentFilename),
-          folderIdOrUrl: folderId,
+          folderIdOrUrl,
+          companyName: vendor.companyName,
+          label: poNumber,
         });
         finalAttachment = gdrive.webViewLink;
         finalAttachmentFilename = attachmentFilename;

@@ -8,20 +8,75 @@ function extractFolderId(urlOrId: string): string {
   return match ? match[1] : urlOrId;
 }
 
+/** Find a subfolder by name inside parentId, or create it if missing. */
+async function findOrCreateFolder(connectors: ReplitConnectors, name: string, parentId: string): Promise<string> {
+  const safeName = name.replace(/[/\\?%*:|"<>]/g, "_");
+  const query = encodeURIComponent(
+    `name='${safeName}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`
+  );
+  const listResp = await connectors.proxy("google-drive", `/drive/v3/files?q=${query}&fields=files(id,name)`, {
+    method: "GET",
+  });
+  const listData = await listResp.json() as { files: { id: string; name: string }[] };
+  if (listData.files && listData.files.length > 0) {
+    return listData.files[0].id;
+  }
+  const createResp = await connectors.proxy("google-drive", "/drive/v3/files?fields=id", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: safeName, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }),
+  });
+  const created = await createResp.json() as { id: string };
+  return created.id;
+}
+
+/**
+ * Build folder path: rootFolderId / YYYY / MM / CompanyName
+ * Returns the ID of the deepest folder.
+ */
+async function resolveFolderPath(connectors: ReplitConnectors, rootId: string, companyName: string, date: Date): Promise<string> {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const safe = companyName.replace(/\s+/g, "_").replace(/[/\\?%*:|"<>]/g, "_");
+
+  const yearId = await findOrCreateFolder(connectors, year, rootId);
+  const monthId = await findOrCreateFolder(connectors, month, yearId);
+  const companyId = await findOrCreateFolder(connectors, safe, monthId);
+  return companyId;
+}
+
+/**
+ * Format filename: YYYY-MM-DD-NamaPerusahaan-Label.ext
+ * label can be a PO number or "KTP"
+ */
+export function buildDriveFilename(companyName: string, label: string, originalFilename: string, date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const safe = companyName.replace(/\s+/g, "-").replace(/[/\\?%*:|"<>]/g, "");
+  const safeLabel = label.replace(/\s+/g, "-").replace(/[/\\?%*:|"<>]/g, "");
+  const ext = originalFilename.split(".").pop()?.toLowerCase() || "bin";
+  return `${y}-${m}-${d}-${safe}-${safeLabel}.${ext}`;
+}
+
 export async function uploadToGoogleDrive(opts: {
   base64Data: string;
   filename: string;
   mimeType?: string;
   folderIdOrUrl: string;
+  companyName: string;
+  label: string;
 }): Promise<{ fileId: string; webViewLink: string; webContentLink: string }> {
-  const { base64Data, filename, mimeType = "application/octet-stream", folderIdOrUrl } = opts;
-  const folderId = extractFolderId(folderIdOrUrl);
+  const { base64Data, filename, mimeType = "application/octet-stream", folderIdOrUrl, companyName, label } = opts;
+  const rootFolderId = extractFolderId(folderIdOrUrl);
   const connectors = new ReplitConnectors();
+  const now = new Date();
 
-  const buffer = Buffer.from(base64Data, "base64");
+  const targetFolderId = await resolveFolderPath(connectors, rootFolderId, companyName, now);
+  const driveFilename = buildDriveFilename(companyName, label, filename, now);
 
   const boundary = "----ProcureFlowBoundary" + Date.now();
-  const metadata = JSON.stringify({ name: filename, parents: [folderId] });
+  const metadata = JSON.stringify({ name: driveFilename, parents: [targetFolderId] });
 
   const bodyParts: Buffer[] = [];
   bodyParts.push(Buffer.from(
@@ -59,7 +114,7 @@ export async function uploadToGoogleDrive(opts: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ role: "reader", type: "anyone" }),
-  });
+  }).catch(() => {});
 
   return {
     fileId: result.id,

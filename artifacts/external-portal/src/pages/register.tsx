@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Building2, AlertCircle, CheckCircle2, ArrowLeft } from "lucide-react";
+import { Building2, AlertCircle, CheckCircle2, ArrowLeft, Upload, FileImage } from "lucide-react";
 
 export default function RegisterPage() {
   const [, setLocation] = useLocation();
@@ -16,9 +16,13 @@ export default function RegisterPage() {
     officePhone: "",
     companyAddress: "",
     picName: "",
+    bankName: "",
+    bankAccount: "",
+    bankAccountName: "",
     password: "",
     confirmPassword: "",
   });
+  const [ktpFile, setKtpFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -29,12 +33,31 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!ktpFile) { setError("Foto KTP PIC wajib diunggah"); return; }
     if (form.password !== form.confirmPassword) { setError("Password tidak sama"); return; }
     if (form.password.length < 8) { setError("Password minimal 8 karakter"); return; }
+
     setLoading(true);
     try {
-      const { confirmPassword, ...payload } = form;
-      const res = await apiPost("/auth/register", payload);
+      let ktpAttachment: string | undefined;
+      let ktpFilename: string | undefined;
+      const reader = new FileReader();
+      await new Promise<void>((resolve, reject) => {
+        reader.onload = () => {
+          ktpAttachment = (reader.result as string).split(",")[1];
+          ktpFilename = ktpFile.name;
+          resolve();
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(ktpFile);
+      });
+
+      const { confirmPassword, ...rest } = form;
+      const res = await apiPost("/auth/register", {
+        ...rest,
+        ktpAttachment,
+        ktpFilename,
+      });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Pendaftaran gagal"); return; }
       setSuccess(true);
@@ -79,7 +102,9 @@ export default function RegisterPage() {
 
         <Card className="shadow-lg border-0">
           <CardContent className="pt-6">
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-6">
+
+              {/* Informasi Perusahaan */}
               <div>
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Informasi Perusahaan</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -102,6 +127,7 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              {/* Person in Charge */}
               <div>
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Person in Charge (PIC)</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -113,9 +139,63 @@ export default function RegisterPage() {
                     <Label>Telepon PIC <span className="text-destructive">*</span></Label>
                     <Input placeholder="08XXXXXXXXXX" value={form.picPhone} onChange={set("picPhone")} required />
                   </div>
+                  <div className="md:col-span-2 space-y-1.5">
+                    <Label>
+                      Foto KTP PIC <span className="text-destructive">*</span>
+                    </Label>
+                    <div
+                      className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${ktpFile ? "border-green-400 bg-green-50" : "border-muted-foreground/30 hover:border-primary/50"}`}
+                      onClick={() => document.getElementById("ktp-input")?.click()}
+                    >
+                      {ktpFile ? (
+                        <div className="flex items-center justify-center gap-3 text-sm">
+                          <div className="w-8 h-8 bg-green-100 rounded flex items-center justify-center">
+                            <FileImage className="w-4 h-4 text-green-600" />
+                          </div>
+                          <div className="text-left">
+                            <p className="font-medium text-foreground">{ktpFile.name}</p>
+                            <p className="text-muted-foreground text-xs">{(ktpFile.size / 1024).toFixed(0)} KB — Klik untuk ganti</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-muted-foreground py-2">
+                          <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground/50" />
+                          <p className="font-medium">Klik untuk upload Foto KTP</p>
+                          <p className="text-xs mt-1">JPG, PNG, PDF (maks. 5MB)</p>
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      id="ktp-input"
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.pdf"
+                      className="hidden"
+                      onChange={e => setKtpFile(e.target.files?.[0] || null)}
+                    />
+                  </div>
                 </div>
               </div>
 
+              {/* Informasi Bank */}
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Informasi Rekening Bank</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Nama Bank</Label>
+                    <Input placeholder="BCA, BNI, Mandiri..." value={form.bankName} onChange={set("bankName")} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Nomor Rekening</Label>
+                    <Input placeholder="XXXXXXXXXX" value={form.bankAccount} onChange={set("bankAccount")} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Atas Nama (A/N)</Label>
+                    <Input placeholder="Nama pemilik rekening" value={form.bankAccountName} onChange={set("bankAccountName")} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Keamanan Akun */}
               <div>
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Keamanan Akun</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
