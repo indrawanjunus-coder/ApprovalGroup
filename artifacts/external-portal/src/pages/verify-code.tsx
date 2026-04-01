@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { ShieldCheck, AlertCircle, RefreshCw, Mail, KeyRound } from "lucide-react";
+import { ShieldCheck, AlertCircle, RefreshCw, Mail, KeyRound, LogOut } from "lucide-react";
 
 export default function VerifyCodePage() {
   const [, setLocation] = useLocation();
@@ -39,6 +39,12 @@ export default function VerifyCodePage() {
       if (data.code) setCode(data.code);
     } catch {}
     finally { setResending(false); }
+  };
+
+  const handleLogout = async () => {
+    try { await apiPost("/auth/logout", {}); } catch {}
+    await refetch();
+    setLocation("/login");
   };
 
   return (
@@ -118,9 +124,19 @@ export default function VerifyCodePage() {
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-muted-foreground mt-4">
-          Butuh bantuan? Hubungi admin sistem Anda.
-        </p>
+        <div className="text-center mt-4 space-y-1">
+          <p className="text-xs text-muted-foreground">
+            Butuh bantuan? Hubungi admin sistem Anda.
+          </p>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-destructive transition-colors"
+          >
+            <LogOut className="w-3 h-3" />
+            Keluar / Ganti Akun
+          </button>
+        </div>
       </div>
     </div>
   );
