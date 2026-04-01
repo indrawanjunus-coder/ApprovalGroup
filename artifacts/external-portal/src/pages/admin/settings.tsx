@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from "@/lib/api";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,8 +59,17 @@ export default function AdminSettingsPage() {
     const res = await apiGet("/settings");
     if (res.ok) {
       const d = await res.json();
-      if (d.smtp) setSmtp({ ...smtp, ...d.smtp });
-      if (d.file) setFileSettings({ ...fileSettings, ...d.file });
+      setSmtp(s => ({
+        ...s,
+        host: d.smtpHost || "",
+        port: d.smtpPort || "587",
+        user: d.smtpUser || "",
+        security: (d.smtpSecurity || "tls").toLowerCase(),
+      }));
+      setFileSettings({
+        maxSizeMb: d.maxFileSizeMb || "5",
+        allowedTypes: d.allowedFileTypes || "jpg,jpeg,png,pdf",
+      });
     }
   };
 
@@ -74,13 +83,22 @@ export default function AdminSettingsPage() {
   const saveSmtp = async () => {
     setSmtpLoading(true); setSmtpMsg("");
     try {
-      const res = await apiPut("/settings", { smtp });
+      const res = await apiPut("/settings", {
+        smtpHost: smtp.host,
+        smtpPort: smtp.port,
+        smtpUser: smtp.user,
+        smtpPass: smtp.pass || undefined,
+        smtpSecurity: smtp.security,
+      });
       setSmtpMsg(res.ok ? "Pengaturan SMTP disimpan" : "Gagal menyimpan");
     } finally { setSmtpLoading(false); }
   };
 
   const saveFile = async () => {
-    const res = await apiPut("/settings", { file: fileSettings });
+    const res = await apiPut("/settings", {
+      maxFileSizeMb: fileSettings.maxSizeMb,
+      allowedFileTypes: fileSettings.allowedTypes,
+    });
     setFileMsg(res.ok ? "Pengaturan file disimpan" : "Gagal menyimpan");
   };
 
@@ -102,10 +120,13 @@ export default function AdminSettingsPage() {
       const body: any = { username: userForm.username, name: userForm.name, email: userForm.email, role: userForm.role };
       if (userForm.password) body.password = userForm.password;
       const res = editUser
-        ? await apiPut(`/users/${editUser.id}`, body)
+        ? await apiPatch(`/users/${editUser.id}`, body)
         : await apiPost("/users", { ...body, password: userForm.password });
-      const d = await res.json();
-      if (!res.ok) { setUserError(d.error || "Gagal menyimpan"); return; }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setUserError((d as any).error || "Gagal menyimpan");
+        return;
+      }
       await loadUsers(); setUserDialog(false);
     } finally { setUserLoading(false); }
   };
@@ -117,7 +138,7 @@ export default function AdminSettingsPage() {
   };
 
   const toggleActive = async (u: ExtUser) => {
-    await apiPut(`/users/${u.id}`, { isActive: !u.isActive });
+    await apiPatch(`/users/${u.id}`, { isActive: !u.isActive });
     await loadUsers();
   };
 
