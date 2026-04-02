@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { notificationsTable } from "@workspace/db/schema";
 import { eq, and, desc, count } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
+import { handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -27,10 +28,7 @@ router.get("/", async (req, res) => {
       unreadCount: Number(unreadResult[0]?.count) || 0,
       total: notifications.length,
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/:id/read", async (req, res) => {
@@ -42,9 +40,7 @@ router.put("/:id/read", async (req, res) => {
       .returning();
     if (!notification) { res.status(404).json({ error: "Not Found" }); return; }
     res.json(notification);
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/read-all", async (req, res) => {
@@ -52,9 +48,7 @@ router.put("/read-all", async (req, res) => {
   try {
     await db.update(notificationsTable).set({ isRead: true }).where(and(eq(notificationsTable.userId, user.id), eq(notificationsTable.isRead, false)));
     res.json({ success: true, message: "All notifications marked as read" });
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

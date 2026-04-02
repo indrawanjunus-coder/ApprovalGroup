@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { dutyMealsTable, dutyMealPlafonTable, brandsTable, usersTable, dutyMealMonthlyPaymentsTable, dutyMealCompanyApproversTable, companiesTable } from "@workspace/db/schema";
 import { eq, and, sql, inArray, or, lt, ne } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
-import { createAuditLog } from "../lib/audit.js";
+import { createAuditLog, handleRouteError } from "../lib/audit.js";
 import { sendDutyMealOverAmountEmail } from "../lib/email.js";
 import { google } from "googleapis";
 import { Readable } from "stream";
@@ -289,7 +289,7 @@ router.get("/monthly-payments", async (req, res) => {
     const userMap = new Map(usersRows.map(u => [u.id, u]));
     const enriched = rows.map(r => ({ ...r, userName: (userMap.get(r.userId) as any)?.name || "Unknown" }));
     res.json(enriched);
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // POST /api/duty-meals/monthly-payment/:month/upload
@@ -382,7 +382,7 @@ router.post("/monthly-payment/:month/upload", async (req, res) => {
       gdriveUrl: gdriveOk ? gdrive!.fileUrl : null,
       gdriveWarning: gdrive?.error || null,
     });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // PUT /api/duty-meals/monthly-payment/:id/approve (Duty Meal Approver / Admin)
@@ -528,10 +528,7 @@ router.get("/", async (req, res) => {
     });
 
     res.json(enriched);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // POST /api/duty-meals
@@ -658,10 +655,7 @@ router.post("/", async (req, res) => {
       `Duty meal entry dibuat: ${mealDate}, Rp${Number(totalBillBeforeTax).toLocaleString("id-ID")}${gdriveWarning ? ` | GDrive warning: ${gdriveWarning}` : ""}`);
 
     res.json({ ...meal, receiptGdriveUrl, gdriveWarning });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // ─── COMPANY APPROVERS CRUD (must be before /:id) ──────────────────────────
@@ -681,7 +675,7 @@ router.get("/company-approvers", requireRole("admin"), async (_req, res) => {
     .leftJoin(companiesTable, eq(dutyMealCompanyApproversTable.companyId, companiesTable.id))
     .leftJoin(usersTable, eq(dutyMealCompanyApproversTable.userId, usersTable.id));
     res.json(rows);
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // POST /api/duty-meals/company-approvers
@@ -695,7 +689,7 @@ router.post("/company-approvers", requireRole("admin"), async (req, res) => {
     const [created] = await db.insert(dutyMealCompanyApproversTable)
       .values({ companyId: Number(companyId), userId: Number(userId) }).returning();
     res.status(201).json(created);
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // DELETE /api/duty-meals/company-approvers/:id
@@ -703,7 +697,7 @@ router.delete("/company-approvers/:id", requireRole("admin"), async (req, res) =
   try {
     await db.delete(dutyMealCompanyApproversTable).where(eq(dutyMealCompanyApproversTable.id, Number(req.params.id)));
     res.json({ success: true });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // ─── CARRY-OVER (unpaid overAmount from previous months) ────────────────────
@@ -741,7 +735,7 @@ router.get("/carry-over", async (req, res) => {
     unpaidMonths.sort((a, b) => a.month.localeCompare(b.month));
     const totalCarryOver = unpaidMonths.reduce((s, m) => s + m.overAmount, 0);
     res.json({ unpaidMonths, totalCarryOver, unpaidCount: unpaidMonths.length });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // ─── MONTHLY REPORT ──────────────────────────────────────────────────────────
@@ -830,7 +824,7 @@ router.get("/monthly-report", async (req, res) => {
     const totalOverAmount = rows.reduce((s, r) => s + r.overAmount, 0);
     const totalLunas      = rows.filter(r => r.isLunas).reduce((s, r) => s + r.overAmount, 0);
     res.json({ rows, summary: { totalPemakaian, totalOverAmount, totalLunas, totalBelumLunas: totalOverAmount - totalLunas } });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // GET /api/duty-meals/outstanding?companyId=  (admin / approver only)
@@ -919,7 +913,7 @@ router.get("/outstanding", async (req, res) => {
     // Sort by name then month
     rows.sort((a, b) => a.name.localeCompare(b.name) || a.mealMonth.localeCompare(b.mealMonth));
     res.json(rows);
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // GET /api/duty-meals/:id

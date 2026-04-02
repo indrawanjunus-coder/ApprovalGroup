@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { purchaseRequestsTable, prItemsTable, usersTable } from "@workspace/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
-import { createAuditLog } from "../lib/audit.js";
+import { createAuditLog, handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -41,10 +41,7 @@ router.get("/", async (req, res) => {
       });
     }
     res.json({ items, total: items.length });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Update payment status: payment_pending | payment_rejected | paid
@@ -92,10 +89,7 @@ router.put("/:id/status", async (req, res) => {
     };
     await createAuditLog(user.id, `payment_${status}`, "pr", id, `PR ${pr.prNumber} ${actionLabel[status]}`);
     res.json({ success: true, pr: updated });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Legacy process endpoint (kept for backward compatibility → maps to 'paid')
@@ -122,10 +116,7 @@ router.post("/:id/process", async (req, res) => {
       .where(eq(purchaseRequestsTable.id, id)).returning();
     await createAuditLog(user.id, "payment_paid", "pr", id, `Pembayaran selesai untuk PR ${pr.prNumber}`);
     res.json({ success: true, pr: updated });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

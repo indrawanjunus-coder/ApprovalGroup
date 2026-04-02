@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { purchaseRequestsTable, purchaseOrdersTable, prVendorAttachmentsTable, usersTable } from "@workspace/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
+import { handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -49,7 +50,7 @@ router.get("/", async (req, res) => {
     }
 
     res.json({ items, total: items.length });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

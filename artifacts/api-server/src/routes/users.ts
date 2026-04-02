@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { usersTable, userCompaniesTable, companiesTable, userLeaveBalancesTable, companyLeaveSettingsTable, settingsTable } from "@workspace/db/schema";
 import { eq, ilike, or, count, inArray, sql, and } from "drizzle-orm";
 import { hashPassword, requireAuth, requireRole } from "../lib/auth.js";
-import { createAuditLog } from "../lib/audit.js";
+import { createAuditLog, handleRouteError } from "../lib/audit.js";
 import { sendNewUserEmail } from "../lib/email.js";
 
 const router = Router();
@@ -69,7 +69,7 @@ router.get("/", async (req, res) => {
       companies: assMap.get(u.id) || [],
     }));
     res.json({ users: result, total: Number(totalResult[0]?.count) || 0, page, limit });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.get("/:id", async (req, res) => {
@@ -83,7 +83,7 @@ router.get("/:id", async (req, res) => {
       getHiredCompanyName(u.hiredCompanyId),
     ]);
     res.json({ ...u, superiorName: null, hiredCompanyName, companies: companies.map(c => ({ id: c.id, userId: c.userId, companyId: c.companyId, companyName: c.companyName || "", department: c.department })) });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/", requireRole("admin", "approver"), async (req, res) => {
@@ -94,13 +94,15 @@ router.post("/", requireRole("admin", "approver"), async (req, res) => {
   if (!username || !password || !name || !department || !position) {
     res.status(400).json({ error: "Missing required fields" }); return;
   }
+  const parsedSuperiorId = superiorId ? (parseInt(superiorId) || null) : null;
+  const parsedHiredCompanyId = hiredCompanyId ? (parseInt(hiredCompanyId) || null) : null;
   try {
     const existing = await db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.username, username));
     if (existing.length > 0) { res.status(400).json({ error: "Username already exists" }); return; }
     const [user] = await db.insert(usersTable).values({
       username, passwordHash: hashPassword(password), name, email: email || null,
-      department, position, role, superiorId: superiorId || null,
-      hiredCompanyId: hiredCompanyId || null, isActive: true,
+      department, position, role, superiorId: parsedSuperiorId,
+      hiredCompanyId: parsedHiredCompanyId, isActive: true,
       joinDate: joinDate || null,
     } as any).returning();
 
@@ -120,7 +122,7 @@ router.post("/", requireRole("admin", "approver"), async (req, res) => {
     const userComps = await getUserCompanies([user.id]);
     const hiredCompanyName = await getHiredCompanyName(u.hiredCompanyId);
     res.status(201).json({ ...u, superiorName: null, hiredCompanyName, companies: userComps.map(c => ({ id: c.id, userId: c.userId, companyId: c.companyId, companyName: c.companyName || "", department: c.department })) });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
@@ -129,11 +131,15 @@ router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
   const { name, email, department, position, superiorId, hiredCompanyId, isActive, password, companies, joinDate } = req.body;
   // Approver can only set role "user" and cannot change password
   const role = requester.role === "approver" ? "user" : (req.body.role || "user");
+  const parsedSuperiorId = superiorId ? (parseInt(superiorId) || null) : null;
+  const parsedHiredCompanyId = hiredCompanyId !== undefined
+    ? (hiredCompanyId ? (parseInt(hiredCompanyId) || null) : null)
+    : undefined;
   try {
     const updateData: any = {
       name, email: email || null, department, position, role,
-      superiorId: superiorId || null,
-      hiredCompanyId: hiredCompanyId !== undefined ? (hiredCompanyId || null) : undefined,
+      superiorId: parsedSuperiorId,
+      hiredCompanyId: parsedHiredCompanyId,
       joinDate: joinDate !== undefined ? (joinDate || null) : undefined,
       isActive: isActive !== undefined ? isActive : true, updatedAt: new Date(),
     };
@@ -159,7 +165,7 @@ router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
       getHiredCompanyName(u.hiredCompanyId),
     ]);
     res.json({ ...u, superiorName: null, hiredCompanyName, companies: userComps.map(c => ({ id: c.id, userId: c.userId, companyId: c.companyId, companyName: c.companyName || "", department: c.department })) });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.delete("/:id", requireRole("admin"), async (req, res) => {
@@ -170,7 +176,7 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
     await db.delete(usersTable).where(eq(usersTable.id, id));
     await createAuditLog(req.user!.id, "delete_user", "user", id);
     res.json({ success: true, message: "User deleted" });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.get("/:id/companies", async (req, res) => {
@@ -178,7 +184,7 @@ router.get("/:id/companies", async (req, res) => {
   try {
     const companies = await getUserCompanies([id]);
     res.json(companies.map(c => ({ id: c.id, userId: c.userId, companyId: c.companyId, companyName: c.companyName || "", department: c.department })));
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/:id/companies", requireRole("admin"), async (req, res) => {
@@ -197,7 +203,7 @@ router.put("/:id/companies", requireRole("admin"), async (req, res) => {
     }
     const companies = await getUserCompanies([id]);
     res.json(companies.map(c => ({ id: c.id, userId: c.userId, companyId: c.companyId, companyName: c.companyName || "", department: c.department })));
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Leave balance
@@ -229,7 +235,7 @@ router.get("/:id/leave-balance", async (req, res) => {
       availableDays: Math.max(0, available), lastAccumulatedMonth: balance.lastAccumulatedMonth,
       updatedAt: balance.updatedAt?.toISOString(),
     });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/:id/leave-balance", requireRole("admin"), async (req, res) => {
@@ -262,7 +268,7 @@ router.put("/:id/leave-balance", requireRole("admin"), async (req, res) => {
       availableDays: Math.max(0, available), lastAccumulatedMonth: result.lastAccumulatedMonth,
       updatedAt: result.updatedAt?.toISOString(),
     });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 async function getAccrual(companyId: number): Promise<number> {

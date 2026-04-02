@@ -6,6 +6,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, desc, count, sql, inArray, ne, isNotNull, or, SQL } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
+import { handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -266,10 +267,7 @@ router.get("/", async (req, res) => {
       leaveChartMonthly,
       isManager,
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

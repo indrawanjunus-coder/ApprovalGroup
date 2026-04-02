@@ -6,7 +6,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
-import { createAuditLog } from "../lib/audit.js";
+import { createAuditLog, handleRouteError } from "../lib/audit.js";
 import { createNotification } from "../lib/notifications.js";
 import { sendApprovalRequestEmail, sendVendorAttachmentRequestEmail, sendPRApprovedEmail, sendTransferRecipientEmail } from "../lib/email.js";
 
@@ -73,7 +73,7 @@ router.get("/", async (req, res) => {
       page,
       limit,
     });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 async function processApprovalAction(req: any, res: any, action: "approved" | "rejected") {
@@ -198,7 +198,7 @@ async function processApprovalAction(req: any, res: any, action: "approved" | "r
       await createAuditLog(user.id, "approve_pr", "approval", id, `Approved PR ${pr.prNumber} level ${approval.level}`);
     }
     res.json({ ...updated, approverName: user.name });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 }
 
 router.post("/:id/approve", (req, res) => processApprovalAction(req, res, "approved"));

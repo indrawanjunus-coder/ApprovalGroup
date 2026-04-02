@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { purchaseRequestsTable, purchaseOrdersTable, poItemsTable, usersTable } from "@workspace/db/schema";
 import { eq, ne, desc, count, sum, and, like, gte, lte, inArray, SQL, or, sql } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";
+import { handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -87,10 +88,7 @@ router.get("/pr", async (req, res) => {
     }));
 
     res.json({ items: result, total: Number(totalResult[0]?.count) || 0, page, limit });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // PO History - filtered by company (via linked PR)
@@ -169,10 +167,7 @@ router.get("/po", async (req, res) => {
     }));
 
     res.json({ items: result, total, page, limit });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Payment History - Finance dept only, filtered by company
@@ -230,10 +225,7 @@ router.get("/payment", async (req, res) => {
     }));
 
     res.json({ items: result, total: Number(totalResult[0]?.count) || 0, page, limit });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Leave History - filtered by company and department
@@ -301,10 +293,7 @@ router.get("/leave", async (req, res) => {
     });
 
     res.json({ items: result, total: Number(totalResult[0]?.count) || 0, page, limit });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Transfer History Summary (item-level breakdown)
@@ -346,10 +335,7 @@ router.get("/transfer/summary", async (req, res) => {
       .map(([name, data]) => ({ name, qty: data.qty, value: data.value }));
 
     res.json({ totalPRs: prIds.length, totalItems: itemRows.length, totalQty, totalValue, topItems });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Transfer History
@@ -438,10 +424,7 @@ router.get("/transfer", async (req, res) => {
     }));
 
     res.json({ items: result, total: Number(totalResult[0]?.count) || 0, page, limit });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

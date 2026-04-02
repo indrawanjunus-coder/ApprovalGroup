@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { usersTable, dutyMealCompanyApproversTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword, requireAuth } from "../lib/auth.js";
-import { createAuditLog } from "../lib/audit.js";
+import { createAuditLog, handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 
@@ -27,10 +27,7 @@ router.post("/login", async (req, res) => {
     await createAuditLog(user.id, "login", "user", user.id, `User ${user.username} logged in`);
     const { passwordHash: _, ...userWithoutPassword } = user;
     res.json({ user: { ...userWithoutPassword, superiorName: null }, message: "Login successful" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/logout", requireAuth, async (req, res) => {
@@ -67,10 +64,7 @@ router.put("/me/signature", requireAuth, async (req, res) => {
   try {
     await db.update(usersTable).set({ signature: signature || null, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
     res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/change-password", requireAuth, async (req, res) => {
@@ -90,10 +84,7 @@ router.post("/change-password", requireAuth, async (req, res) => {
     await db.update(usersTable).set({ passwordHash: hashPassword(newPassword), updatedAt: new Date() }).where(eq(usersTable.id, user.id));
     await createAuditLog(user.id, "change_password", "user", user.id, "Password changed");
     res.json({ success: true, message: "Password berhasil diubah" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

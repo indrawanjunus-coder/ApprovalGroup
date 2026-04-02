@@ -3,6 +3,7 @@ import cors from "cors";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import router from "./routes/index.js";
+import { errorAuditMiddleware } from "./lib/errorAudit.js";
 
 const PgStore = connectPg(session);
 
@@ -34,6 +35,7 @@ app.use(session({
   },
 }));
 
+app.use("/api", errorAuditMiddleware);
 app.use("/api", router);
 
 export default app;

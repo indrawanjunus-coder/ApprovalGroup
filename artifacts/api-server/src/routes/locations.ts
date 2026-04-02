@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { sql } from "drizzle-orm";
+import { handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -15,7 +16,7 @@ router.get("/", async (req, res) => {
     `);
     const rows = (result as any).rows || [];
     res.json({ locations: rows });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/", requireRole("admin", "approver"), async (req, res) => {
@@ -50,7 +51,7 @@ router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
     const rows = (result as any).rows || [];
     if (!rows.length) { res.status(404).json({ error: "Lokasi tidak ditemukan" }); return; }
     res.json(rows[0]);
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.delete("/:id", requireRole("admin"), async (req, res) => {
@@ -58,7 +59,7 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
   try {
     await db.execute(sql`DELETE FROM locations WHERE id=${id}`);
     res.json({ message: "Lokasi dihapus" });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

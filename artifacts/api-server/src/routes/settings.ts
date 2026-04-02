@@ -4,6 +4,7 @@ import { settingsTable, companiesTable, companyLeaveSettingsTable } from "@works
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import nodemailer from "nodemailer";
+import { handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 
@@ -61,9 +62,7 @@ router.get("/", async (req, res) => {
       getSettingValue("currency"),
     ]);
     res.json({ poEnabled: poEnabled === "true", companyName, currency });
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/", requireRole("admin"), async (req, res) => {
@@ -79,9 +78,7 @@ router.put("/", requireRole("admin"), async (req, res) => {
       getSettingValue("currency"),
     ]);
     res.json({ poEnabled: poEnabledVal === "true", companyName: companyNameVal, currency: currencyVal });
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // SMTP settings
@@ -97,9 +94,7 @@ router.get("/smtp", requireRole("admin"), async (req, res) => {
       smtpSecurity: rows[4] || "STARTTLS",
       smtpFrom: rows[5],
     });
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/smtp", requireRole("admin"), async (req, res) => {
@@ -122,9 +117,7 @@ router.put("/smtp", requireRole("admin"), async (req, res) => {
       smtpSecurity: rows[4] || "STARTTLS",
       smtpFrom: rows[5],
     });
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // SMTP test email
@@ -199,7 +192,7 @@ router.get("/company-leave", async (req, res) => {
       };
     });
     res.json(result);
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/company-leave/:companyId", requireRole("admin"), async (req, res) => {
@@ -236,7 +229,7 @@ router.put("/company-leave/:companyId", requireRole("admin"), async (req, res) =
       accrualDaysPerMonth: parseFloat(result.accrualDaysPerMonth),
       settingId: result.id,
     });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Duty Meal settings

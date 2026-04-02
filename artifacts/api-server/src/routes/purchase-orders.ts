@@ -4,7 +4,7 @@ import { db } from "@workspace/db";
 import { purchaseOrdersTable, poItemsTable, purchaseRequestsTable, usersTable, settingsTable, approvalsTable, companiesTable } from "@workspace/db/schema";
 import { eq, desc, count, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
-import { createAuditLog } from "../lib/audit.js";
+import { createAuditLog, handleRouteError } from "../lib/audit.js";
 import { createNotification } from "../lib/notifications.js";
 import { generatePONumber } from "../lib/prNumber.js";
 
@@ -67,10 +67,7 @@ router.get("/", async (req, res) => {
     });
 
     res.json({ purchaseOrders: result, total: Number(totalResult[0]?.count) || 0, page, limit });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/", requireRole("admin", "purchasing"), async (req, res) => {
@@ -110,10 +107,7 @@ router.post("/", requireRole("admin", "purchasing"), async (req, res) => {
     await createAuditLog(user.id, "create_po", "po", po.id, `Created PO ${poNumber}`);
     await createNotification(pr.requesterId, "PO Dibuat", `PO ${poNumber} telah dibuat dari PR ${pr.prNumber}`, "info", prId, po.id);
     res.status(201).json(formatPO({ ...po, prNumber: pr.prNumber, createdByName: user.name }, poItems));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.get("/:id", async (req, res) => {
@@ -156,9 +150,7 @@ router.get("/:id", async (req, res) => {
       companyName,
     };
     res.json({ ...formatPO({ ...po, prNumber: enrichedPR.prNumber, createdByName: creator[0]?.name || "Unknown" }, items), pr: enrichedPR, approvals });
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/:id", requireRole("admin", "purchasing"), async (req, res) => {
@@ -187,9 +179,7 @@ router.put("/:id", requireRole("admin", "purchasing"), async (req, res) => {
     const [pr] = await db.select({ prNumber: purchaseRequestsTable.prNumber }).from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, po.prId));
     const [creator] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, po.createdById));
     res.json(formatPO({ ...updated, prNumber: pr?.prNumber || "Unknown", createdByName: creator?.name || "Unknown" }, newItems));
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/:id/issue", requireRole("admin", "purchasing"), async (req, res) => {
@@ -213,9 +203,7 @@ router.post("/:id/issue", requireRole("admin", "purchasing"), async (req, res) =
     const items = await db.select().from(poItemsTable).where(eq(poItemsTable.poId, id));
     const [creator] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, po.createdById));
     res.json(formatPO({ ...updated, prNumber: pr?.prNumber || "Unknown", createdByName: creator?.name || "Unknown" }, items));
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/:id/receive", async (req, res) => {
@@ -236,9 +224,7 @@ router.post("/:id/receive", async (req, res) => {
     const items = await db.select().from(poItemsTable).where(eq(poItemsTable.poId, id));
     const [creator] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, po.createdById));
     res.json(formatPO({ ...updated, prNumber: pr?.prNumber || "Unknown", createdByName: creator?.name || "Unknown" }, items));
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
@@ -251,10 +237,7 @@ router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
     await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, id));
     await createAuditLog(user.id, "delete_po", "po", id, `Deleted PO ${po.poNumber}`);
     res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

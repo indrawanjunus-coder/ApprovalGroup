@@ -7,7 +7,7 @@ import {
 } from "@workspace/db/schema";
 import { eq, desc, ilike, and, inArray, count, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
-import { createAuditLog } from "../lib/audit.js";
+import { createAuditLog, handleRouteError } from "../lib/audit.js";
 import { createNotification } from "../lib/notifications.js";
 import { generatePRNumber } from "../lib/prNumber.js";
 import { sendApprovalRequestEmail, sendVendorAttachmentRequestEmail, sendReceivingReadyEmail } from "../lib/email.js";
@@ -173,10 +173,7 @@ router.get("/", async (req, res) => {
     });
 
     res.json({ purchaseRequests: result, total: Number(totalResult[0]?.count) || 0, page, limit });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/", async (req, res) => {
@@ -273,7 +270,7 @@ router.post("/", async (req, res) => {
     }
     await createAuditLog(user.id, "create_pr", "pr", pr.id, `Created PR ${prNumber}`);
     res.status(201).json(await buildFullPR({ ...pr, requesterName: user.name }, prItems, []));
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.get("/:id", async (req, res) => {
@@ -302,7 +299,7 @@ router.get("/:id", async (req, res) => {
     }));
     const approvalsWithNames = approvalsData.map(a => ({ ...a, approverName: userMap.get(a.approverId) || "Unknown", approverSignature: signatureMap.get(a.approverId) || null }));
     res.json(await buildFullPR({ ...pr, requesterName: requester[0]?.name || "Unknown" }, items, approvalsWithNames, enrichedVendors));
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/:id", async (req, res) => {
@@ -341,7 +338,7 @@ router.put("/:id", async (req, res) => {
     const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
     await createAuditLog(user.id, "update_pr", "pr", id);
     res.json(await buildFullPR({ ...updated, requesterName: requester?.name || "Unknown" }, newItems, [], []));
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/:id/submit", async (req, res) => {
@@ -448,7 +445,7 @@ router.post("/:id/submit", async (req, res) => {
       approvals.map(a => ({ ...a, approverName: approverMap.get(a.approverId) || "Unknown" })),
       []
     ));
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Cancel a draft PR (creator, approver assigned to PR, or admin)
@@ -482,7 +479,7 @@ router.post("/:id/cancel", async (req, res) => {
     ]);
     const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
     res.json(await buildFullPR({ ...updated, requesterName: requester?.name || user.name }, items, approvals, []));
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Vendor attachments
@@ -500,7 +497,7 @@ router.get("/:id/vendor-attachments", async (req, res) => {
       quotedPrice: a.quotedPrice ? parseFloat(a.quotedPrice) : null,
       uploaderName: uploaderMap.get(a.uploadedBy) || "Unknown",
     })));
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/:id/vendor-attachments", async (req, res) => {
@@ -518,7 +515,7 @@ router.post("/:id/vendor-attachments", async (req, res) => {
       prId: id, vendorName, fileUrl, quotedPrice: quotedPrice?.toString() || null, notes, uploadedBy: user.id,
     }).returning();
     res.status(201).json({ ...att, quotedPrice: att.quotedPrice ? parseFloat(att.quotedPrice) : null, uploaderName: user.name });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.delete("/:id/vendor-attachments/:attachmentId", async (req, res) => {
@@ -531,7 +528,7 @@ router.delete("/:id/vendor-attachments/:attachmentId", async (req, res) => {
     if (pr.requesterId !== user.id && user.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
     await db.delete(prVendorAttachmentsTable).where(and(eq(prVendorAttachmentsTable.id, attId), eq(prVendorAttachmentsTable.prId, prId)));
     res.json({ success: true, message: "Attachment deleted" });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Select vendor (approver if PO off, purchasing if PO on)
@@ -590,7 +587,7 @@ router.post("/:id/select-vendor", async (req, res) => {
       approvals.map(a => ({ ...a, approverName: userMap.get(a.approverId) || "Unknown" })),
       vendorAttachments.map(v => ({ ...v, quotedPrice: v.quotedPrice ? parseFloat(v.quotedPrice) : null, uploaderName: userMap.get(v.uploadedBy) || "Unknown" }))
     ));
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Receive (works for both PO-on and PO-off flows)
@@ -614,7 +611,7 @@ router.post("/:id/receive", async (req, res) => {
     const vas = await db.select().from(prVendorAttachmentsTable).where(eq(prVendorAttachmentsTable.prId, id));
     const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
     res.json(await buildFullPR({ ...updated, requesterName: requester?.name || "Unknown" }, items, [], vas));
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Partial receiving: submit received quantities per item
@@ -676,7 +673,7 @@ router.post("/:id/receive-items", async (req, res) => {
     const [requester] = await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId));
     const vas = await db.select().from(prVendorAttachmentsTable).where(eq(prVendorAttachmentsTable.prId, id));
     res.json(await buildFullPR({ ...updated, requesterName: requester?.name || "Unknown" }, prItems, [], vas));
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Close receiving manually (even if not all qty received)
@@ -713,7 +710,7 @@ router.post("/:id/close-receiving", async (req, res) => {
       db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, pr.requesterId)),
     ]);
     res.json(await buildFullPR({ ...updated, requesterName: requester[0]?.name || "Unknown" }, items, [], vas));
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 // Receiving list
@@ -833,7 +830,7 @@ router.get("/receiving-list", async (req, res) => {
 
     const items = [...poItems, ...prItems, ...transferItems];
     res.json({ items, total: items.length });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
@@ -856,10 +853,7 @@ router.delete("/:id", requireAuth, requireRole("admin"), async (req, res) => {
     await db.delete(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
     await createAuditLog(user.id, "delete_pr", "pr", id, `Deleted PR ${pr.prNumber}`);
     res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { auditLogsTable, usersTable } from "@workspace/db/schema";
 import { eq, desc, count, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
+import { handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 router.use(requireAuth, requireRole("admin"));
@@ -41,10 +42,7 @@ router.get("/", async (req, res) => {
       page,
       limit,
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;

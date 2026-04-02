@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { approvalRulesTable, approvalRuleLevelsTable, usersTable, companiesTable } from "@workspace/db/schema";
 import { eq, inArray, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
-import { createAuditLog } from "../lib/audit.js";
+import { createAuditLog, handleRouteError } from "../lib/audit.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -47,9 +47,7 @@ router.get("/", async (req, res) => {
     if (type) query = query.where(eq(approvalRulesTable.type, type)) as any;
     const rules = await query.orderBy(approvalRulesTable.name);
     res.json(await enrichRules(rules));
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.post("/", requireRole("admin"), async (req, res) => {
@@ -78,10 +76,7 @@ router.post("/", requireRole("admin"), async (req, res) => {
     await createAuditLog(req.user!.id, "create_approval_rule", "approval", rule.id);
     const enriched = await enrichRules([rule]);
     res.status(201).json(enriched[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/:id", requireRole("admin"), async (req, res) => {
@@ -107,9 +102,7 @@ router.put("/:id", requireRole("admin"), async (req, res) => {
     }
     const enriched = await enrichRules([rule]);
     res.json(enriched[0]);
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 router.delete("/:id", requireRole("admin"), async (req, res) => {
@@ -118,9 +111,7 @@ router.delete("/:id", requireRole("admin"), async (req, res) => {
     await db.delete(approvalRuleLevelsTable).where(eq(approvalRuleLevelsTable.ruleId, id));
     await db.delete(approvalRulesTable).where(eq(approvalRulesTable.id, id));
     res.json({ success: true, message: "Rule deleted" });
-  } catch (err) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { handleRouteError(res, err); }
 });
 
 export default router;
