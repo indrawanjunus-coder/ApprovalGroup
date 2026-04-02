@@ -79,3 +79,17 @@ export const vendorInvoiceItemsTable = pgTable("vendor_invoice_items", {
   pricePerUom: numeric("price_per_uom", { precision: 18, scale: 2 }).notNull(),
   subtotal: numeric("subtotal", { precision: 18, scale: 2 }).notNull(),
 });
+
+export const vendorBankChangeRequestsTable = pgTable("vendor_bank_change_requests", {
+  id: serial("id").primaryKey(),
+  vendorCompanyId: integer("vendor_company_id").notNull(),
+  vendorCompanyName: text("vendor_company_name").notNull(),
+  bankName: text("bank_name").notNull(),
+  bankAccount: text("bank_account").notNull(),
+  bankAccountName: text("bank_account_name").notNull(),
+  status: text("status").notNull().default("pending"),
+  notes: text("notes"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: bigint("reviewed_at", { mode: "number" }),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});

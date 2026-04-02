@@ -4,7 +4,7 @@ import { useGetMe, useLogout, useGetNotifications, useGetReceivingList, useGetSe
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, FileText, CheckSquare, ShoppingCart,
-  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound, Wallet, CalendarDays, History, UserCircle, Utensils
+  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound, Wallet, CalendarDays, History, UserCircle, Utensils, CreditCard
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
       return res.ok ? res.json() : { items: [], total: 0 };
     },
     enabled: !!user,
+    refetchInterval: 60000,
+  });
+
+  const { data: bankChangeCount } = useQuery<{ count: number }>({
+    queryKey: ["/api/external/bank-change-requests/count"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/external/bank-change-requests/count`, { credentials: "include" });
+      return res.ok ? res.json() : { count: 0 };
+    },
+    enabled: !!user && user.role === "admin",
     refetchInterval: 60000,
   });
 
@@ -92,6 +102,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   const receivingCount = receivingData?.total || 0;
   const pembayaranCount = pembayaranData?.total || 0;
+  const bankReqCount = bankChangeCount?.count || 0;
 
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "user", "approver", "purchasing"] },
@@ -103,6 +114,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { name: "Riwayat", href: "/history", icon: History, roles: ["admin", "user", "approver", "purchasing"] },
     { name: "Duty Meal", href: "/duty-meal", icon: Utensils, roles: ["admin", "user", "approver", "purchasing"] },
     { name: "Manajemen Cuti", href: "/leave-management", icon: CalendarDays, roles: ["admin"] },
+    { name: "Perm. Rekening Vendor", href: "/vendor-bank-requests", icon: CreditCard, roles: ["admin"], badge: bankReqCount > 0 ? bankReqCount : null },
     { name: "User Management", href: "/users", icon: Users, roles: ["admin", "approver"] },
     { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"] },
     { name: "Settings", href: "/settings", icon: Settings, roles: ["admin"] },

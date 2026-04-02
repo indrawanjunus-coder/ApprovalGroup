@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable, masterItemsTable, masterUomsTable, vendorInvoiceItemsTable, auditLogsTable } from "@workspace/db/schema";
+import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable, masterItemsTable, masterUomsTable, vendorInvoiceItemsTable, auditLogsTable, vendorBankChangeRequestsTable } from "@workspace/db/schema";
 import { eq, and, desc, gte, lte, ne, ilike, or, sql } from "drizzle-orm";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
@@ -1058,6 +1058,265 @@ router.get("/invoice-items/:invoiceId", requireExternal(), async (req, res) => {
       .where(eq(vendorInvoiceItemsTable.invoiceId, invoiceId));
     res.json(items);
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+});
+
+// PUT /api/external/invoices/:id — edit invoice items (only if status = pending)
+router.put("/invoices/:id", requireVendor(), async (req, res) => {
+  try {
+    const sess = req.session as any;
+    const invoiceId = Number(req.params.id);
+    const [inv] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, invoiceId));
+    if (!inv) return res.status(404).json({ error: "Invoice tidak ditemukan" });
+    if (inv.vendorCompanyId !== sess.vendorId) return res.status(403).json({ error: "Forbidden" });
+    if (inv.status !== "pending") return res.status(400).json({ error: "Invoice hanya bisa diedit saat status Menunggu" });
+
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Minimal satu item harus diisi" });
+
+    let totalCalc = 0;
+    for (const item of items) {
+      if (!item.itemId || !item.uomId || !item.qty || item.pricePerUom === undefined) {
+        return res.status(400).json({ error: "Data item tidak lengkap (itemId, uomId, qty, pricePerUom wajib)" });
+      }
+      const qty = Number(item.qty);
+      const price = Number(item.pricePerUom);
+      if (qty <= 0 || price < 0) return res.status(400).json({ error: "Qty dan harga harus bernilai positif" });
+      totalCalc += qty * price;
+    }
+    const totalInvoice = String(Math.round(totalCalc));
+
+    await db.delete(vendorInvoiceItemsTable).where(eq(vendorInvoiceItemsTable.invoiceId, invoiceId));
+    for (const item of items) {
+      const qty = Number(item.qty);
+      const price = Number(item.pricePerUom);
+      await db.insert(vendorInvoiceItemsTable).values({
+        invoiceId,
+        itemId: Number(item.itemId),
+        itemCode: item.itemCode || "",
+        itemName: item.itemName || "",
+        uomId: Number(item.uomId),
+        uomName: item.uomName || "",
+        qty: String(qty),
+        pricePerUom: String(price),
+        subtotal: String(qty * price),
+      });
+    }
+
+    const [updated] = await db.update(vendorInvoicesTable)
+      .set({ totalInvoice, updatedAt: Date.now() })
+      .where(eq(vendorInvoicesTable.id, invoiceId))
+      .returning();
+
+    await logAudit(sess.vendorId, "edit_invoice", "ext_invoice", invoiceId,
+      `Total: ${totalInvoice}, Items: ${items.length}`);
+    res.json({ success: true, invoice: updated });
+  } catch (err) {
+    console.error("[edit-invoice]", err);
+    res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
+  }
+});
+
+// DELETE /api/external/invoices/:id — delete invoice (only if status = pending)
+router.delete("/invoices/:id", requireVendor(), async (req, res) => {
+  try {
+    const sess = req.session as any;
+    const invoiceId = Number(req.params.id);
+    const [inv] = await db.select().from(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, invoiceId));
+    if (!inv) return res.status(404).json({ error: "Invoice tidak ditemukan" });
+    if (inv.vendorCompanyId !== sess.vendorId) return res.status(403).json({ error: "Forbidden" });
+    if (inv.status !== "pending") return res.status(400).json({ error: "Invoice hanya bisa dihapus saat status Menunggu" });
+
+    await db.delete(vendorInvoiceItemsTable).where(eq(vendorInvoiceItemsTable.invoiceId, invoiceId));
+    await db.delete(vendorInvoicesTable).where(eq(vendorInvoicesTable.id, invoiceId));
+
+    await logAudit(sess.vendorId, "delete_invoice", "ext_invoice", invoiceId, `PO: ${inv.poNumber}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("[delete-invoice]", err);
+    res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
+  }
+});
+
+// GET /api/external/profile — get current vendor profile including bank info
+router.get("/profile", requireVendor(), async (req, res) => {
+  try {
+    const sess = req.session as any;
+    const [vendor] = await db.select({
+      id: vendorCompaniesTable.id,
+      companyName: vendorCompaniesTable.companyName,
+      email: vendorCompaniesTable.email,
+      picName: vendorCompaniesTable.picName,
+      picPhone: vendorCompaniesTable.picPhone,
+      officePhone: vendorCompaniesTable.officePhone,
+      companyAddress: vendorCompaniesTable.companyAddress,
+      bankName: vendorCompaniesTable.bankName,
+      bankAccount: vendorCompaniesTable.bankAccount,
+      bankAccountName: vendorCompaniesTable.bankAccountName,
+    }).from(vendorCompaniesTable).where(eq(vendorCompaniesTable.id, sess.vendorId));
+    if (!vendor) return res.status(404).json({ error: "Vendor tidak ditemukan" });
+
+    const [pendingReq] = await db.select().from(vendorBankChangeRequestsTable)
+      .where(and(
+        eq(vendorBankChangeRequestsTable.vendorCompanyId, sess.vendorId),
+        eq(vendorBankChangeRequestsTable.status, "pending")
+      ))
+      .orderBy(desc(vendorBankChangeRequestsTable.createdAt))
+      .limit(1);
+
+    res.json({ ...vendor, pendingBankChangeRequest: pendingReq || null });
+  } catch (err) {
+    console.error("[get-profile]", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// POST /api/external/profile/bank-change-request — vendor submits bank change request
+router.post("/profile/bank-change-request", requireVendor(), async (req, res) => {
+  try {
+    const sess = req.session as any;
+    if ((sess.vendorStatus || "") !== "active") return res.status(403).json({ error: "Akun vendor belum aktif" });
+
+    const [vendor] = await db.select().from(vendorCompaniesTable).where(eq(vendorCompaniesTable.id, sess.vendorId));
+    if (!vendor) return res.status(404).json({ error: "Vendor tidak ditemukan" });
+
+    const { bankName, bankAccount, bankAccountName } = req.body;
+    if (!bankName?.trim() || !bankAccount?.trim() || !bankAccountName?.trim()) {
+      return res.status(400).json({ error: "Semua field rekening wajib diisi" });
+    }
+
+    const existing = await db.select().from(vendorBankChangeRequestsTable)
+      .where(and(
+        eq(vendorBankChangeRequestsTable.vendorCompanyId, sess.vendorId),
+        eq(vendorBankChangeRequestsTable.status, "pending")
+      ));
+    if (existing.length > 0) {
+      return res.status(400).json({ error: "Masih ada permintaan perubahan rekening yang belum disetujui" });
+    }
+
+    const [newReq] = await db.insert(vendorBankChangeRequestsTable).values({
+      vendorCompanyId: sess.vendorId,
+      vendorCompanyName: vendor.companyName,
+      bankName: bankName.trim(),
+      bankAccount: bankAccount.trim(),
+      bankAccountName: bankAccountName.trim(),
+      status: "pending",
+      createdAt: Date.now(),
+    }).returning();
+
+    try {
+      const users = await db.select().from(externalUsersTable).where(eq(externalUsersTable.isActive, true));
+      for (const u of users) {
+        if (u.email) {
+          await sendEmail(u.email, `Permintaan Ubah Rekening: ${vendor.companyName} - ProcureFlow`,
+            `<div style="font-family:Arial,sans-serif;max-width:480px">
+              <h3 style="color:#1e40af">Permintaan Ubah Nomor Rekening</h3>
+              <p>Vendor <b>${vendor.companyName}</b> mengajukan perubahan data rekening bank.</p>
+              <table style="border-collapse:collapse;width:100%">
+                <tr><td style="padding:4px 8px;color:#6b7280">Bank</td><td style="padding:4px 8px"><b>${bankName}</b></td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">No. Rekening</td><td style="padding:4px 8px"><b>${bankAccount}</b></td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">Atas Nama</td><td style="padding:4px 8px"><b>${bankAccountName}</b></td></tr>
+              </table>
+              <p>Silakan login ke sistem untuk menyetujui atau menolak permintaan ini.</p>
+            </div>`
+          );
+        }
+      }
+    } catch (e) { console.error("Notify bank change error:", e); }
+
+    await logAudit(sess.vendorId, "bank_change_request", "ext_bank_request", newReq.id,
+      `Bank: ${bankName}, No: ${bankAccount}, A/N: ${bankAccountName}`);
+    res.json({ success: true, request: newReq });
+  } catch (err) {
+    console.error("[bank-change-request]", err);
+    res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
+  }
+});
+
+// GET /api/external/bank-change-requests/count — count pending (any logged-in internal user)
+router.get("/bank-change-requests/count", requireExternal(), async (req, res) => {
+  try {
+    const sess = req.session as any;
+    if (sess.vendorId) return res.json({ count: 0 });
+    const [result] = await db.select({ count: sql`count(*)::int` })
+      .from(vendorBankChangeRequestsTable)
+      .where(eq(vendorBankChangeRequestsTable.status, "pending"));
+    res.json({ count: result?.count || 0 });
+  } catch { res.json({ count: 0 }); }
+});
+
+// GET /api/external/bank-change-requests — list (internal user)
+router.get("/bank-change-requests", requireExtUser(), async (req, res) => {
+  try {
+    const { status } = req.query;
+    const conditions: any[] = [];
+    if (status) conditions.push(eq(vendorBankChangeRequestsTable.status, status as string));
+    const requests = await db.select().from(vendorBankChangeRequestsTable)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(vendorBankChangeRequestsTable.createdAt));
+    res.json(requests);
+  } catch (err) {
+    console.error("[bank-change-requests]", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// PATCH /api/external/bank-change-requests/:id/status — approve or reject
+router.patch("/bank-change-requests/:id/status", requireExtUser(), async (req, res) => {
+  try {
+    const sess = req.session as any;
+    const id = Number(req.params.id);
+    const { status, notes } = req.body;
+    if (!["approved", "rejected"].includes(status)) return res.status(400).json({ error: "Status tidak valid" });
+
+    const [changeReq] = await db.select().from(vendorBankChangeRequestsTable)
+      .where(eq(vendorBankChangeRequestsTable.id, id));
+    if (!changeReq) return res.status(404).json({ error: "Permintaan tidak ditemukan" });
+    if (changeReq.status !== "pending") return res.status(400).json({ error: "Permintaan sudah diproses" });
+
+    const [updated] = await db.update(vendorBankChangeRequestsTable).set({
+      status,
+      notes: notes || null,
+      reviewedBy: sess.extUsername,
+      reviewedAt: Date.now(),
+    }).where(eq(vendorBankChangeRequestsTable.id, id)).returning();
+
+    if (status === "approved") {
+      await db.update(vendorCompaniesTable).set({
+        bankName: changeReq.bankName,
+        bankAccount: changeReq.bankAccount,
+        bankAccountName: changeReq.bankAccountName,
+      }).where(eq(vendorCompaniesTable.id, changeReq.vendorCompanyId));
+    }
+
+    try {
+      const [vendor] = await db.select().from(vendorCompaniesTable)
+        .where(eq(vendorCompaniesTable.id, changeReq.vendorCompanyId));
+      if (vendor?.email) {
+        const statusLabel = status === "approved" ? "Disetujui" : "Ditolak";
+        await sendEmail(vendor.email, `Permintaan Ubah Rekening ${statusLabel} - ProcureFlow`,
+          `<div style="font-family:Arial,sans-serif;max-width:480px">
+            <h3 style="color:${status === "approved" ? "#15803d" : "#dc2626"}">Permintaan Ubah Rekening ${statusLabel}</h3>
+            <p>Halo <b>${vendor.picName}</b>,</p>
+            <p>Permintaan perubahan nomor rekening Anda telah <b>${statusLabel.toLowerCase()}</b>.</p>
+            ${status === "approved" ? `
+            <table style="border-collapse:collapse;width:100%">
+              <tr><td style="padding:4px 8px;color:#6b7280">Bank</td><td style="padding:4px 8px"><b>${changeReq.bankName}</b></td></tr>
+              <tr><td style="padding:4px 8px;color:#6b7280">No. Rekening</td><td style="padding:4px 8px"><b>${changeReq.bankAccount}</b></td></tr>
+              <tr><td style="padding:4px 8px;color:#6b7280">Atas Nama</td><td style="padding:4px 8px"><b>${changeReq.bankAccountName}</b></td></tr>
+            </table>` : ""}
+            ${notes ? `<p><b>Catatan:</b> ${notes}</p>` : ""}
+          </div>`
+        );
+      }
+    } catch (e) { console.error("Notify bank change status error:", e); }
+
+    await logAudit(sess.extUserId, `bank_change_${status}`, "ext_bank_request", id,
+      `Vendor: ${changeReq.vendorCompanyName}, Status: ${status}`);
+    res.json({ success: true, request: updated });
+  } catch (err) {
+    console.error("[bank-change-status]", err);
+    res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
+  }
 });
 
 export default router;
