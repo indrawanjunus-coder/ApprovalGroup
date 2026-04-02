@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable, masterItemsTable, masterUomsTable, vendorInvoiceItemsTable } from "@workspace/db/schema";
+import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable, masterItemsTable, masterUomsTable, vendorInvoiceItemsTable, auditLogsTable } from "@workspace/db/schema";
 import { eq, and, desc, gte, lte, ne, ilike, or, sql } from "drizzle-orm";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
@@ -74,6 +74,27 @@ async function sendEmail(to: string, subject: string, html: string) {
     tls: { rejectUnauthorized: false },
   });
   await transporter.sendMail({ from: smtp.user, to, subject, html });
+}
+
+/** Catat aktivitas ke audit_logs — tidak boleh throw agar tidak mengganggu flow utama */
+async function logAudit(
+  userId: number,
+  action: string,
+  entityType: string,
+  entityId: number,
+  details?: string
+) {
+  try {
+    await db.insert(auditLogsTable).values({
+      userId,
+      action,
+      entityType,
+      entityId: entityId || 0,
+      details: details || null,
+    });
+  } catch (e) {
+    console.error("[AuditLog] Gagal menulis audit log:", e);
+  }
 }
 
 function requireExternal(role?: "admin" | "user") {
@@ -209,11 +230,15 @@ router.post("/auth/vendor-login", async (req, res) => {
 
     const [vendor] = await db.select().from(vendorCompaniesTable)
       .where(and(eq(vendorCompaniesTable.email, email.toLowerCase()), eq(vendorCompaniesTable.passwordHash, hashPassword(password))));
-    if (!vendor) return res.status(401).json({ error: "Email atau password salah" });
+    if (!vendor) {
+      await logAudit(0, "vendor_login_error", "ext_vendor", 0, `Login gagal: email ${email}`);
+      return res.status(401).json({ error: "Email atau password salah" });
+    }
 
     (req.session as any).vendorId = vendor.id;
     (req.session as any).vendorStatus = vendor.status;
 
+    await logAudit(vendor.id, "vendor_login", "ext_vendor", vendor.id, vendor.companyName);
     res.json({
       success: true,
       needsVerification: vendor.status !== "active",
@@ -324,8 +349,14 @@ router.post("/auth/user-login", async (req, res) => {
     if (!username || !password) return res.status(400).json({ error: "Username dan password wajib diisi" });
     const [user] = await db.select().from(externalUsersTable)
       .where(and(eq(externalUsersTable.username, username), eq(externalUsersTable.passwordHash, hashPassword(password))));
-    if (!user) return res.status(401).json({ error: "Username atau password salah" });
-    if (!user.isActive) return res.status(403).json({ error: "Akun tidak aktif" });
+    if (!user) {
+      await logAudit(0, "user_login_error", "ext_user", 0, `Login gagal: username ${username}`);
+      return res.status(401).json({ error: "Username atau password salah" });
+    }
+    if (!user.isActive) {
+      await logAudit(user.id, "user_login_error", "ext_user", user.id, "Akun tidak aktif");
+      return res.status(403).json({ error: "Akun tidak aktif" });
+    }
 
     (req.session as any).extUserId = user.id;
     (req.session as any).extUsername = user.username;
@@ -333,8 +364,13 @@ router.post("/auth/user-login", async (req, res) => {
     (req.session as any).extUserRole = user.role;
     (req.session as any).extUserEmail = user.email || "";
 
+    await logAudit(user.id, "user_login", "ext_user", user.id, user.name);
     res.json({ success: true, user: { id: user.id, username: user.username, name: user.name, role: user.role, email: user.email } });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[user-login]", err);
+    await logAudit(0, "user_login_error", "ext_user", 0, String(err));
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── Invoices ──────────────────────────────────────────────────────────────────
@@ -467,8 +503,15 @@ router.post("/invoices", requireVendor(), async (req, res) => {
       }
     } catch (e) { console.error("Notify error:", e); }
 
+    await logAudit(sess.vendorId, "submit_invoice", "ext_invoice", inv.id,
+      `PO: ${poNumber}, Total: ${totalInvoice}, Items: ${items.length}`);
     res.json({ success: true, invoice: inv });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[submit-invoice]", err);
+    const sess = (req as any).session as any;
+    await logAudit(sess?.vendorId || 0, "submit_invoice_error", "ext_invoice", 0, String(err));
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // PATCH /api/external/invoices/:id/status
@@ -508,8 +551,15 @@ router.patch("/invoices/:id/status", requireExtUser(), async (req, res) => {
       }
     } catch (e) { console.error("Notify error:", e); }
 
+    await logAudit(sess.extUserId, "update_invoice_status", "ext_invoice", inv.id,
+      `Status: ${status}${notes ? `, Catatan: ${notes}` : ""}`);
     res.json({ success: true, invoice: updated });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[update-invoice-status]", err);
+    const sess = (req as any).session as any;
+    await logAudit(sess?.extUserId || 0, "update_invoice_status_error", "ext_invoice", Number(req.params.id) || 0, String(err));
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // GET /api/external/invoices/:id
@@ -612,10 +662,18 @@ router.get("/vendors", requireExtUser(), async (req, res) => {
 // PATCH /api/external/vendors/:id/status
 router.patch("/vendors/:id/status", requireExtUser("admin"), async (req, res) => {
   try {
+    const sess = req.session as any;
     const { status } = req.body;
-    await db.update(vendorCompaniesTable).set({ status }).where(eq(vendorCompaniesTable.id, Number(req.params.id)));
+    const vendorId = Number(req.params.id);
+    await db.update(vendorCompaniesTable).set({ status }).where(eq(vendorCompaniesTable.id, vendorId));
+    await logAudit(sess.extUserId, "update_vendor_status", "ext_vendor", vendorId, `Status: ${status}`);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[update-vendor-status]", err);
+    const sess = (req as any).session as any;
+    await logAudit(sess?.extUserId || 0, "update_vendor_status_error", "ext_vendor", Number(req.params.id) || 0, String(err));
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── External User Management ──────────────────────────────────────────────────
@@ -638,23 +696,38 @@ router.get("/users", requireExtUser("admin"), async (req, res) => {
 
 // POST /api/external/users
 router.post("/users", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
     const { username, password, name, email, role } = req.body;
-    if (!username || !password || !name || !email) return res.status(400).json({ error: "Field wajib tidak lengkap" });
+    if (!username || !password || !name || !email) {
+      await logAudit(sess.extUserId, "create_ext_user_error", "ext_user", 0, `Field wajib tidak lengkap (username=${username}, name=${name}, email=${email})`);
+      return res.status(400).json({ error: "Field wajib tidak lengkap" });
+    }
     const existing = await db.select().from(externalUsersTable).where(eq(externalUsersTable.username, username));
-    if (existing.length > 0) return res.status(409).json({ error: "Username sudah dipakai" });
+    if (existing.length > 0) {
+      await logAudit(sess.extUserId, "create_ext_user_error", "ext_user", 0, `Username sudah dipakai: ${username}`);
+      return res.status(409).json({ error: "Username sudah dipakai" });
+    }
     const [user] = await db.insert(externalUsersTable).values({
       username, passwordHash: hashPassword(password), name, email,
       role: role || "user", isActive: true, createdAt: Date.now(),
     }).returning();
+    if (!user) throw new Error("Insert tidak mengembalikan data");
     const { passwordHash, ...safe } = user;
+    await logAudit(sess.extUserId, "create_ext_user", "ext_user", user.id, `User: ${username} (${role || "user"})`);
     res.json(safe);
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[create-user]", err);
+    await logAudit(sess?.extUserId || 0, "create_ext_user_error", "ext_user", 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // PATCH /api/external/users/:id
 router.patch("/users/:id", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
+    const targetId = Number(req.params.id);
     const { name, email, role, isActive, password } = req.body;
     const updates: any = {};
     if (name !== undefined) updates.name = name;
@@ -662,19 +735,31 @@ router.patch("/users/:id", requireExtUser("admin"), async (req, res) => {
     if (role !== undefined) updates.role = role;
     if (isActive !== undefined) updates.isActive = isActive;
     if (password) updates.passwordHash = hashPassword(password);
-    await db.update(externalUsersTable).set(updates).where(eq(externalUsersTable.id, Number(req.params.id)));
+    await db.update(externalUsersTable).set(updates).where(eq(externalUsersTable.id, targetId));
+    await logAudit(sess.extUserId, "update_ext_user", "ext_user", targetId,
+      `Diubah: ${Object.keys(updates).filter(k => k !== "passwordHash").join(", ")}`);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[update-user]", err);
+    await logAudit(sess?.extUserId || 0, "update_ext_user_error", "ext_user", Number(req.params.id) || 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // DELETE /api/external/users/:id
 router.delete("/users/:id", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
-    const sess = req.session as any;
-    if (Number(req.params.id) === sess.extUserId) return res.status(400).json({ error: "Tidak bisa hapus akun sendiri" });
-    await db.delete(externalUsersTable).where(eq(externalUsersTable.id, Number(req.params.id)));
+    const targetId = Number(req.params.id);
+    if (targetId === sess.extUserId) return res.status(400).json({ error: "Tidak bisa hapus akun sendiri" });
+    await db.delete(externalUsersTable).where(eq(externalUsersTable.id, targetId));
+    await logAudit(sess.extUserId, "delete_ext_user", "ext_user", targetId, `Dihapus user ID: ${targetId}`);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[delete-user]", err);
+    await logAudit(sess?.extUserId || 0, "delete_ext_user_error", "ext_user", Number(req.params.id) || 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // ─── Settings ──────────────────────────────────────────────────────────────────
@@ -703,6 +788,7 @@ router.get("/settings", requireExtUser("admin"), async (req, res) => {
 
 // PUT /api/external/settings
 router.put("/settings", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
     const { smtpHost, smtpPort, smtpUser, smtpPass, smtpSecurity, maxFileSizeMb, allowedFileTypes, gdriveFolderUrl } = req.body;
     if (smtpHost !== undefined) await upsertSetting("ext_smtp_host", smtpHost);
@@ -713,8 +799,15 @@ router.put("/settings", requireExtUser("admin"), async (req, res) => {
     if (maxFileSizeMb !== undefined) await upsertSetting("ext_max_file_size", String(maxFileSizeMb));
     if (allowedFileTypes !== undefined) await upsertSetting("ext_allowed_file_types", allowedFileTypes);
     if (gdriveFolderUrl !== undefined) await upsertSetting("ext_gdrive_folder", gdriveFolderUrl);
+    await logAudit(sess.extUserId, "update_ext_settings", "ext_settings", 0,
+      `Keys: ${Object.keys(req.body).join(", ")}`);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[update-settings]", err);
+    const sess2 = (req as any).session as any;
+    await logAudit(sess2?.extUserId || 0, "update_ext_settings_error", "ext_settings", 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // ─── Master UoM ───────────────────────────────────────────────────────────────
@@ -739,16 +832,23 @@ router.get("/master/uoms/all", requireExtUser("admin"), async (req, res) => {
 
 // POST /api/external/master/uoms
 router.post("/master/uoms", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
     const { code, name } = req.body;
     if (!code || !name) return res.status(400).json({ error: "Kode dan nama wajib diisi" });
     const [uom] = await db.insert(masterUomsTable).values({ code: code.toUpperCase(), name, createdAt: Date.now() }).returning();
+    await logAudit(sess.extUserId, "create_uom", "ext_uom", uom.id, `${code.toUpperCase()} - ${name}`);
     res.json({ uom });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[create-uom]", err);
+    await logAudit((req.session as any)?.extUserId || 0, "create_uom_error", "ext_uom", 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // PUT /api/external/master/uoms/:id
 router.put("/master/uoms/:id", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
     const id = Number(req.params.id);
     const { code, name, isActive } = req.body;
@@ -757,17 +857,28 @@ router.put("/master/uoms/:id", requireExtUser("admin"), async (req, res) => {
     if (name !== undefined) updates.name = name;
     if (isActive !== undefined) updates.isActive = isActive;
     await db.update(masterUomsTable).set(updates).where(eq(masterUomsTable.id, id));
+    await logAudit(sess.extUserId, "update_uom", "ext_uom", id, JSON.stringify(updates));
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[update-uom]", err);
+    await logAudit((req.session as any)?.extUserId || 0, "update_uom_error", "ext_uom", Number(req.params.id) || 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // DELETE /api/external/master/uoms/:id
 router.delete("/master/uoms/:id", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
     const id = Number(req.params.id);
     await db.update(masterUomsTable).set({ isActive: false }).where(eq(masterUomsTable.id, id));
+    await logAudit(sess.extUserId, "delete_uom", "ext_uom", id, `Nonaktifkan UoM ID: ${id}`);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[delete-uom]", err);
+    await logAudit((req.session as any)?.extUserId || 0, "delete_uom_error", "ext_uom", Number(req.params.id) || 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // ─── Master Items ──────────────────────────────────────────────────────────────
@@ -821,6 +932,7 @@ router.get("/master/items/all", requireExtUser("admin"), async (req, res) => {
 
 // POST /api/external/master/items
 router.post("/master/items", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
     const { code, name, description, defaultUomId } = req.body;
     if (!code || !name) return res.status(400).json({ error: "Kode dan nama wajib diisi" });
@@ -829,12 +941,18 @@ router.post("/master/items", requireExtUser("admin"), async (req, res) => {
       defaultUomId: defaultUomId ? Number(defaultUomId) : null,
       createdAt: Date.now(),
     }).returning();
+    await logAudit(sess.extUserId, "create_item", "ext_item", item.id, `${code.toUpperCase()} - ${name}`);
     res.json({ item });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[create-item]", err);
+    await logAudit((req.session as any)?.extUserId || 0, "create_item_error", "ext_item", 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // PUT /api/external/master/items/:id
 router.put("/master/items/:id", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
     const id = Number(req.params.id);
     const { code, name, description, defaultUomId, isActive } = req.body;
@@ -845,17 +963,28 @@ router.put("/master/items/:id", requireExtUser("admin"), async (req, res) => {
     if (defaultUomId !== undefined) updates.defaultUomId = defaultUomId ? Number(defaultUomId) : null;
     if (isActive !== undefined) updates.isActive = isActive;
     await db.update(masterItemsTable).set(updates).where(eq(masterItemsTable.id, id));
+    await logAudit(sess.extUserId, "update_item", "ext_item", id, JSON.stringify(updates));
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[update-item]", err);
+    await logAudit((req.session as any)?.extUserId || 0, "update_item_error", "ext_item", Number(req.params.id) || 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // DELETE /api/external/master/items/:id
 router.delete("/master/items/:id", requireExtUser("admin"), async (req, res) => {
+  const sess = req.session as any;
   try {
     const id = Number(req.params.id);
     await db.update(masterItemsTable).set({ isActive: false }).where(eq(masterItemsTable.id, id));
+    await logAudit(sess.extUserId, "delete_item", "ext_item", id, `Nonaktifkan item ID: ${id}`);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: "Internal server error" }); }
+  } catch (err) {
+    console.error("[delete-item]", err);
+    await logAudit((req.session as any)?.extUserId || 0, "delete_item_error", "ext_item", Number(req.params.id) || 0, String(err));
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 // POST /api/external/master/items/import-csv  (admin, CSV body as text)
@@ -909,8 +1038,16 @@ router.post("/master/items/import-csv", requireExtUser("admin"), async (req, res
         imported++;
       }
     }
+    const sess = req.session as any;
+    await logAudit(sess.extUserId, "import_items_csv", "ext_item", 0,
+      `Imported: ${imported}, Updated: ${updated}, Skipped: ${skipped}`);
     res.json({ imported, updated, skipped });
-  } catch (err) { console.error(err); res.status(500).json({ error: "Gagal import CSV" }); }
+  } catch (err) {
+    console.error("[import-csv]", err);
+    const sess = (req as any).session as any;
+    await logAudit(sess?.extUserId || 0, "import_items_csv_error", "ext_item", 0, String(err));
+    res.status(500).json({ error: "Gagal import CSV" });
+  }
 });
 
 // GET /api/external/invoice-items/:invoiceId
