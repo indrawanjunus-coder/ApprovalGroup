@@ -104,21 +104,31 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const pembayaranCount = pembayaranData?.total || 0;
   const bankReqCount = bankChangeCount?.count || 0;
 
+  const globalDutyMeal = settings?.featureDutyMeal !== false;
+  const globalPembayaran = settings?.featurePembayaran !== false;
+  const globalPurchaseRequest = settings?.featurePurchaseRequest !== false;
+  const userDutyMeal = user.enableDutyMeal !== false;
+  const userPembayaran = user.enablePembayaran !== false;
+  const userPurchaseRequest = user.enablePurchaseRequest !== false;
+  const canDutyMeal = globalDutyMeal && userDutyMeal;
+  const canPembayaran = globalPembayaran && userPembayaran;
+  const canPurchaseRequest = globalPurchaseRequest && userPurchaseRequest;
+
   const navItems = [
-    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "user", "approver", "purchasing"] },
-    { name: "Purchase Request", href: "/purchase-requests", icon: FileText, roles: ["admin", "user", "approver", "purchasing"] },
-    { name: "Approval", href: "/approvals", icon: CheckSquare, roles: ["admin", "approver"], badge: null },
-    { name: "Purchase Order", href: "/purchase-orders", icon: ShoppingCart, roles: ["admin", "purchasing"] },
-    { name: "Penerimaan Barang", href: "/receiving", icon: PackageCheck, roles: ["admin", "user", "purchasing"], badge: receivingCount > 0 ? receivingCount : null },
-    { name: "Pembayaran", href: "/pembayaran", icon: Wallet, roles: ["admin"], departments: ["Finance"], badge: pembayaranCount > 0 ? pembayaranCount : null },
-    { name: "Riwayat", href: "/history", icon: History, roles: ["admin", "user", "approver", "purchasing"] },
-    { name: "Duty Meal", href: "/duty-meal", icon: Utensils, roles: ["admin", "user", "approver", "purchasing"] },
-    { name: "Manajemen Cuti", href: "/leave-management", icon: CalendarDays, roles: ["admin"] },
-    { name: "Perm. Rekening Vendor", href: "/vendor-bank-requests", icon: CreditCard, roles: ["admin"], badge: bankReqCount > 0 ? bankReqCount : null },
-    { name: "User Management", href: "/users", icon: Users, roles: ["admin", "approver"] },
-    { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"] },
-    { name: "Settings", href: "/settings", icon: Settings, roles: ["admin"] },
-  ].filter(item => item.roles.includes(user.role) || (item as any).departments?.includes(user.department));
+    { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "user", "approver", "purchasing"], show: true },
+    { name: "Purchase Request", href: "/purchase-requests", icon: FileText, roles: ["admin", "user", "approver", "purchasing"], show: canPurchaseRequest },
+    { name: "Approval", href: "/approvals", icon: CheckSquare, roles: ["admin", "approver"], badge: null, show: canPurchaseRequest },
+    { name: "Purchase Order", href: "/purchase-orders", icon: ShoppingCart, roles: ["admin", "purchasing"], show: canPurchaseRequest },
+    { name: "Penerimaan Barang", href: "/receiving", icon: PackageCheck, roles: ["admin", "user", "purchasing"], badge: receivingCount > 0 ? receivingCount : null, show: canPurchaseRequest },
+    { name: "Pembayaran", href: "/pembayaran", icon: Wallet, roles: ["admin"], departments: ["Finance"], badge: pembayaranCount > 0 ? pembayaranCount : null, show: canPembayaran },
+    { name: "Riwayat", href: "/history", icon: History, roles: ["admin", "user", "approver", "purchasing"], show: true },
+    { name: "Duty Meal", href: "/duty-meal", icon: Utensils, roles: ["admin", "user", "approver", "purchasing"], show: canDutyMeal },
+    { name: "Manajemen Cuti", href: "/leave-management", icon: CalendarDays, roles: ["admin"], show: true },
+    { name: "Perm. Rekening Vendor", href: "/vendor-bank-requests", icon: CreditCard, roles: ["admin"], badge: bankReqCount > 0 ? bankReqCount : null, show: true },
+    { name: "User Management", href: "/users", icon: Users, roles: ["admin", "approver"], show: true },
+    { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"], show: true },
+    { name: "Settings", href: "/settings", icon: Settings, roles: ["admin"], show: true },
+  ].filter(item => item.show && (item.roles.includes(user.role) || (item as any).departments?.includes(user.department)));
 
   const NavLink = ({ item, mobile = false, onClick }: { item: typeof navItems[0], mobile?: boolean, onClick?: () => void }) => {
     const isActive = location.startsWith(item.href);

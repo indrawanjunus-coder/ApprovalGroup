@@ -56,28 +56,51 @@ async function upsertSetting(key: string, value: string) {
 
 router.get("/", async (req, res) => {
   try {
-    const [poEnabled, companyName, currency] = await Promise.all([
+    const [poEnabled, companyName, currency, featureDutyMeal, featurePembayaran, featurePurchaseRequest] = await Promise.all([
       getSettingValue("poEnabled"),
       getSettingValue("companyName"),
       getSettingValue("currency"),
+      getSettingValue("feature_duty_meal"),
+      getSettingValue("feature_pembayaran"),
+      getSettingValue("feature_purchase_request"),
     ]);
-    res.json({ poEnabled: poEnabled === "true", companyName, currency });
+    res.json({
+      poEnabled: poEnabled === "true",
+      companyName,
+      currency,
+      featureDutyMeal: featureDutyMeal !== "false",
+      featurePembayaran: featurePembayaran !== "false",
+      featurePurchaseRequest: featurePurchaseRequest !== "false",
+    });
   } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/", requireRole("admin"), async (req, res) => {
-  const { poEnabled, companyName, currency } = req.body;
+  const { poEnabled, companyName, currency, featureDutyMeal, featurePembayaran, featurePurchaseRequest } = req.body;
   try {
     if (poEnabled !== undefined) await upsertSetting("poEnabled", String(poEnabled));
     if (companyName !== undefined) await upsertSetting("companyName", companyName);
     if (currency !== undefined) await upsertSetting("currency", currency);
+    if (featureDutyMeal !== undefined) await upsertSetting("feature_duty_meal", String(featureDutyMeal));
+    if (featurePembayaran !== undefined) await upsertSetting("feature_pembayaran", String(featurePembayaran));
+    if (featurePurchaseRequest !== undefined) await upsertSetting("feature_purchase_request", String(featurePurchaseRequest));
 
-    const [poEnabledVal, companyNameVal, currencyVal] = await Promise.all([
+    const [poEnabledVal, companyNameVal, currencyVal, fdm, fp, fpr] = await Promise.all([
       getSettingValue("poEnabled"),
       getSettingValue("companyName"),
       getSettingValue("currency"),
+      getSettingValue("feature_duty_meal"),
+      getSettingValue("feature_pembayaran"),
+      getSettingValue("feature_purchase_request"),
     ]);
-    res.json({ poEnabled: poEnabledVal === "true", companyName: companyNameVal, currency: currencyVal });
+    res.json({
+      poEnabled: poEnabledVal === "true",
+      companyName: companyNameVal,
+      currency: currencyVal,
+      featureDutyMeal: fdm !== "false",
+      featurePembayaran: fp !== "false",
+      featurePurchaseRequest: fpr !== "false",
+    });
   } catch (err) { handleRouteError(res, err); }
 });
 

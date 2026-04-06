@@ -54,6 +54,9 @@ export interface User {
   hiredCompanyId?: number | null;
   hiredCompanyName?: string | null;
   isActive: boolean;
+  enableDutyMeal?: boolean;
+  enablePembayaran?: boolean;
+  enablePurchaseRequest?: boolean;
   companies?: UserCompanyAssignment[];
   createdAt: string;
 }
@@ -180,6 +183,9 @@ export interface CreateUserRequest {
   role: CreateUserRequestRole;
   superiorId?: number | null;
   companies?: UserCompanyInput[];
+  enableDutyMeal?: boolean;
+  enablePembayaran?: boolean;
+  enablePurchaseRequest?: boolean;
 }
 
 export type UpdateUserRequestRole =
@@ -203,6 +209,9 @@ export interface UpdateUserRequest {
   isActive?: boolean;
   password?: string;
   companies?: UserCompanyInput[];
+  enableDutyMeal?: boolean;
+  enablePembayaran?: boolean;
+  enablePurchaseRequest?: boolean;
 }
 
 export interface PrItem {
@@ -621,12 +630,18 @@ export interface Settings {
   poEnabled: boolean;
   companyName: string;
   currency: string;
+  featureDutyMeal: boolean;
+  featurePembayaran: boolean;
+  featurePurchaseRequest: boolean;
 }
 
 export interface UpdateSettingsRequest {
   poEnabled?: boolean;
   companyName?: string;
   currency?: string;
+  featureDutyMeal?: boolean;
+  featurePembayaran?: boolean;
+  featurePurchaseRequest?: boolean;
 }
 
 export interface StatusCount {

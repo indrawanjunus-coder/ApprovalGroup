@@ -2019,12 +2019,18 @@ export default function Settings() {
   const [poEnabled, setPoEnabled] = useState(true);
   const [companyName, setCompanyName] = useState("");
   const [currency, setCurrency] = useState("IDR");
+  const [featureDutyMeal, setFeatureDutyMeal] = useState(true);
+  const [featurePembayaran, setFeaturePembayaran] = useState(true);
+  const [featurePurchaseRequest, setFeaturePurchaseRequest] = useState(true);
 
   useEffect(() => {
     if (data) {
       setPoEnabled(data.poEnabled);
       setCompanyName(data.companyName);
       setCurrency(data.currency || "IDR");
+      setFeatureDutyMeal(data.featureDutyMeal !== false);
+      setFeaturePembayaran(data.featurePembayaran !== false);
+      setFeaturePurchaseRequest(data.featurePurchaseRequest !== false);
     }
   }, [data]);
 
@@ -2080,6 +2086,58 @@ export default function Settings() {
           <Button onClick={() => mutate({ data: { poEnabled, companyName, currency } })} disabled={isPending} className="shadow-md">
             {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Simpan Pengaturan
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Manajemen Fitur */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-lg">Manajemen Fitur</CardTitle>
+          <p className="text-sm text-muted-foreground">Aktifkan atau nonaktifkan fitur secara global. Akses per-user diatur di menu User Management.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {([
+            {
+              key: "featurePurchaseRequest" as const,
+              label: "Purchase Request",
+              desc: "Fitur pengajuan Purchase Request, alur approval, PO, dan penerimaan barang.",
+              value: featurePurchaseRequest,
+              set: setFeaturePurchaseRequest,
+            },
+            {
+              key: "featurePembayaran" as const,
+              label: "Pembayaran",
+              desc: "Fitur manajemen pembayaran (modul Finance).",
+              value: featurePembayaran,
+              set: setFeaturePembayaran,
+            },
+            {
+              key: "featureDutyMeal" as const,
+              label: "Duty Meal",
+              desc: "Fitur pencatatan dan pembayaran uang makan tugas.",
+              value: featureDutyMeal,
+              set: setFeatureDutyMeal,
+            },
+          ] as const).map(f => (
+            <div key={f.key} className="flex flex-row items-center justify-between rounded-xl border p-4 bg-slate-50/50">
+              <div className="space-y-0.5 flex-1 mr-4">
+                <Label className="text-base font-semibold">{f.label}</Label>
+                <p className="text-sm text-muted-foreground">{f.desc}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-medium ${f.value ? "text-green-600" : "text-slate-400"}`}>
+                  {f.value ? "Aktif" : "Nonaktif"}
+                </span>
+                <Switch checked={f.value} onCheckedChange={f.set} />
+              </div>
+            </div>
+          ))}
+          <Button
+            onClick={() => mutate({ data: { featureDutyMeal, featurePembayaran, featurePurchaseRequest } })}
+            disabled={isPending} className="shadow-md">
+            {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Simpan Pengaturan Fitur
           </Button>
         </CardContent>
       </Card>

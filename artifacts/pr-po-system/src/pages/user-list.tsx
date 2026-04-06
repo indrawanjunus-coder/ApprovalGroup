@@ -23,6 +23,7 @@ const emptyForm = {
   username: "", password: "", name: "", email: "", department: "",
   position: "", role: "user" as any, superiorId: "" as any, hiredCompanyId: "" as any, isActive: true,
   joinDate: "",
+  enableDutyMeal: true, enablePembayaran: true, enablePurchaseRequest: true,
 };
 
 export default function UserList() {
@@ -105,6 +106,9 @@ export default function UserList() {
       hiredCompanyId: u.hiredCompanyId || "",
       isActive: u.isActive,
       joinDate: u.joinDate || "",
+      enableDutyMeal: u.enableDutyMeal !== false,
+      enablePembayaran: u.enablePembayaran !== false,
+      enablePurchaseRequest: u.enablePurchaseRequest !== false,
     });
     setCompanies((u.companies || []).map((c: any) => ({ companyId: Number(c.companyId), department: c.department })));
     setShowModal(true);
@@ -357,6 +361,29 @@ export default function UserList() {
                   <span className="text-sm text-muted-foreground">{form.isActive ? "Aktif" : "Non-Aktif"}</span>
                 </div>
               )}
+            </div>
+
+            {/* Akses Fitur */}
+            <div className="space-y-3 pt-2 border-t">
+              <Label className="text-sm font-semibold">Akses Fitur</Label>
+              <p className="text-xs text-muted-foreground -mt-1">Centang fitur yang boleh diakses user ini (berlaku jika fitur aktif secara global di Settings).</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {([
+                  { key: "enablePurchaseRequest" as const, label: "Purchase Request" },
+                  { key: "enablePembayaran" as const, label: "Pembayaran" },
+                  { key: "enableDutyMeal" as const, label: "Duty Meal" },
+                ] as const).map(f => (
+                  <label key={f.key} className="flex items-center gap-2 rounded-lg border p-3 cursor-pointer hover:bg-slate-50 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={(form as any)[f.key] !== false}
+                      onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.checked }))}
+                      className="w-4 h-4 accent-blue-600"
+                    />
+                    <span className="text-sm font-medium">{f.label}</span>
+                  </label>
+                ))}
+              </div>
             </div>
 
             {/* Company Assignments */}

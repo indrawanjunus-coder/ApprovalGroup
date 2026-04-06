@@ -88,7 +88,8 @@ router.get("/:id", async (req, res) => {
 
 router.post("/", requireRole("admin", "approver"), async (req, res) => {
   const requester = req.user!;
-  const { username, password, name, email, department, position, superiorId, hiredCompanyId, companies, joinDate } = req.body;
+  const { username, password, name, email, department, position, superiorId, hiredCompanyId, companies, joinDate,
+    enableDutyMeal, enablePembayaran, enablePurchaseRequest } = req.body;
   // Approver can only create "user" role; admin can set any role
   const role = requester.role === "approver" ? "user" : (req.body.role || "user");
   if (!username || !password || !name || !department || !position) {
@@ -104,6 +105,9 @@ router.post("/", requireRole("admin", "approver"), async (req, res) => {
       department, position, role, superiorId: parsedSuperiorId,
       hiredCompanyId: parsedHiredCompanyId, isActive: true,
       joinDate: joinDate || null,
+      enableDutyMeal: enableDutyMeal !== undefined ? Boolean(enableDutyMeal) : true,
+      enablePembayaran: enablePembayaran !== undefined ? Boolean(enablePembayaran) : true,
+      enablePurchaseRequest: enablePurchaseRequest !== undefined ? Boolean(enablePurchaseRequest) : true,
     } as any).returning();
 
     if (Array.isArray(companies) && companies.length > 0) {
@@ -128,7 +132,8 @@ router.post("/", requireRole("admin", "approver"), async (req, res) => {
 router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
   const requester = req.user!;
   const id = parseInt(req.params.id);
-  const { name, email, department, position, superiorId, hiredCompanyId, isActive, password, companies, joinDate } = req.body;
+  const { name, email, department, position, superiorId, hiredCompanyId, isActive, password, companies, joinDate,
+    enableDutyMeal, enablePembayaran, enablePurchaseRequest } = req.body;
   // Approver can only set role "user" and cannot change password
   const role = requester.role === "approver" ? "user" : (req.body.role || "user");
   const parsedSuperiorId = superiorId ? (parseInt(superiorId) || null) : null;
@@ -143,6 +148,9 @@ router.put("/:id", requireRole("admin", "approver"), async (req, res) => {
       joinDate: joinDate !== undefined ? (joinDate || null) : undefined,
       isActive: isActive !== undefined ? isActive : true, updatedAt: new Date(),
     };
+    if (enableDutyMeal !== undefined) updateData.enableDutyMeal = Boolean(enableDutyMeal);
+    if (enablePembayaran !== undefined) updateData.enablePembayaran = Boolean(enablePembayaran);
+    if (enablePurchaseRequest !== undefined) updateData.enablePurchaseRequest = Boolean(enablePurchaseRequest);
     // Only admin can change password
     if (password && requester.role === "admin") updateData.passwordHash = hashPassword(password);
     const [user] = await db.update(usersTable).set(updateData).where(eq(usersTable.id, id)).returning();
