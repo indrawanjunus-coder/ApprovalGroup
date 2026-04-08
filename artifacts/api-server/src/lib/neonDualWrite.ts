@@ -32,23 +32,24 @@ export function invalidateNeonCache() {
 // Map route prefixes to table names to sync
 const ROUTE_TABLE_MAP: Array<{ pattern: RegExp; tables: string[] }> = [
   { pattern: /^\/api\/users/, tables: ["users", "user_companies"] },
-  { pattern: /^\/api\/purchase-requests/, tables: ["purchase_requests", "pr_items", "pr_approvals"] },
+  { pattern: /^\/api\/purchase-requests/, tables: ["purchase_requests", "pr_items", "approvals", "pr_vendor_attachments"] },
   { pattern: /^\/api\/purchase-orders/, tables: ["purchase_orders", "po_items"] },
-  { pattern: /^\/api\/receiving/, tables: ["pr_receiving", "receiving_items"] },
-  { pattern: /^\/api\/payment/, tables: ["payments", "payment_pr_links"] },
+  { pattern: /^\/api\/receiving/, tables: ["pr_receiving_items"] },
+  { pattern: /^\/api\/pembayaran/, tables: ["duty_meal_monthly_payments"] },
   { pattern: /^\/api\/settings/, tables: ["settings"] },
   { pattern: /^\/api\/companies/, tables: ["companies"] },
   { pattern: /^\/api\/departments/, tables: ["departments"] },
   { pattern: /^\/api\/pr-types/, tables: ["pr_types"] },
-  { pattern: /^\/api\/locations/, tables: ["pr_locations"] },
-  { pattern: /^\/api\/master/, tables: ["master_items"] },
-  { pattern: /^\/api\/leave/, tables: ["leave_requests", "leave_policies"] },
-  { pattern: /^\/api\/duty-meal/, tables: ["duty_meal_periods", "duty_meal_entries", "duty_meal_payments"] },
-  { pattern: /^\/api\/external\/invoices/, tables: ["invoices", "invoice_items"] },
+  { pattern: /^\/api\/locations/, tables: ["locations"] },
+  { pattern: /^\/api\/master/, tables: ["master_items", "master_uoms"] },
+  { pattern: /^\/api\/leave/, tables: ["user_leave_balances"] },
+  { pattern: /^\/api\/duty-meal/, tables: ["duty_meals", "duty_meal_monthly_payments", "duty_meal_plafon"] },
+  { pattern: /^\/api\/external\/invoices/, tables: ["vendor_invoices", "vendor_invoice_items"] },
   { pattern: /^\/api\/external\/vendors/, tables: ["vendor_companies"] },
   { pattern: /^\/api\/external\/users/, tables: ["external_users"] },
   { pattern: /^\/api\/vendor-bank-requests/, tables: ["vendor_bank_change_requests"] },
   { pattern: /^\/api\/notifications/, tables: ["notifications"] },
+  { pattern: /^\/api\/approval-rules/, tables: ["approval_rules", "approval_rule_levels"] },
 ];
 
 function getTablesForRoute(path: string): string[] {
