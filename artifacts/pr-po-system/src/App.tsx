@@ -22,7 +22,6 @@ import LeaveManagement from "./pages/leave-management";
 import AuditLogs from "./pages/audit-logs";
 import Profile from "./pages/profile";
 import DutyMeal from "./pages/duty-meal";
-import VendorBankRequests from "./pages/vendor-bank-requests";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient({
@@ -82,7 +81,6 @@ function Router() {
       <ProtectedRoute path="/audit-logs" component={AuditLogs} />
       <ProtectedRoute path="/profile" component={Profile} />
       <ProtectedRoute path="/duty-meal" component={DutyMeal} />
-      <ProtectedRoute path="/vendor-bank-requests" component={VendorBankRequests} />
       
       <Route path="/">
         {() => {

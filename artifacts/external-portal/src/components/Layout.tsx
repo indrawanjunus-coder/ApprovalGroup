@@ -3,25 +3,21 @@ import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 import { FileText, BarChart2, Settings, LogOut, Building2, Menu, User, Package, Ruler } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
-interface NavItem {
-  href: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  roles?: string[];
-}
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
-const vendorNav: NavItem[] = [
+const vendorNav = [
   { href: "/invoices", label: "Invoice Saya", icon: FileText },
   { href: "/submit-invoice", label: "Ajukan Invoice", icon: FileText },
   { href: "/profile", label: "Profil & Password", icon: User },
 ];
 
-const userNav: NavItem[] = [
+const userNavBase = [
   { href: "/admin/invoices", label: "Semua Invoice", icon: FileText },
-  { href: "/admin/vendors", label: "Daftar Vendor", icon: Building2 },
+  { href: "/admin/vendors", label: "Daftar Vendor", icon: Building2, badgeKey: "vendors" },
   { href: "/admin/reports", label: "Laporan", icon: BarChart2 },
   { href: "/admin/items", label: "Master Item", icon: Package },
   { href: "/admin/uoms", label: "Master Satuan", icon: Ruler },
@@ -33,7 +29,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const nav = user?.type === "vendor" ? vendorNav : userNav;
+  const isAdmin = user?.type === "user";
+
+  const { data: bankCount } = useQuery<{ count: number }>({
+    queryKey: ["bank-change-requests-count"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/external/bank-change-requests/count`, { credentials: "include" });
+      return res.ok ? res.json() : { count: 0 };
+    },
+    enabled: isAdmin,
+    refetchInterval: 60000,
+    select: (d) => (d && typeof d.count === "number" ? d : { count: 0 }),
+  });
+
+  const pendingBankCount = bankCount?.count || 0;
+
+  const nav = user?.type === "vendor" ? vendorNav : userNavBase;
   const initials = user?.name?.slice(0, 2).toUpperCase() || "?";
 
   const handleLogout = async () => {
@@ -56,6 +67,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav className="flex-1 px-3 py-4 space-y-1">
         {nav.map((item) => {
           const active = location === item.href || location.startsWith(item.href + "/");
+          const badge = (item as any).badgeKey === "vendors" && pendingBankCount > 0 ? pendingBankCount : null;
           return (
             <Link
               key={item.href}
@@ -69,7 +81,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               onClick={() => setMobileOpen(false)}
             >
               <item.icon className="w-4 h-4 flex-shrink-0" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {badge !== null && (
+                <span className={cn(
+                  "inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-xs font-semibold",
+                  active ? "bg-white text-primary" : "bg-primary text-white"
+                )}>
+                  {badge}
+                </span>
+              )}
             </Link>
           );
         })}
