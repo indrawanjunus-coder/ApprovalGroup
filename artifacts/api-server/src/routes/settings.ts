@@ -5,6 +5,8 @@ import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import nodemailer from "nodemailer";
 import { handleRouteError } from "../lib/audit.js";
+import { testNeonConnection, isNeonConfigured } from "../lib/neonClient.js";
+import { syncAllToNeon, checkNeonTablesExist } from "../lib/neonSync.js";
 
 const router = Router();
 
@@ -321,6 +323,103 @@ router.put("/leave-eligibility", requireRole("admin"), async (req, res) => {
     res.json({ success: true });
   } catch { res.status(500).json({ error: "Internal server error" }); }
 });
+
+// ─── Neon Database Settings ─────────────────────────────────────────────────
+
+// Get Neon DB config & status
+router.get("/neon", requireRole("admin"), async (req, res) => {
+  try {
+    const configured = isNeonConfigured();
+    const [neonEnabled, neonUrl] = await Promise.all([
+      getSettingValue("neon_db_enabled"),
+      getSettingValue("neon_db_url"),
+    ]);
+
+    let tableStatus = null;
+    if (configured) {
+      try {
+        tableStatus = await checkNeonTablesExist();
+      } catch {}
+    }
+
+    res.json({
+      configured,
+      enabled: neonEnabled === "true",
+      connectionUrl: neonUrl || (configured ? "[dikonfigurasi via ENV]" : ""),
+      hasAllTables: tableStatus?.hasAllTables ?? false,
+      missingTables: tableStatus?.missingTables ?? [],
+      existingTablesCount: tableStatus?.existingTables?.length ?? 0,
+    });
+  } catch (err) { handleRouteError(res, err); }
+});
+
+// Update Neon config (enable/disable)
+router.put("/neon", requireRole("admin"), async (req, res) => {
+  const { enabled } = req.body;
+  try {
+    if (enabled !== undefined) await upsertSetting("neon_db_enabled", String(enabled));
+    const configured = isNeonConfigured();
+    const neonEnabled = await getSettingValue("neon_db_enabled");
+    res.json({ configured, enabled: neonEnabled === "true" });
+  } catch (err) { handleRouteError(res, err); }
+});
+
+// Test Neon connection
+router.post("/neon/test", requireRole("admin"), async (req, res) => {
+  try {
+    const result = await testNeonConnection();
+    res.json(result);
+  } catch (err) { handleRouteError(res, err); }
+});
+
+// Sync Replit → Neon (SSE streaming progress)
+let syncInProgress = false;
+router.post("/neon/sync", requireRole("admin"), async (req, res) => {
+  if (syncInProgress) {
+    res.status(409).json({ error: "Sinkronisasi sedang berjalan, harap tunggu." });
+    return;
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders?.();
+
+  const sendEvent = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  syncInProgress = true;
+  try {
+    sendEvent({ type: "start", message: "Memulai sinkronisasi ke Neon..." });
+
+    const result = await syncAllToNeon((progress) => {
+      sendEvent({ type: "progress", ...progress });
+    });
+
+    const doneCount = result.results.filter(r => r.status === "done").length;
+    const errorCount = result.results.filter(r => r.status === "error").length;
+    const totalRows = result.results.reduce((s, r) => s + (r.rows || 0), 0);
+
+    sendEvent({
+      type: "complete",
+      success: result.success,
+      doneCount,
+      errorCount,
+      totalRows,
+      message: result.success
+        ? `Berhasil sinkronisasi ${doneCount} tabel (${totalRows.toLocaleString()} baris total)`
+        : `Sinkronisasi selesai dengan ${errorCount} error`,
+    });
+  } catch (err: any) {
+    sendEvent({ type: "error", message: err.message || "Error tidak diketahui" });
+  } finally {
+    syncInProgress = false;
+    res.end();
+  }
+});
+
+// ─── Appearance settings ─────────────────────────────────────────────────────
 
 // Appearance settings
 router.get("/appearance", requireRole("admin"), async (req, res) => {

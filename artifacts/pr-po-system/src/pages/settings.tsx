@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin, Utensils, CreditCard } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin, Utensils, CreditCard, Database, RefreshCw, Wifi, WifiOff, AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 
 const apiBase = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
@@ -2011,6 +2011,240 @@ function DutyMealApproversManager() {
   );
 }
 
+// ─── Neon Database Settings ──────────────────────────────────────────────────
+function NeonDatabaseSettings() {
+  const { toast } = useToast();
+
+  const { data: neonConfig, isLoading: neonLoading, refetch } = useQuery({
+    queryKey: ["neon-config"],
+    queryFn: async () => {
+      const r = await fetch(`${apiBase}/api/settings/neon`, { credentials: "include" });
+      if (!r.ok) throw new Error("Gagal load konfigurasi Neon");
+      return r.json();
+    },
+    refetchInterval: false,
+  });
+
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncLog, setSyncLog] = useState<Array<{ table: string; status: string; rows?: number; error?: string }>>([]);
+  const [syncSummary, setSyncSummary] = useState<string | null>(null);
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
+
+  const testConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const r = await fetch(`${apiBase}/api/settings/neon/test`, { method: "POST", credentials: "include" });
+      const data = await r.json();
+      setTestResult(data);
+    } catch {
+      setTestResult({ ok: false, message: "Gagal menghubungi server" });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const toggleEnabled = async (val: boolean) => {
+    setTogglingEnabled(true);
+    try {
+      await fetch(`${apiBase}/api/settings/neon`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: val }),
+      });
+      refetch();
+      toast({ title: val ? "Dual Write Aktif" : "Dual Write Nonaktif", description: val ? "Setiap perubahan data akan disinkronkan ke Neon." : "Hanya database Replit yang akan digunakan." });
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Tidak dapat mengubah pengaturan" });
+    } finally {
+      setTogglingEnabled(false);
+    }
+  };
+
+  const startSync = async () => {
+    setSyncing(true);
+    setSyncLog([]);
+    setSyncSummary(null);
+
+    try {
+      const response = await fetch(`${apiBase}/api/settings/neon/sync`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === "progress" && event.table) {
+                setSyncLog(prev => {
+                  const existing = prev.findIndex(r => r.table === event.table);
+                  if (existing >= 0) {
+                    const updated = [...prev];
+                    updated[existing] = event;
+                    return updated;
+                  }
+                  return [...prev, event];
+                });
+              } else if (event.type === "complete") {
+                setSyncSummary(event.message);
+                refetch();
+              }
+            } catch {}
+          }
+        }
+      }
+    } catch (err: any) {
+      setSyncSummary(`Error: ${err.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Database className="h-5 w-5 text-blue-600" />
+          Database Neon (Backup)
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Sinkronisasi data ke database PostgreSQL Neon Tech sebagai backup atau mirror. Aktifkan Dual Write agar setiap perubahan data otomatis tersimpan ke Neon.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-5">
+
+        {/* Status Koneksi */}
+        {neonLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Memeriksa koneksi...</div>
+        ) : (
+          <div className="space-y-3">
+            {/* Neon configured status */}
+            <div className="flex items-center gap-3 rounded-xl border p-4 bg-slate-50/50">
+              <div className={`rounded-full p-2 ${neonConfig?.configured ? "bg-green-100" : "bg-red-100"}`}>
+                {neonConfig?.configured ? <Wifi className="h-4 w-4 text-green-600" /> : <WifiOff className="h-4 w-4 text-red-500" />}
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm">{neonConfig?.configured ? "Neon DB Terkonfigurasi" : "Neon DB Belum Dikonfigurasi"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {neonConfig?.configured
+                    ? `${neonConfig.existingTablesCount} tabel ditemukan di Neon${neonConfig.hasAllTables ? " (lengkap)" : " (belum lengkap)"}`
+                    : "Set NEON_DATABASE_URL di environment variables"}
+                </p>
+              </div>
+              {neonConfig?.configured && (
+                <Badge className={neonConfig.hasAllTables ? "bg-green-100 text-green-700 border-green-200" : "bg-yellow-100 text-yellow-700 border-yellow-200"}>
+                  {neonConfig.hasAllTables ? "Siap" : "Perlu Sync"}
+                </Badge>
+              )}
+            </div>
+
+            {/* Test Connection */}
+            {neonConfig?.configured && (
+              <div className="flex items-center gap-3">
+                <Button variant="outline" size="sm" onClick={testConnection} disabled={testing} className="gap-2">
+                  {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
+                  Test Koneksi
+                </Button>
+                {testResult && (
+                  <div className={`flex items-center gap-2 text-sm font-medium ${testResult.ok ? "text-green-600" : "text-red-500"}`}>
+                    {testResult.ok ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+                    {testResult.message}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Dual Write Toggle */}
+            {neonConfig?.configured && (
+              <div className="flex flex-row items-center justify-between rounded-xl border p-4 bg-slate-50/50">
+                <div className="space-y-0.5 flex-1 mr-4">
+                  <Label className="text-base font-semibold">Dual Write (Otomatis Sync)</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Setiap kali data berubah (tambah, edit, hapus), perubahan akan otomatis disinkronkan ke Neon secara asinkron.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {togglingEnabled && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                  <span className={`text-xs font-medium ${neonConfig?.enabled ? "text-green-600" : "text-slate-400"}`}>
+                    {neonConfig?.enabled ? "Aktif" : "Nonaktif"}
+                  </span>
+                  <Switch
+                    checked={neonConfig?.enabled ?? false}
+                    onCheckedChange={toggleEnabled}
+                    disabled={togglingEnabled}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Sync Button */}
+            {neonConfig?.configured && (
+              <div className="space-y-3 pt-1 border-t">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold text-sm">Sync Manual (Replit → Neon)</p>
+                    <p className="text-xs text-muted-foreground">Salin semua data dari database Replit ke Neon. Gunakan ini untuk inisialisasi awal atau setelah Dual Write dinonaktifkan lama.</p>
+                  </div>
+                  <Button onClick={startSync} disabled={syncing} className="gap-2 ml-4" variant="outline">
+                    {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {syncing ? "Menyinkronkan..." : "Sync Sekarang"}
+                  </Button>
+                </div>
+
+                {/* Sync Progress */}
+                {(syncing || syncLog.length > 0) && (
+                  <div className="rounded-xl border bg-slate-950 text-slate-100 p-4 font-mono text-xs space-y-1 max-h-64 overflow-y-auto">
+                    {syncSummary && (
+                      <div className={`font-bold mb-2 ${syncSummary.includes("error") || syncSummary.includes("Error") ? "text-red-400" : "text-green-400"}`}>
+                        ✓ {syncSummary}
+                      </div>
+                    )}
+                    {syncLog.map((row, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        {row.status === "done" && <span className="text-green-400">✓</span>}
+                        {row.status === "error" && <span className="text-red-400">✗</span>}
+                        {row.status === "syncing" && <Loader2 className="h-3 w-3 animate-spin text-yellow-400" />}
+                        {row.status === "pending" && <Circle className="h-3 w-3 text-slate-500" />}
+                        <span className={row.status === "error" ? "text-red-400" : row.status === "done" ? "text-slate-200" : "text-slate-400"}>
+                          {row.table}
+                        </span>
+                        {row.status === "done" && row.rows !== undefined && (
+                          <span className="text-slate-500">{row.rows} baris</span>
+                        )}
+                        {row.status === "error" && row.error && (
+                          <span className="text-red-400 truncate">{row.error}</span>
+                        )}
+                      </div>
+                    ))}
+                    {syncing && !syncSummary && (
+                      <div className="text-yellow-400 animate-pulse">Sedang menyinkronkan...</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data, isLoading } = useGetSettings();
   const { toast } = useToast();
@@ -2142,6 +2376,7 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      <NeonDatabaseSettings />
       <DepartmentManager />
       <PrTypeManager />
       <LocationManager />
