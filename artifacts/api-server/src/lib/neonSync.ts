@@ -402,3 +402,46 @@ export function replicateToNeon(query: string, values?: any[]): void {
 }
 
 export const SYNC_TABLE_NAMES = SYNC_TABLES;
+
+/**
+ * Reset all PostgreSQL sequences in Neon DB to match the current MAX(id) of each table.
+ * Must be called after syncing data to Neon, or when switching Neon to primary,
+ * to prevent duplicate primary key errors.
+ */
+export async function resetNeonSequences(): Promise<void> {
+  const pool = getNeonPool();
+  if (!pool) return;
+
+  const client = await pool.connect();
+  try {
+    // Get all sequences linked to 'id' columns in public schema
+    const seqResult = await client.query(`
+      SELECT
+        seq.relname AS seq_name,
+        tbl.relname AS table_name
+      FROM pg_class seq
+      JOIN pg_depend dep ON dep.objid = seq.oid
+      JOIN pg_class tbl ON tbl.oid = dep.refobjid
+      JOIN pg_namespace ns ON ns.oid = tbl.relnamespace
+      WHERE seq.relkind = 'S'
+        AND ns.nspname = 'public'
+    `);
+
+    for (const row of seqResult.rows) {
+      try {
+        const tableName = row.table_name;
+        // Get max id from the table
+        const maxRes = await client.query(`SELECT COALESCE(MAX(id), 0) AS max_id FROM "${tableName}"`);
+        const maxId = parseInt(maxRes.rows[0].max_id, 10);
+        if (maxId > 0) {
+          await client.query(`SELECT setval('${row.seq_name}', $1)`, [maxId]);
+        }
+      } catch {
+        // Table might not have 'id' column — ignore
+      }
+    }
+    console.log("[Neon] Sequences reset to match MAX(id) values.");
+  } finally {
+    client.release();
+  }
+}

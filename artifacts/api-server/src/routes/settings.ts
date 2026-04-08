@@ -7,15 +7,16 @@ import { requireAuth, requireRole } from "../lib/auth.js";
 import nodemailer from "nodemailer";
 import { handleRouteError } from "../lib/audit.js";
 import { testNeonConnection, isNeonConfigured } from "../lib/neonClient.js";
-import { syncAllToNeon, syncAll, checkNeonTablesExist } from "../lib/neonSync.js";
+import { syncAllToNeon, syncAll, checkNeonTablesExist, resetNeonSequences } from "../lib/neonSync.js";
 import type { SyncDirection, SyncMode } from "../lib/neonSync.js";
 import { setPrimaryDb, getPrimaryDb } from "../lib/db.js";
 import { invalidateNeonCache, setNeonEnabled } from "../lib/neonDualWrite.js";
+import { getNeonPool } from "../lib/neonClient.js";
 
 /**
  * Write a setting directly to Replit DB (bypassing the proxy).
- * Used for critical settings that the middleware/startup always reads from Replit
- * (e.g., neon_db_enabled, primary_db), so they stay in sync regardless of active primary.
+ * Critical settings (neon_db_enabled, primary_db) must always exist in Replit
+ * because the dual-write middleware and server startup read from Replit directly.
  */
 async function upsertReplitSetting(key: string, value: string) {
   const existing = await replitDb.select({ id: settingsTable.id }).from(settingsTable).where(eq(settingsTable.key, key));
@@ -24,6 +25,31 @@ async function upsertReplitSetting(key: string, value: string) {
   } else {
     await replitDb.insert(settingsTable).values({ key, value });
   }
+}
+
+/**
+ * Write a setting directly to Neon DB (bypassing the proxy).
+ * Critical settings must also be written to Neon so that when Neon becomes the
+ * active primary, GET /settings/neon reads the correct values.
+ */
+async function upsertNeonSetting(key: string, value: string) {
+  const pool = getNeonPool();
+  if (!pool) return;
+  await pool.query(
+    `INSERT INTO settings (key, value, updated_at) VALUES ($1, $2, NOW())
+     ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+    [key, value]
+  );
+}
+
+/**
+ * Read a critical setting from Replit DB directly (bypasses proxy).
+ * Always use this for infrastructure settings like primary_db and neon_db_enabled
+ * which must remain consistent regardless of which DB is currently active.
+ */
+async function getReplitSettingValue(key: string): Promise<string> {
+  const [setting] = await replitDb.select().from(settingsTable).where(eq(settingsTable.key, key));
+  return setting?.value ?? "";
 }
 
 const router = Router();
@@ -348,10 +374,12 @@ router.put("/leave-eligibility", requireRole("admin"), async (req, res) => {
 router.get("/neon", requireRole("admin"), async (req, res) => {
   try {
     const configured = isNeonConfigured();
+    // Always read primary_db and neon_db_enabled from Replit directly —
+    // these are infrastructure settings and Replit is always the source of truth.
     const [neonEnabled, neonUrl, primaryDb] = await Promise.all([
-      getSettingValue("neon_db_enabled"),
-      getSettingValue("neon_db_url"),
-      getSettingValue("primary_db"),
+      getReplitSettingValue("neon_db_enabled"),
+      getReplitSettingValue("neon_db_url"),
+      getReplitSettingValue("primary_db"),
     ]);
 
     let tableStatus = null;
@@ -379,26 +407,39 @@ router.put("/neon", requireRole("admin"), async (req, res) => {
   try {
     if (enabled !== undefined) {
       const val = String(enabled);
-      // Write to the current primary DB (proxy)
-      await upsertSetting("neon_db_enabled", val);
-      // ALWAYS also write to Replit directly — the dual-write middleware and server
-      // startup both read neon_db_enabled from Replit, regardless of the active primary.
-      if (getPrimaryDb() === "neon") await upsertReplitSetting("neon_db_enabled", val);
+      // Write to BOTH databases so the value is consistent regardless of which is active.
+      // Replit is the source of truth for the dual-write middleware and startup.
+      // Neon must also have it so GET /settings/neon reads correctly when Neon is primary.
+      await Promise.all([
+        upsertReplitSetting("neon_db_enabled", val),
+        upsertNeonSetting("neon_db_enabled", val),
+      ]);
       // Update in-memory cache immediately so middleware sees it without waiting for TTL
       setNeonEnabled(enabled === true || enabled === "true");
     }
     if (primaryDb === "replit" || primaryDb === "neon") {
-      // Write to current primary DB (proxy)
-      await upsertSetting("primary_db", primaryDb);
-      // ALWAYS also write to Replit directly — server restart reads primary_db from Replit.
-      if (getPrimaryDb() === "neon") await upsertReplitSetting("primary_db", primaryDb);
+      // Write to BOTH databases. After switching, the new primary DB must already
+      // have primary_db set correctly (so GET reads right value), and Replit must
+      // also have it for server restart recovery.
+      await Promise.all([
+        upsertReplitSetting("primary_db", primaryDb),
+        upsertNeonSetting("primary_db", primaryDb),
+      ]);
       setPrimaryDb(primaryDb);
+      // When switching TO Neon, reset its sequences to prevent duplicate key errors.
+      // Neon sequences may be out-of-sync with the data synced from Replit.
+      if (primaryDb === "neon") {
+        resetNeonSequences().catch(err =>
+          console.error("[Neon] Gagal reset sequences:", err.message)
+        );
+      }
     }
     invalidateNeonCache();
     const configured = isNeonConfigured();
+    // Always read from Replit (source of truth)
     const [neonEnabled, savedPrimary] = await Promise.all([
-      getSettingValue("neon_db_enabled"),
-      getSettingValue("primary_db"),
+      getReplitSettingValue("neon_db_enabled"),
+      getReplitSettingValue("primary_db"),
     ]);
     res.json({ configured, enabled: neonEnabled === "true", primaryDb: savedPrimary || "replit" });
   } catch (err) { handleRouteError(res, err); }

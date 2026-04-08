@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { setPrimaryDb } from "./lib/db.js";
+import { resetNeonSequences } from "./lib/neonSync.js";
 
 const rawPort = process.env["PORT"];
 
@@ -28,6 +29,10 @@ app.listen(port, async () => {
     if (savedPrimary === "neon") {
       setPrimaryDb("neon");
       console.log("[DB] Primary database: NEON (dari pengaturan tersimpan)");
+      // Reset Neon sequences on startup to prevent duplicate key errors
+      resetNeonSequences().catch(err =>
+        console.warn("[Neon] Sequence reset gagal (tidak kritis):", (err as Error).message)
+      );
     } else {
       console.log("[DB] Primary database: REPLIT (default)");
     }
