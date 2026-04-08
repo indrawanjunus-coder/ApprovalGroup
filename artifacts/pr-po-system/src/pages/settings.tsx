@@ -15,7 +15,11 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin, Utensils, CreditCard, Database, RefreshCw, Wifi, WifiOff, AlertTriangle, CheckCircle2, Circle } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin, Utensils, CreditCard, Database, RefreshCw, Wifi, WifiOff, AlertTriangle, CheckCircle2, Circle, Zap } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const apiBase = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
@@ -2035,7 +2039,11 @@ function NeonDatabaseSettings() {
   const [syncDirection, setSyncDirection] = useState<"replit_to_neon" | "neon_to_replit">("replit_to_neon");
   const [syncMode, setSyncMode] = useState<"upsert_missing" | "full_overwrite">("upsert_missing");
 
-  const changePrimaryDb = async (val: "replit" | "neon") => {
+  // Confirmation dialogs
+  const [confirmSwitchTo, setConfirmSwitchTo] = useState<"replit" | "neon" | null>(null);
+  const [confirmSyncOpen, setConfirmSyncOpen] = useState(false);
+
+  const doChangePrimaryDb = async (val: "replit" | "neon") => {
     setChangingPrimary(true);
     try {
       const r = await fetch(`${apiBase}/api/settings/neon`, {
@@ -2145,6 +2153,7 @@ function NeonDatabaseSettings() {
   };
 
   return (
+    <>
     <Card className="border-0 shadow-sm">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
@@ -2205,59 +2214,81 @@ function NeonDatabaseSettings() {
                   <div>
                     <Label className="text-base font-semibold">Database Utama (Primary)</Label>
                     <p className="text-sm text-muted-foreground mt-0.5">
-                      Semua operasi baca & tulis akan menggunakan database yang dipilih sebagai primary.
+                      Semua operasi baca &amp; tulis menggunakan database yang dipilih. Klik untuk mengganti.
                     </p>
                   </div>
                   {changingPrimary && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   {/* Replit Option */}
-                  <button
-                    onClick={() => !changingPrimary && (neonConfig?.primaryDb ?? "replit") !== "replit" && changePrimaryDb("replit")}
-                    disabled={changingPrimary}
-                    className={`flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all ${
-                      (neonConfig?.primaryDb ?? "replit") === "replit"
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-slate-200 hover:border-slate-300 bg-white"
-                    }`}
-                  >
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
-                      (neonConfig?.primaryDb ?? "replit") === "replit" ? "bg-blue-500 text-white" : "bg-slate-200 text-slate-600"
-                    }`}>R</div>
-                    <div>
-                      <p className="text-sm font-semibold">Replit DB</p>
-                      <p className="text-xs text-muted-foreground">PostgreSQL bawaan</p>
-                    </div>
-                    {(neonConfig?.primaryDb ?? "replit") === "replit" && (
-                      <CheckCircle2 className="ml-auto h-4 w-4 text-blue-500 shrink-0" />
-                    )}
-                  </button>
+                  {(() => {
+                    const isActive = (neonConfig?.primaryDb ?? "replit") === "replit";
+                    return (
+                      <button
+                        onClick={() => !changingPrimary && !isActive && setConfirmSwitchTo("replit")}
+                        disabled={changingPrimary || isActive}
+                        className={`relative flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all ${
+                          isActive
+                            ? "border-blue-500 bg-blue-50 cursor-default"
+                            : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/30 bg-white cursor-pointer"
+                        }`}
+                      >
+                        {isActive && (
+                          <span className="absolute -top-2 -right-2 flex items-center gap-1 rounded-full bg-blue-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                            <Zap className="h-2.5 w-2.5" /> AKTIF
+                          </span>
+                        )}
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                          isActive ? "bg-blue-500 text-white" : "bg-slate-200 text-slate-600"
+                        }`}>R</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold">Replit DB</p>
+                          <p className="text-xs text-muted-foreground">PostgreSQL bawaan</p>
+                        </div>
+                        {isActive
+                          ? <CheckCircle2 className="ml-auto h-4 w-4 text-blue-500 shrink-0" />
+                          : <span className="ml-auto text-[10px] text-slate-400 shrink-0">Klik untuk ganti</span>
+                        }
+                      </button>
+                    );
+                  })()}
                   {/* Neon Option */}
-                  <button
-                    onClick={() => !changingPrimary && (neonConfig?.primaryDb ?? "replit") !== "neon" && changePrimaryDb("neon")}
-                    disabled={changingPrimary}
-                    className={`flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all ${
-                      neonConfig?.primaryDb === "neon"
-                        ? "border-green-500 bg-green-50"
-                        : "border-slate-200 hover:border-slate-300 bg-white"
-                    }`}
-                  >
-                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
-                      neonConfig?.primaryDb === "neon" ? "bg-green-500 text-white" : "bg-slate-200 text-slate-600"
-                    }`}>N</div>
-                    <div>
-                      <p className="text-sm font-semibold">Neon DB</p>
-                      <p className="text-xs text-muted-foreground">PostgreSQL cloud</p>
-                    </div>
-                    {neonConfig?.primaryDb === "neon" && (
-                      <CheckCircle2 className="ml-auto h-4 w-4 text-green-500 shrink-0" />
-                    )}
-                  </button>
+                  {(() => {
+                    const isActive = neonConfig?.primaryDb === "neon";
+                    return (
+                      <button
+                        onClick={() => !changingPrimary && !isActive && setConfirmSwitchTo("neon")}
+                        disabled={changingPrimary || isActive}
+                        className={`relative flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all ${
+                          isActive
+                            ? "border-green-500 bg-green-50 cursor-default"
+                            : "border-slate-200 hover:border-green-300 hover:bg-green-50/30 bg-white cursor-pointer"
+                        }`}
+                      >
+                        {isActive && (
+                          <span className="absolute -top-2 -right-2 flex items-center gap-1 rounded-full bg-green-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                            <Zap className="h-2.5 w-2.5" /> AKTIF
+                          </span>
+                        )}
+                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                          isActive ? "bg-green-500 text-white" : "bg-slate-200 text-slate-600"
+                        }`}>N</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold">Neon DB</p>
+                          <p className="text-xs text-muted-foreground">PostgreSQL cloud</p>
+                        </div>
+                        {isActive
+                          ? <CheckCircle2 className="ml-auto h-4 w-4 text-green-500 shrink-0" />
+                          : <span className="ml-auto text-[10px] text-slate-400 shrink-0">Klik untuk ganti</span>
+                        }
+                      </button>
+                    );
+                  })()}
                 </div>
                 {neonConfig?.primaryDb === "neon" && (
                   <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
                     <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span>Semua data kini dibaca & ditulis ke Neon. Pastikan Neon sudah tersinkronisasi (gunakan Sync Manual jika belum).</span>
+                    <span>Semua data kini dibaca &amp; ditulis ke Neon. Pastikan Neon sudah tersinkronisasi (gunakan Sync Manual jika belum).</span>
                   </div>
                 )}
               </div>
@@ -2359,7 +2390,7 @@ function NeonDatabaseSettings() {
                     {syncDirection === "replit_to_neon" ? "Sumber: Replit → Tujuan: Neon" : "Sumber: Neon → Tujuan: Replit"} &nbsp;·&nbsp;
                     {syncMode === "upsert_missing" ? "Insert missing only" : "Full overwrite"}
                   </p>
-                  <Button onClick={startSync} disabled={syncing} className="gap-2" variant="outline">
+                  <Button onClick={() => !syncing && setConfirmSyncOpen(true)} disabled={syncing} className="gap-2" variant="outline">
                     {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                     {syncing ? "Menyinkronkan..." : "Sync Sekarang"}
                   </Button>
@@ -2405,6 +2436,84 @@ function NeonDatabaseSettings() {
         )}
       </CardContent>
     </Card>
+
+    {/* Konfirmasi Ganti Primary DB */}
+    <AlertDialog open={!!confirmSwitchTo} onOpenChange={(open) => !open && setConfirmSwitchTo(null)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-amber-500" />
+            Ganti Database Utama?
+          </AlertDialogTitle>
+          <AlertDialogDescription className="space-y-2">
+            <span className="block">
+              Anda akan mengganti primary database dari{" "}
+              <strong>{(neonConfig?.primaryDb ?? "replit") === "replit" ? "Replit DB" : "Neon DB"}</strong> ke{" "}
+              <strong>{confirmSwitchTo === "neon" ? "Neon DB" : "Replit DB"}</strong>.
+            </span>
+            <span className="block text-amber-700 font-medium">
+              Semua operasi baca &amp; tulis data akan langsung menggunakan database tujuan.
+              Pastikan data sudah tersinkronisasi sebelum mengganti!
+            </span>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Batal</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-amber-600 hover:bg-amber-700"
+            onClick={() => {
+              if (confirmSwitchTo) doChangePrimaryDb(confirmSwitchTo);
+              setConfirmSwitchTo(null);
+            }}
+          >
+            Ya, Ganti ke {confirmSwitchTo === "neon" ? "Neon DB" : "Replit DB"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    {/* Konfirmasi Sync */}
+    <AlertDialog open={confirmSyncOpen} onOpenChange={setConfirmSyncOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5 text-blue-500" />
+            Konfirmasi Sinkronisasi
+          </AlertDialogTitle>
+          <AlertDialogDescription className="space-y-2">
+            <span className="block">
+              Akan menjalankan sync:{" "}
+              <strong>{syncDirection === "replit_to_neon" ? "Replit → Neon" : "Neon → Replit"}</strong>{" "}
+              dengan mode{" "}
+              <strong>{syncMode === "upsert_missing" ? "Hanya data baru" : "Timpa penuh"}</strong>.
+            </span>
+            {syncMode === "full_overwrite" && (
+              <span className="block text-red-600 font-medium">
+                Mode "Timpa penuh" akan menghapus SEMUA data di database tujuan dan menggantinya. Tindakan ini tidak bisa dibatalkan!
+              </span>
+            )}
+            {syncMode === "upsert_missing" && (
+              <span className="block text-slate-600">
+                Hanya baris yang belum ada di database tujuan yang akan ditambahkan. Data existing tidak tersentuh.
+              </span>
+            )}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Batal</AlertDialogCancel>
+          <AlertDialogAction
+            className={syncMode === "full_overwrite" ? "bg-red-600 hover:bg-red-700" : "bg-blue-600 hover:bg-blue-700"}
+            onClick={() => {
+              setConfirmSyncOpen(false);
+              startSync();
+            }}
+          >
+            {syncMode === "full_overwrite" ? "Ya, Timpa Sekarang" : "Ya, Sync Sekarang"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>
   );
 }
 
