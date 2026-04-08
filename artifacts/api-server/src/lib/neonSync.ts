@@ -1,14 +1,20 @@
 import { Pool } from "pg";
 import { getNeonPool } from "./neonClient.js";
-import { db } from "@workspace/db";
+import { db as replitDb } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { getNeonDrizzle } from "./neonDrizzle.js";
 
 export interface SyncProgress {
   table: string;
   status: "pending" | "creating" | "syncing" | "done" | "error";
   rows?: number;
+  inserted?: number;
+  skipped?: number;
   error?: string;
 }
+
+export type SyncDirection = "replit_to_neon" | "neon_to_replit";
+export type SyncMode = "upsert_missing" | "full_overwrite";
 
 // All tables to sync (order matters for FK constraints)
 const SYNC_TABLES = [
@@ -46,43 +52,33 @@ const SYNC_TABLES = [
   "notifications",
 ];
 
-async function createTablesInNeon(neonPool: Pool, onProgress?: (msg: string) => void): Promise<void> {
-  // Get schema from Replit DB (pg catalog)
+// Ensure tables exist in Neon (copy schema from Replit)
+async function ensureTablesInNeon(neonPool: Pool, onProgress?: (msg: string) => void): Promise<void> {
   const replitConnStr = process.env.DATABASE_URL!;
-  const replitPool = new Pool({ connectionString: replitConnStr });
-  
+  const replitPool = new Pool({ connectionString: replitConnStr, max: 2 });
+
   try {
     for (const tableName of SYNC_TABLES) {
       onProgress?.(`Memeriksa tabel: ${tableName}`);
-      
-      // Check if table exists in Neon
+
       const neonClient = await neonPool.connect();
       try {
         const exists = await neonClient.query(
           `SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1`,
           [tableName]
         );
-        
+
         if (parseInt(exists.rows[0].count) === 0) {
           onProgress?.(`Membuat tabel: ${tableName}`);
-          
-          // Get CREATE TABLE DDL from Replit
+
           const replitClient = await replitPool.connect();
           try {
-            // Get columns
             const colsResult = await replitClient.query(`
-              SELECT 
-                c.column_name,
-                c.data_type,
-                c.character_maximum_length,
-                c.numeric_precision,
-                c.numeric_scale,
-                c.is_nullable,
-                c.column_default,
-                c.udt_name
-              FROM information_schema.columns c
-              WHERE c.table_schema = 'public' AND c.table_name = $1
-              ORDER BY c.ordinal_position
+              SELECT column_name, data_type, character_maximum_length, numeric_precision,
+                     numeric_scale, is_nullable, column_default, udt_name
+              FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = $1
+              ORDER BY ordinal_position
             `, [tableName]);
 
             if (colsResult.rows.length === 0) continue;
@@ -90,8 +86,6 @@ async function createTablesInNeon(neonPool: Pool, onProgress?: (msg: string) => 
             const colDefs = colsResult.rows.map((col: any) => {
               let typeDef = "";
               const def = col.column_default || "";
-              
-              // Detect serial (integer with nextval sequence)
               if ((col.data_type === "integer" || col.data_type === "bigint") && def.includes("nextval")) {
                 typeDef = col.data_type === "bigint" ? "bigserial" : "serial";
               } else if (col.data_type === "character varying") {
@@ -101,29 +95,26 @@ async function createTablesInNeon(neonPool: Pool, onProgress?: (msg: string) => 
               } else if (col.data_type === "numeric") {
                 typeDef = col.numeric_precision ? `numeric(${col.numeric_precision},${col.numeric_scale || 0})` : "numeric";
               } else if (col.data_type === "USER-DEFINED") {
-                typeDef = col.udt_name; // e.g. enum types
+                typeDef = col.udt_name;
               } else {
                 typeDef = col.data_type;
               }
-              
               const nullable = col.is_nullable === "YES" ? "" : " NOT NULL";
               const defaultVal = def && !def.includes("nextval") ? ` DEFAULT ${def}` : "";
-              
               return `  "${col.column_name}" ${typeDef}${nullable}${defaultVal}`;
             }).join(",\n");
 
-            // Get primary key
             const pkResult = await replitClient.query(`
               SELECT kcu.column_name
               FROM information_schema.table_constraints tc
-              JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+              JOIN information_schema.key_column_usage kcu
+                ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
               WHERE tc.table_schema = 'public' AND tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY'
               ORDER BY kcu.ordinal_position
             `, [tableName]);
 
             const pkCols = pkResult.rows.map((r: any) => `"${r.column_name}"`).join(", ");
             const pkConstraint = pkCols ? `,\n  PRIMARY KEY (${pkCols})` : "";
-
             const createSQL = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n${colDefs}${pkConstraint}\n)`;
             await neonClient.query(createSQL);
           } finally {
@@ -139,7 +130,179 @@ async function createTablesInNeon(neonPool: Pool, onProgress?: (msg: string) => 
   }
 }
 
-export async function syncAllToNeon(onProgress?: (progress: SyncProgress) => void): Promise<{ success: boolean; results: SyncProgress[]; error?: string }> {
+/**
+ * Get rows from source as plain objects
+ */
+async function getSourceRows(tableName: string, direction: SyncDirection): Promise<any[]> {
+  if (direction === "replit_to_neon") {
+    const result = await replitDb.execute(sql.raw(`SELECT * FROM "${tableName}"`));
+    return Array.isArray(result) ? result : (result as any).rows || [];
+  } else {
+    // neon_to_replit: read from Neon
+    const neonDrizzle = getNeonDrizzle();
+    const result = await neonDrizzle.execute(sql.raw(`SELECT * FROM "${tableName}"`));
+    return Array.isArray(result) ? result : (result as any).rows || [];
+  }
+}
+
+/**
+ * Get existing PKs in destination to calculate skipped count
+ */
+async function getDestPks(
+  tableName: string,
+  pkCols: string[],
+  direction: SyncDirection,
+  destPool: Pool
+): Promise<Set<string>> {
+  const colList = pkCols.map(c => `"${c}"`).join(", ");
+  let rows: any[];
+  if (direction === "neon_to_replit") {
+    // destination = Replit
+    const client = await destPool.connect();
+    try {
+      const r = await client.query(`SELECT ${colList} FROM "${tableName}"`);
+      rows = r.rows;
+    } finally {
+      client.release();
+    }
+  } else {
+    // destination = Neon (already have neonPool)
+    const client = await destPool.connect();
+    try {
+      const r = await client.query(`SELECT ${colList} FROM "${tableName}"`);
+      rows = r.rows;
+    } finally {
+      client.release();
+    }
+  }
+  return new Set(rows.map(r => pkCols.map(c => String(r[c] ?? "")).join("|")));
+}
+
+/**
+ * Get primary key columns for a table from Replit (source of truth for schema)
+ */
+async function getPkColumns(tableName: string): Promise<string[]> {
+  const replitConnStr = process.env.DATABASE_URL!;
+  const pool = new Pool({ connectionString: replitConnStr, max: 2 });
+  try {
+    const client = await pool.connect();
+    try {
+      const r = await client.query(`
+        SELECT kcu.column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+        WHERE tc.table_schema = 'public' AND tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY'
+        ORDER BY kcu.ordinal_position
+      `, [tableName]);
+      return r.rows.map((row: any) => row.column_name);
+    } finally {
+      client.release();
+    }
+  } finally {
+    await pool.end();
+  }
+}
+
+/**
+ * Insert rows into destination, skipping existing ones (INSERT ON CONFLICT DO NOTHING)
+ */
+async function insertMissingRows(
+  tableName: string,
+  rows: any[],
+  destPool: Pool
+): Promise<{ inserted: number; total: number }> {
+  if (rows.length === 0) return { inserted: 0, total: 0 };
+
+  const cols = Object.keys(rows[0]);
+  const batchSize = 500;
+  let totalInserted = 0;
+
+  const client = await destPool.connect();
+  try {
+    await client.query("BEGIN");
+
+    for (let b = 0; b < rows.length; b += batchSize) {
+      const batch = rows.slice(b, b + batchSize);
+      const values: any[] = [];
+      const placeholders = batch.map((row: any, rowIdx: number) =>
+        `(${cols.map((_, ci) => {
+          values.push(row[cols[ci]] ?? null);
+          return `$${rowIdx * cols.length + ci + 1}`;
+        }).join(", ")})`
+      );
+      const colList = cols.map(c => `"${c}"`).join(", ");
+      const result = await client.query(
+        `INSERT INTO "${tableName}" (${colList}) VALUES ${placeholders.join(", ")} ON CONFLICT DO NOTHING`,
+        values
+      );
+      totalInserted += result.rowCount ?? 0;
+    }
+
+    await client.query("COMMIT");
+    return { inserted: totalInserted, total: rows.length };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Full overwrite: TRUNCATE destination then INSERT all source rows
+ */
+async function fullOverwrite(
+  tableName: string,
+  rows: any[],
+  destPool: Pool
+): Promise<{ inserted: number; total: number }> {
+  const client = await destPool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE`);
+
+    if (rows.length === 0) {
+      await client.query("COMMIT");
+      return { inserted: 0, total: 0 };
+    }
+
+    const cols = Object.keys(rows[0]);
+    const batchSize = 500;
+    let totalInserted = 0;
+
+    for (let b = 0; b < rows.length; b += batchSize) {
+      const batch = rows.slice(b, b + batchSize);
+      const values: any[] = [];
+      const placeholders = batch.map((row: any, rowIdx: number) =>
+        `(${cols.map((_, ci) => {
+          values.push(row[cols[ci]] ?? null);
+          return `$${rowIdx * cols.length + ci + 1}`;
+        }).join(", ")})`
+      );
+      const colList = cols.map(c => `"${c}"`).join(", ");
+      const result = await client.query(
+        `INSERT INTO "${tableName}" (${colList}) VALUES ${placeholders.join(", ")} ON CONFLICT DO NOTHING`,
+        values
+      );
+      totalInserted += result.rowCount ?? 0;
+    }
+
+    await client.query("COMMIT");
+    return { inserted: totalInserted, total: rows.length };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function syncAll(
+  direction: SyncDirection = "replit_to_neon",
+  mode: SyncMode = "upsert_missing",
+  onProgress?: (progress: SyncProgress) => void
+): Promise<{ success: boolean; results: SyncProgress[]; error?: string }> {
   const neonPool = getNeonPool();
   if (!neonPool) {
     return { success: false, results: [], error: "Neon tidak dikonfigurasi" };
@@ -147,79 +310,67 @@ export async function syncAllToNeon(onProgress?: (progress: SyncProgress) => voi
 
   const results: SyncProgress[] = SYNC_TABLES.map(t => ({ table: t, status: "pending" as const }));
 
-  try {
-    // First create tables if they don't exist
-    await createTablesInNeon(neonPool, (msg) => console.log("[Neon Sync]", msg));
+  // Destination pool
+  let destPool: Pool;
+  if (direction === "replit_to_neon") {
+    destPool = neonPool;
+    // Ensure tables exist in Neon
+    await ensureTablesInNeon(neonPool, (msg) => console.log("[Neon Sync]", msg));
+  } else {
+    // neon_to_replit: destination is Replit
+    destPool = new Pool({ connectionString: process.env.DATABASE_URL!, max: 5 });
+  }
 
-    for (let i = 0; i < SYNC_TABLES.length; i++) {
-      const tableName = SYNC_TABLES[i];
-      results[i].status = "syncing";
-      onProgress?.(results[i]);
+  try {
+    // For neon_to_replit, iterate tables in reverse order to avoid FK issues on full overwrite
+    const tablesToSync = direction === "neon_to_replit" && mode === "full_overwrite"
+      ? [...SYNC_TABLES].reverse()
+      : SYNC_TABLES;
+
+    for (let i = 0; i < tablesToSync.length; i++) {
+      const tableName = tablesToSync[i];
+      const resultIdx = SYNC_TABLES.indexOf(tableName);
+
+      results[resultIdx].status = "syncing";
+      onProgress?.(results[resultIdx]);
 
       try {
-        const neonClient = await neonPool.connect();
-        try {
-          // Disable triggers to speed up insert
-          await neonClient.query("BEGIN");
+        const sourceRows = await getSourceRows(tableName, direction);
 
-          // Fetch all rows from Replit DB
-          const rows = await db.execute(sql.raw(`SELECT * FROM "${tableName}"`));
-          const rowsArr = Array.isArray(rows) ? rows : (rows as any).rows || [];
-
-          if (rowsArr.length === 0) {
-            // Just truncate Neon table
-            await neonClient.query(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE`);
-            results[i].rows = 0;
-          } else {
-            // Clear Neon table and reinsert
-            await neonClient.query(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE`);
-
-            // Build bulk insert in batches of 500
-            const cols = Object.keys(rowsArr[0]);
-            const batchSize = 500;
-            
-            for (let b = 0; b < rowsArr.length; b += batchSize) {
-              const batch = rowsArr.slice(b, b + batchSize);
-              const values: any[] = [];
-              const placeholders = batch.map((row: any, rowIdx: number) => {
-                const rowPlaceholders = cols.map((_, colIdx) => {
-                  values.push(row[cols[colIdx]] === undefined ? null : row[cols[colIdx]]);
-                  return `$${rowIdx * cols.length + colIdx + 1}`;
-                });
-                return `(${rowPlaceholders.join(", ")})`;
-              });
-
-              const colList = cols.map(c => `"${c}"`).join(", ");
-              const insertSQL = `INSERT INTO "${tableName}" (${colList}) VALUES ${placeholders.join(", ")} ON CONFLICT DO NOTHING`;
-              await neonClient.query(insertSQL, values);
-            }
-
-            results[i].rows = rowsArr.length;
-          }
-
-          await neonClient.query("COMMIT");
-          results[i].status = "done";
-        } catch (err: any) {
-          await neonClient.query("ROLLBACK").catch(() => {});
-          results[i].status = "error";
-          results[i].error = err.message;
-          console.error(`[Neon Sync] Error syncing ${tableName}:`, err.message);
-        } finally {
-          neonClient.release();
+        let syncResult: { inserted: number; total: number };
+        if (mode === "full_overwrite") {
+          syncResult = await fullOverwrite(tableName, sourceRows, destPool);
+        } else {
+          syncResult = await insertMissingRows(tableName, sourceRows, destPool);
         }
+
+        results[resultIdx].rows = syncResult.total;
+        results[resultIdx].inserted = syncResult.inserted;
+        results[resultIdx].skipped = syncResult.total - syncResult.inserted;
+        results[resultIdx].status = "done";
       } catch (err: any) {
-        results[i].status = "error";
-        results[i].error = err.message;
+        results[resultIdx].status = "error";
+        results[resultIdx].error = err.message;
+        console.error(`[Sync] Error on ${tableName}:`, err.message);
       }
 
-      onProgress?.(results[i]);
+      onProgress?.(results[resultIdx]);
     }
 
     const hasError = results.some(r => r.status === "error");
     return { success: !hasError, results };
-  } catch (err: any) {
-    return { success: false, results, error: err.message };
+  } finally {
+    if (direction === "neon_to_replit") {
+      await (destPool as Pool).end();
+    }
   }
+}
+
+// Backward compat — kept for existing callers
+export async function syncAllToNeon(
+  onProgress?: (progress: SyncProgress) => void
+): Promise<{ success: boolean; results: SyncProgress[]; error?: string }> {
+  return syncAll("replit_to_neon", "full_overwrite", onProgress);
 }
 
 export async function checkNeonTablesExist(): Promise<{ hasAllTables: boolean; missingTables: string[]; existingTables: string[] }> {
@@ -227,11 +378,11 @@ export async function checkNeonTablesExist(): Promise<{ hasAllTables: boolean; m
   if (!neonPool) {
     return { hasAllTables: false, missingTables: SYNC_TABLES, existingTables: [] };
   }
-  
+
   const client = await neonPool.connect();
   try {
     const result = await client.query(`
-      SELECT table_name FROM information_schema.tables 
+      SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
     `);
     const existingTables = result.rows.map((r: any) => r.table_name);
@@ -242,11 +393,9 @@ export async function checkNeonTablesExist(): Promise<{ hasAllTables: boolean; m
   }
 }
 
-// Lightweight dual-write: replicate raw SQL to Neon async (fire-and-forget)
 export function replicateToNeon(query: string, values?: any[]): void {
   const neonPool = getNeonPool();
   if (!neonPool) return;
-  
   neonPool.query(query, values).catch(err => {
     console.error("[Neon DualWrite] Error:", err.message, "Query:", query.substring(0, 100));
   });

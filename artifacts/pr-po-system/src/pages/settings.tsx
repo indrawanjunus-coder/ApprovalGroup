@@ -2032,6 +2032,8 @@ function NeonDatabaseSettings() {
   const [syncSummary, setSyncSummary] = useState<string | null>(null);
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [changingPrimary, setChangingPrimary] = useState(false);
+  const [syncDirection, setSyncDirection] = useState<"replit_to_neon" | "neon_to_replit">("replit_to_neon");
+  const [syncMode, setSyncMode] = useState<"upsert_missing" | "full_overwrite">("upsert_missing");
 
   const changePrimaryDb = async (val: "replit" | "neon") => {
     setChangingPrimary(true);
@@ -2098,6 +2100,8 @@ function NeonDatabaseSettings() {
       const response = await fetch(`${apiBase}/api/settings/neon/sync`, {
         method: "POST",
         credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction: syncDirection, mode: syncMode }),
       });
 
       const reader = response.body!.getReader();
@@ -2284,15 +2288,78 @@ function NeonDatabaseSettings() {
               </div>
             )}
 
-            {/* Sync Button */}
+            {/* Sync Manual */}
             {neonConfig?.configured && (
-              <div className="space-y-3 pt-1 border-t">
+              <div className="space-y-4 pt-1 border-t">
+                <div>
+                  <p className="font-semibold text-sm">Sync Manual</p>
+                  <p className="text-xs text-muted-foreground">Sinkronisasi data antar database. Mode "Hanya data baru" menambahkan baris yang belum ada tanpa menghapus data existing.</p>
+                </div>
+
+                {/* Direction Selector */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => !syncing && setSyncDirection("replit_to_neon")}
+                    disabled={syncing}
+                    className={`flex items-center gap-2 rounded-lg border-2 px-3 py-2.5 text-left text-sm transition-all ${
+                      syncDirection === "replit_to_neon"
+                        ? "border-blue-500 bg-blue-50 font-semibold"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    }`}
+                  >
+                    <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${syncDirection === "replit_to_neon" ? "bg-blue-500 text-white" : "bg-slate-200 text-slate-600"}`}>R</span>
+                    <span>Replit <span className="text-muted-foreground font-normal">→</span> Neon</span>
+                    {syncDirection === "replit_to_neon" && <CheckCircle2 className="ml-auto h-3.5 w-3.5 text-blue-500 shrink-0" />}
+                  </button>
+                  <button
+                    onClick={() => !syncing && setSyncDirection("neon_to_replit")}
+                    disabled={syncing}
+                    className={`flex items-center gap-2 rounded-lg border-2 px-3 py-2.5 text-left text-sm transition-all ${
+                      syncDirection === "neon_to_replit"
+                        ? "border-green-500 bg-green-50 font-semibold"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    }`}
+                  >
+                    <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${syncDirection === "neon_to_replit" ? "bg-green-500 text-white" : "bg-slate-200 text-slate-600"}`}>N</span>
+                    <span>Neon <span className="text-muted-foreground font-normal">→</span> Replit</span>
+                    {syncDirection === "neon_to_replit" && <CheckCircle2 className="ml-auto h-3.5 w-3.5 text-green-500 shrink-0" />}
+                  </button>
+                </div>
+
+                {/* Mode Selector */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => !syncing && setSyncMode("upsert_missing")}
+                    disabled={syncing}
+                    className={`rounded-lg border-2 px-3 py-2 text-left transition-all ${
+                      syncMode === "upsert_missing"
+                        ? "border-indigo-500 bg-indigo-50"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    }`}
+                  >
+                    <p className={`text-xs font-semibold ${syncMode === "upsert_missing" ? "text-indigo-700" : "text-slate-700"}`}>Hanya data baru</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Insert baris yang belum ada, lewati yang sudah ada</p>
+                  </button>
+                  <button
+                    onClick={() => !syncing && setSyncMode("full_overwrite")}
+                    disabled={syncing}
+                    className={`rounded-lg border-2 px-3 py-2 text-left transition-all ${
+                      syncMode === "full_overwrite"
+                        ? "border-orange-500 bg-orange-50"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    }`}
+                  >
+                    <p className={`text-xs font-semibold ${syncMode === "full_overwrite" ? "text-orange-700" : "text-slate-700"}`}>Timpa penuh</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Hapus semua & salin ulang seluruh data</p>
+                  </button>
+                </div>
+
                 <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-sm">Sync Manual (Replit → Neon)</p>
-                    <p className="text-xs text-muted-foreground">Salin semua data dari database Replit ke Neon. Gunakan ini untuk inisialisasi awal atau setelah Dual Write dinonaktifkan lama.</p>
-                  </div>
-                  <Button onClick={startSync} disabled={syncing} className="gap-2 ml-4" variant="outline">
+                  <p className="text-xs text-muted-foreground">
+                    {syncDirection === "replit_to_neon" ? "Sumber: Replit → Tujuan: Neon" : "Sumber: Neon → Tujuan: Replit"} &nbsp;·&nbsp;
+                    {syncMode === "upsert_missing" ? "Insert missing only" : "Full overwrite"}
+                  </p>
+                  <Button onClick={startSync} disabled={syncing} className="gap-2" variant="outline">
                     {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                     {syncing ? "Menyinkronkan..." : "Sync Sekarang"}
                   </Button>
@@ -2306,7 +2373,7 @@ function NeonDatabaseSettings() {
                         ✓ {syncSummary}
                       </div>
                     )}
-                    {syncLog.map((row, i) => (
+                    {syncLog.map((row: any, i) => (
                       <div key={i} className="flex items-center gap-2">
                         {row.status === "done" && <span className="text-green-400">✓</span>}
                         {row.status === "error" && <span className="text-red-400">✗</span>}
@@ -2315,8 +2382,12 @@ function NeonDatabaseSettings() {
                         <span className={row.status === "error" ? "text-red-400" : row.status === "done" ? "text-slate-200" : "text-slate-400"}>
                           {row.table}
                         </span>
-                        {row.status === "done" && row.rows !== undefined && (
-                          <span className="text-slate-500">{row.rows} baris</span>
+                        {row.status === "done" && (
+                          <span className="text-slate-500">
+                            {row.inserted !== undefined
+                              ? `+${row.inserted} baru${row.skipped > 0 ? `, ${row.skipped} dilewati` : ""}`
+                              : `${row.rows || 0} baris`}
+                          </span>
                         )}
                         {row.status === "error" && row.error && (
                           <span className="text-red-400 truncate">{row.error}</span>

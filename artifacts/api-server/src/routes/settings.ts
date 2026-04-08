@@ -6,7 +6,8 @@ import { requireAuth, requireRole } from "../lib/auth.js";
 import nodemailer from "nodemailer";
 import { handleRouteError } from "../lib/audit.js";
 import { testNeonConnection, isNeonConfigured } from "../lib/neonClient.js";
-import { syncAllToNeon, checkNeonTablesExist } from "../lib/neonSync.js";
+import { syncAllToNeon, syncAll, checkNeonTablesExist } from "../lib/neonSync.js";
+import type { SyncDirection, SyncMode } from "../lib/neonSync.js";
 import { setPrimaryDb, getPrimaryDb } from "../lib/db.js";
 import { invalidateNeonCache } from "../lib/neonDualWrite.js";
 
@@ -384,13 +385,18 @@ router.post("/neon/test", requireRole("admin"), async (req, res) => {
   } catch (err) { handleRouteError(res, err); }
 });
 
-// Sync Replit → Neon (SSE streaming progress)
+// Sync between databases (SSE streaming progress)
+// direction: "replit_to_neon" | "neon_to_replit"
+// mode: "upsert_missing" (insert only new rows) | "full_overwrite" (truncate + reinsert)
 let syncInProgress = false;
 router.post("/neon/sync", requireRole("admin"), async (req, res) => {
   if (syncInProgress) {
     res.status(409).json({ error: "Sinkronisasi sedang berjalan, harap tunggu." });
     return;
   }
+
+  const direction: SyncDirection = (req.body?.direction === "neon_to_replit") ? "neon_to_replit" : "replit_to_neon";
+  const mode: SyncMode = (req.body?.mode === "full_overwrite") ? "full_overwrite" : "upsert_missing";
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -401,17 +407,22 @@ router.post("/neon/sync", requireRole("admin"), async (req, res) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
 
+  const dirLabel = direction === "replit_to_neon" ? "Replit → Neon" : "Neon → Replit";
+  const modeLabel = mode === "upsert_missing" ? "hanya data baru" : "timpa penuh";
+
   syncInProgress = true;
   try {
-    sendEvent({ type: "start", message: "Memulai sinkronisasi ke Neon..." });
+    sendEvent({ type: "start", message: `Memulai sinkronisasi ${dirLabel} (${modeLabel})...` });
 
-    const result = await syncAllToNeon((progress) => {
+    const result = await syncAll(direction, mode, (progress) => {
       sendEvent({ type: "progress", ...progress });
     });
 
     const doneCount = result.results.filter(r => r.status === "done").length;
     const errorCount = result.results.filter(r => r.status === "error").length;
     const totalRows = result.results.reduce((s, r) => s + (r.rows || 0), 0);
+    const totalInserted = result.results.reduce((s, r) => s + (r.inserted || 0), 0);
+    const totalSkipped = result.results.reduce((s, r) => s + (r.skipped || 0), 0);
 
     sendEvent({
       type: "complete",
@@ -419,8 +430,12 @@ router.post("/neon/sync", requireRole("admin"), async (req, res) => {
       doneCount,
       errorCount,
       totalRows,
+      totalInserted,
+      totalSkipped,
+      direction,
+      mode,
       message: result.success
-        ? `Berhasil sinkronisasi ${doneCount} tabel (${totalRows.toLocaleString()} baris total)`
+        ? `${dirLabel}: ${doneCount} tabel selesai — ${totalInserted.toLocaleString()} baris ditambahkan, ${totalSkipped.toLocaleString()} dilewati`
         : `Sinkronisasi selesai dengan ${errorCount} error`,
     });
   } catch (err: any) {
