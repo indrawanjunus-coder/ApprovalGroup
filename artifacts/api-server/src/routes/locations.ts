@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db } from "../lib/db.js";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import { sql } from "drizzle-orm";
 import { handleRouteError } from "../lib/audit.js";

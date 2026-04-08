@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db } from "../lib/db.js";
 import { notificationsTable } from "@workspace/db/schema";
 import { eq, and, desc, count } from "drizzle-orm";
 import { requireAuth } from "../lib/auth.js";

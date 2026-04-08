@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db } from "../lib/db.js";
 import {
   approvalsTable, purchaseRequestsTable, usersTable, userCompaniesTable, companiesTable,
   userLeaveBalancesTable, prItemsTable, prReceivingItemsTable,

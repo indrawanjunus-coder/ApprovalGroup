@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { db } from "@workspace/db";
+import { db } from "./db.js";
 import { auditLogsTable } from "@workspace/db/schema";
 
 export async function createAuditLog(

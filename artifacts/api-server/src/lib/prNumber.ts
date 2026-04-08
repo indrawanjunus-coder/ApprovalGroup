@@ -1,4 +1,4 @@
-import { db } from "@workspace/db";
+import { db } from "./db.js";
 import { purchaseRequestsTable, purchaseOrdersTable } from "@workspace/db/schema";
 import { like } from "drizzle-orm";
 

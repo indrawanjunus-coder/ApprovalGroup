@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db } from "../lib/db.js";
 import { usersTable, userCompaniesTable, companiesTable, userLeaveBalancesTable, companyLeaveSettingsTable, settingsTable } from "@workspace/db/schema";
 import { eq, ilike, or, count, inArray, sql, and } from "drizzle-orm";
 import { hashPassword, requireAuth, requireRole } from "../lib/auth.js";

@@ -2031,6 +2031,31 @@ function NeonDatabaseSettings() {
   const [syncLog, setSyncLog] = useState<Array<{ table: string; status: string; rows?: number; error?: string }>>([]);
   const [syncSummary, setSyncSummary] = useState<string | null>(null);
   const [togglingEnabled, setTogglingEnabled] = useState(false);
+  const [changingPrimary, setChangingPrimary] = useState(false);
+
+  const changePrimaryDb = async (val: "replit" | "neon") => {
+    setChangingPrimary(true);
+    try {
+      const r = await fetch(`${apiBase}/api/settings/neon`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ primaryDb: val }),
+      });
+      if (!r.ok) throw new Error("Gagal menyimpan");
+      refetch();
+      toast({
+        title: val === "neon" ? "Primary DB: Neon" : "Primary DB: Replit",
+        description: val === "neon"
+          ? "Semua operasi baca/tulis kini menggunakan database Neon."
+          : "Semua operasi baca/tulis kini menggunakan database Replit.",
+      });
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Tidak dapat mengubah primary database" });
+    } finally {
+      setChangingPrimary(false);
+    }
+  };
 
   const testConnection = async () => {
     setTesting(true);
@@ -2120,10 +2145,10 @@ function NeonDatabaseSettings() {
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <Database className="h-5 w-5 text-blue-600" />
-          Database Neon (Backup)
+          Manajemen Database (Replit & Neon)
         </CardTitle>
         <p className="text-sm text-muted-foreground">
-          Sinkronisasi data ke database PostgreSQL Neon Tech sebagai backup atau mirror. Aktifkan Dual Write agar setiap perubahan data otomatis tersimpan ke Neon.
+          Pilih database utama (Replit atau Neon), aktifkan Dual Write agar perubahan otomatis disinkronkan ke database sekunder, atau jalankan sync manual.
         </p>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -2169,13 +2194,80 @@ function NeonDatabaseSettings() {
               </div>
             )}
 
+            {/* Primary DB Selector */}
+            {neonConfig?.configured && (
+              <div className="rounded-xl border p-4 bg-slate-50/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-base font-semibold">Database Utama (Primary)</Label>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Semua operasi baca & tulis akan menggunakan database yang dipilih sebagai primary.
+                    </p>
+                  </div>
+                  {changingPrimary && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Replit Option */}
+                  <button
+                    onClick={() => !changingPrimary && (neonConfig?.primaryDb ?? "replit") !== "replit" && changePrimaryDb("replit")}
+                    disabled={changingPrimary}
+                    className={`flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all ${
+                      (neonConfig?.primaryDb ?? "replit") === "replit"
+                        ? "border-blue-500 bg-blue-50"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    }`}
+                  >
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                      (neonConfig?.primaryDb ?? "replit") === "replit" ? "bg-blue-500 text-white" : "bg-slate-200 text-slate-600"
+                    }`}>R</div>
+                    <div>
+                      <p className="text-sm font-semibold">Replit DB</p>
+                      <p className="text-xs text-muted-foreground">PostgreSQL bawaan</p>
+                    </div>
+                    {(neonConfig?.primaryDb ?? "replit") === "replit" && (
+                      <CheckCircle2 className="ml-auto h-4 w-4 text-blue-500 shrink-0" />
+                    )}
+                  </button>
+                  {/* Neon Option */}
+                  <button
+                    onClick={() => !changingPrimary && (neonConfig?.primaryDb ?? "replit") !== "neon" && changePrimaryDb("neon")}
+                    disabled={changingPrimary}
+                    className={`flex items-center gap-3 rounded-lg border-2 p-3 text-left transition-all ${
+                      neonConfig?.primaryDb === "neon"
+                        ? "border-green-500 bg-green-50"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    }`}
+                  >
+                    <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold ${
+                      neonConfig?.primaryDb === "neon" ? "bg-green-500 text-white" : "bg-slate-200 text-slate-600"
+                    }`}>N</div>
+                    <div>
+                      <p className="text-sm font-semibold">Neon DB</p>
+                      <p className="text-xs text-muted-foreground">PostgreSQL cloud</p>
+                    </div>
+                    {neonConfig?.primaryDb === "neon" && (
+                      <CheckCircle2 className="ml-auto h-4 w-4 text-green-500 shrink-0" />
+                    )}
+                  </button>
+                </div>
+                {neonConfig?.primaryDb === "neon" && (
+                  <div className="flex items-start gap-2 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>Semua data kini dibaca & ditulis ke Neon. Pastikan Neon sudah tersinkronisasi (gunakan Sync Manual jika belum).</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Dual Write Toggle */}
             {neonConfig?.configured && (
               <div className="flex flex-row items-center justify-between rounded-xl border p-4 bg-slate-50/50">
                 <div className="space-y-0.5 flex-1 mr-4">
                   <Label className="text-base font-semibold">Dual Write (Otomatis Sync)</Label>
                   <p className="text-sm text-muted-foreground">
-                    Setiap kali data berubah (tambah, edit, hapus), perubahan akan otomatis disinkronkan ke Neon secara asinkron.
+                    {neonConfig?.primaryDb === "neon"
+                      ? "Setiap perubahan di Neon otomatis disinkronkan ke Replit sebagai backup."
+                      : "Setiap perubahan di Replit otomatis disinkronkan ke Neon sebagai backup."}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

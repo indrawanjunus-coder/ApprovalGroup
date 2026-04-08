@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { sendPOCreatedEmail, sendReceivingReadyEmail, sendPOIssuedEmail } from "../lib/email.js";
-import { db } from "@workspace/db";
+import { db } from "../lib/db.js";
 import { purchaseOrdersTable, poItemsTable, purchaseRequestsTable, usersTable, settingsTable, approvalsTable, companiesTable } from "@workspace/db/schema";
 import { eq, desc, count, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";

@@ -1,5 +1,5 @@
 import nodemailer from "nodemailer";
-import { db } from "@workspace/db";
+import { db } from "./db.js";
 import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 

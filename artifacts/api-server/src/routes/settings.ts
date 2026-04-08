@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db } from "../lib/db.js";
 import { settingsTable, companiesTable, companyLeaveSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
@@ -7,6 +7,8 @@ import nodemailer from "nodemailer";
 import { handleRouteError } from "../lib/audit.js";
 import { testNeonConnection, isNeonConfigured } from "../lib/neonClient.js";
 import { syncAllToNeon, checkNeonTablesExist } from "../lib/neonSync.js";
+import { setPrimaryDb, getPrimaryDb } from "../lib/db.js";
+import { invalidateNeonCache } from "../lib/neonDualWrite.js";
 
 const router = Router();
 
@@ -330,9 +332,10 @@ router.put("/leave-eligibility", requireRole("admin"), async (req, res) => {
 router.get("/neon", requireRole("admin"), async (req, res) => {
   try {
     const configured = isNeonConfigured();
-    const [neonEnabled, neonUrl] = await Promise.all([
+    const [neonEnabled, neonUrl, primaryDb] = await Promise.all([
       getSettingValue("neon_db_enabled"),
       getSettingValue("neon_db_url"),
+      getSettingValue("primary_db"),
     ]);
 
     let tableStatus = null;
@@ -345,6 +348,7 @@ router.get("/neon", requireRole("admin"), async (req, res) => {
     res.json({
       configured,
       enabled: neonEnabled === "true",
+      primaryDb: (primaryDb as "replit" | "neon") || "replit",
       connectionUrl: neonUrl || (configured ? "[dikonfigurasi via ENV]" : ""),
       hasAllTables: tableStatus?.hasAllTables ?? false,
       missingTables: tableStatus?.missingTables ?? [],
@@ -353,14 +357,22 @@ router.get("/neon", requireRole("admin"), async (req, res) => {
   } catch (err) { handleRouteError(res, err); }
 });
 
-// Update Neon config (enable/disable)
+// Update Neon config (enable/disable + primary DB selector)
 router.put("/neon", requireRole("admin"), async (req, res) => {
-  const { enabled } = req.body;
+  const { enabled, primaryDb } = req.body;
   try {
     if (enabled !== undefined) await upsertSetting("neon_db_enabled", String(enabled));
+    if (primaryDb === "replit" || primaryDb === "neon") {
+      await upsertSetting("primary_db", primaryDb);
+      setPrimaryDb(primaryDb);
+    }
+    invalidateNeonCache();
     const configured = isNeonConfigured();
-    const neonEnabled = await getSettingValue("neon_db_enabled");
-    res.json({ configured, enabled: neonEnabled === "true" });
+    const [neonEnabled, savedPrimary] = await Promise.all([
+      getSettingValue("neon_db_enabled"),
+      getSettingValue("primary_db"),
+    ]);
+    res.json({ configured, enabled: neonEnabled === "true", primaryDb: savedPrimary || "replit" });
   } catch (err) { handleRouteError(res, err); }
 });
 

@@ -1,4 +1,8 @@
 import app from "./app";
+import { db } from "@workspace/db";
+import { settingsTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
+import { setPrimaryDb } from "./lib/db.js";
 
 const rawPort = process.env["PORT"];
 
@@ -14,6 +18,20 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, () => {
+app.listen(port, async () => {
   console.log(`Server listening on port ${port}`);
+
+  // Initialize primary DB from saved settings
+  try {
+    const [row] = await db.select().from(settingsTable).where(eq(settingsTable.key, "primary_db"));
+    const savedPrimary = row?.value;
+    if (savedPrimary === "neon") {
+      setPrimaryDb("neon");
+      console.log("[DB] Primary database: NEON (dari pengaturan tersimpan)");
+    } else {
+      console.log("[DB] Primary database: REPLIT (default)");
+    }
+  } catch (err) {
+    console.warn("[DB] Tidak bisa memuat pengaturan primary_db, menggunakan Replit:", (err as Error).message);
+  }
 });

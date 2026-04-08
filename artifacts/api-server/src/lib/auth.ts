@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { db } from "@workspace/db";
+import { db } from "./db.js";
 import { usersTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "crypto";

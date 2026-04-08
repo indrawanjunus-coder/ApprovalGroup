@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { db } from "@workspace/db";
+import { db } from "./db.js";
 import { auditLogsTable } from "@workspace/db/schema";
 
 export function errorAuditMiddleware(req: Request, res: Response, next: NextFunction) {

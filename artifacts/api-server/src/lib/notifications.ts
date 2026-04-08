@@ -1,4 +1,4 @@
-import { db } from "@workspace/db";
+import { db } from "./db.js";
 import { notificationsTable } from "@workspace/db/schema";
 
 export async function createNotification(

@@ -41,8 +41,33 @@ The system is built as a pnpm workspace monorepo using Node.js 24 and TypeScript
 - **Comprehensive Audit Trail:** All system activities are logged in the `audit_logs` table for traceability.
 - **User Interface (UI):** Mobile-friendly design, Bahasa Indonesia localization, with standard UI components for navigation, tables, forms, and data visualization (e.g., Recharts for dashboards). `PaginationControls` component for all list pages.
 
+# Additional Features (Latest)
+
+## External Vendor Portal (`/external-portal/`)
+A standalone React/Vite portal at `/external-portal/` for external vendors and internal users:
+- **Vendor**: Register company, verify auth code, submit invoices (with Google Drive upload), view own invoices, reports
+- **Internal User**: View all invoices, manage vendors, reports, portal settings (SMTP, limits)
+- **Route file**: `artifacts/api-server/src/routes/external.ts` (1322 lines)
+- **Pages**: login, register, verify-code, profile, submit-invoice, invoices, admin/(invoices, vendors, reports, settings, items, uoms)
+- Login page of main portal shows "Login Portal Vendor" + "Daftar sebagai Vendor" buttons
+
+## Dual Database Support (Replit DB + Neon PostgreSQL)
+- **Dynamic DB Proxy**: `artifacts/api-server/src/lib/db.ts` — exports `db` as a JS Proxy that transparently routes all Drizzle operations to either Replit DB or Neon DB based on the current primary DB setting
+- **Neon Drizzle Client**: `artifacts/api-server/src/lib/neonDrizzle.ts` — lazy singleton Drizzle client for Neon using the same schema as Replit
+- **Primary DB Selector**: In Settings → Manajemen Database, admin can switch primary between Replit (default) and Neon. Saved to `settings` table, applied immediately, and persisted across restarts (loaded from DB in `index.ts`)
+- **Dual Write Middleware**: `artifacts/api-server/src/lib/neonDualWrite.ts` — after each successful write, asynchronously syncs affected tables from primary→secondary (supports both Replit→Neon and Neon→Replit)
+- **Manual Sync**: Streaming SSE endpoint `/api/settings/neon/sync` syncs all 32 tables with live progress in the UI
+- All 21 route files import `db` from `../lib/db.js` (dynamic proxy), not directly from `@workspace/db`
+
+## Per-User Feature Access Control
+- Global feature flags (Duty Meal, Pembayaran, Purchase Request) in Settings → Manajemen Fitur
+- Per-user overrides in User Management → Akses Fitur checkboxes
+- `AppLayout.tsx` gates navigation items using both global flags + per-user settings
+
 # External Dependencies
 
-- **PostgreSQL:** Primary database for all application data.
-- **Nodemailer:** Used by the `api-server` for sending email notifications, configured via SMTP settings stored in the database.
-- **Recharts:** Employed on the dashboard for rendering various charts and data visualizations.
+- **PostgreSQL (Replit):** Primary database (default) via `DATABASE_URL`
+- **PostgreSQL (Neon):** Optional secondary/primary cloud DB via `NEON_DATABASE_URL`
+- **Nodemailer:** Email notifications; configurable SMTP settings per portal (main + external)
+- **Recharts:** Dashboard data visualizations
+- **Google Drive API:** External portal invoice file uploads via OAuth service account

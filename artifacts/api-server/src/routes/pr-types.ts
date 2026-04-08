@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../lib/auth.js";
-import { db } from "@workspace/db";
+import { db } from "../lib/db.js";
 import { prTypesTable } from "@workspace/db/schema";
 import { eq, asc } from "drizzle-orm";
 

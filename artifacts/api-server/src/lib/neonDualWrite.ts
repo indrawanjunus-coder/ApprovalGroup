@@ -1,9 +1,13 @@
 import { Request, Response, NextFunction } from "express";
-import { db } from "@workspace/db";
+import { db as replitDb } from "@workspace/db";
 import { settingsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getNeonPool } from "./neonClient.js";
-import { sql } from "drizzle-orm";
+import { getPrimaryDb } from "./db.js";
+import { getNeonDrizzle } from "./neonDrizzle.js";
+import pg from "pg";
+
+const { Pool } = pg;
 
 // Cache neon_db_enabled to avoid DB call per request
 let neonEnabledCache: boolean | null = null;
@@ -16,7 +20,8 @@ async function isNeonWriteEnabled(): Promise<boolean> {
     return neonEnabledCache;
   }
   try {
-    const [row] = await db.select().from(settingsTable).where(eq(settingsTable.key, "neon_db_enabled"));
+    // Always read setting from Replit to avoid circular dependency
+    const [row] = await replitDb.select().from(settingsTable).where(eq(settingsTable.key, "neon_db_enabled"));
     neonEnabledCache = row?.value === "true";
     neonEnabledCacheAt = now;
   } catch {
@@ -59,36 +64,37 @@ function getTablesForRoute(path: string): string[] {
   return [];
 }
 
-async function syncTableToNeon(tableName: string): Promise<void> {
-  const neonPool = getNeonPool();
-  if (!neonPool) return;
+/**
+ * Sync a table from the primary DB to the secondary DB.
+ * primary=Replit → read from Replit, write to Neon
+ * primary=Neon   → read from Neon, write to Replit
+ */
+async function syncTableToSecondary(tableName: string): Promise<void> {
+  const primary = getPrimaryDb();
 
-  try {
-    // Fetch all rows from Replit
-    const rows = await db.execute(sql.raw(`SELECT * FROM "${tableName}"`));
+  if (primary === "replit") {
+    // Replit → Neon
+    const neonPool = getNeonPool();
+    if (!neonPool) return;
+
+    const rows = await replitDb.execute(sql.raw(`SELECT * FROM "${tableName}"`));
     const rowsArr = Array.isArray(rows) ? rows : (rows as any).rows || [];
 
     const client = await neonPool.connect();
     try {
       await client.query("BEGIN");
       await client.query(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE`);
-
       if (rowsArr.length > 0) {
         const cols = Object.keys(rowsArr[0]);
         const batchSize = 500;
         for (let b = 0; b < rowsArr.length; b += batchSize) {
           const batch = rowsArr.slice(b, b + batchSize);
           const values: any[] = [];
-          const placeholders = batch.map((row: any, rowIdx: number) => {
-            const rowPH = cols.map((_, colIdx) => {
-              values.push(row[cols[colIdx]] ?? null);
-              return `$${rowIdx * cols.length + colIdx + 1}`;
-            });
-            return `(${rowPH.join(", ")})`;
-          });
-          const colList = cols.map(c => `"${c}"`).join(", ");
+          const placeholders = batch.map((row: any, rowIdx: number) =>
+            `(${cols.map((_, ci) => { values.push(row[cols[ci]] ?? null); return `$${rowIdx * cols.length + ci + 1}`; }).join(", ")})`
+          );
           await client.query(
-            `INSERT INTO "${tableName}" (${colList}) VALUES ${placeholders.join(", ")} ON CONFLICT DO NOTHING`,
+            `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(", ")}) VALUES ${placeholders.join(", ")} ON CONFLICT DO NOTHING`,
             values
           );
         }
@@ -100,8 +106,45 @@ async function syncTableToNeon(tableName: string): Promise<void> {
     } finally {
       client.release();
     }
-  } catch (err: any) {
-    console.error(`[Neon DualWrite] Error syncing table "${tableName}":`, err.message);
+  } else {
+    // Neon → Replit
+    const neonDrizzle = getNeonDrizzle();
+    const replitConnStr = process.env.DATABASE_URL!;
+    const replitPool = new Pool({ connectionString: replitConnStr, max: 2 });
+
+    try {
+      const rows = await neonDrizzle.execute(sql.raw(`SELECT * FROM "${tableName}"`));
+      const rowsArr = Array.isArray(rows) ? rows : (rows as any).rows || [];
+
+      const client = await replitPool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE`);
+        if (rowsArr.length > 0) {
+          const cols = Object.keys(rowsArr[0]);
+          const batchSize = 500;
+          for (let b = 0; b < rowsArr.length; b += batchSize) {
+            const batch = rowsArr.slice(b, b + batchSize);
+            const values: any[] = [];
+            const placeholders = batch.map((row: any, rowIdx: number) =>
+              `(${cols.map((_, ci) => { values.push(row[cols[ci]] ?? null); return `$${rowIdx * cols.length + ci + 1}`; }).join(", ")})`
+            );
+            await client.query(
+              `INSERT INTO "${tableName}" (${cols.map(c => `"${c}"`).join(", ")}) VALUES ${placeholders.join(", ")} ON CONFLICT DO NOTHING`,
+              values
+            );
+          }
+        }
+        await client.query("COMMIT");
+      } catch (err: any) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw err;
+      } finally {
+        client.release();
+      }
+    } finally {
+      await replitPool.end();
+    }
   }
 }
 
@@ -115,18 +158,16 @@ export function neonDualWriteMiddleware(req: Request, res: Response, next: NextF
   res.on("finish", () => {
     if (res.statusCode >= 200 && res.statusCode < 300) {
       const path = req.path;
-      // Skip sync endpoint itself to avoid recursion
-      if (path.includes("/neon/sync") || path.includes("/neon/test")) return;
+      if (path.includes("/neon/sync") || path.includes("/neon/test") || path.includes("/neon/primary")) return;
 
       const tables = getTablesForRoute(path);
       if (tables.length === 0) return;
 
       isNeonWriteEnabled().then(enabled => {
         if (!enabled) return;
-        // Fire-and-forget: sync each affected table
         for (const table of tables) {
-          syncTableToNeon(table).catch(err => {
-            console.error(`[Neon DualWrite] Failed to sync ${table}:`, err.message);
+          syncTableToSecondary(table).catch(err => {
+            console.error(`[DualWrite] Failed to sync ${table}:`, err.message);
           });
         }
       }).catch(() => {});
