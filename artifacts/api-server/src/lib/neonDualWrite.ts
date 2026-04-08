@@ -57,6 +57,7 @@ const ROUTE_TABLE_MAP: Array<{ pattern: RegExp; tables: string[] }> = [
   { pattern: /^\/api\/pr-types/, tables: ["pr_types"] },
   { pattern: /^\/api\/locations/, tables: ["locations"] },
   { pattern: /^\/api\/master/, tables: ["master_items", "master_uoms"] },
+  { pattern: /^\/api\/v1\/(items|uoms)/, tables: ["master_items", "master_uoms"] },
   { pattern: /^\/api\/leave/, tables: ["user_leave_balances"] },
   { pattern: /^\/api\/duty-meal/, tables: ["duty_meals", "duty_meal_monthly_payments", "duty_meal_plafon"] },
   { pattern: /^\/api\/external\/invoices/, tables: ["vendor_invoices", "vendor_invoice_items"] },

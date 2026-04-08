@@ -21,6 +21,8 @@ import locationsRouter from "./locations.js";
 import brandsRouter from "./brands.js";
 import dutyMealsRouter from "./duty-meals.js";
 import externalRouter from "./external.js";
+import publicApiRouter from "./public-api.js";
+import apiKeysRouter from "./api-keys.js";
 
 const router = Router();
 
@@ -46,5 +48,7 @@ router.use("/locations", locationsRouter);
 router.use("/brands", brandsRouter);
 router.use("/duty-meals", dutyMealsRouter);
 router.use("/external", externalRouter);
+router.use("/v1", publicApiRouter);
+router.use("/api-keys", apiKeysRouter);
 
 export default router;

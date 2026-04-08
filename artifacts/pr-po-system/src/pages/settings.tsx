@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin, Utensils, CreditCard, Database, RefreshCw, Wifi, WifiOff, AlertTriangle, CheckCircle2, Circle, Zap, Eye, EyeOff, Link, KeyRound, Server } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin, Utensils, CreditCard, Database, RefreshCw, Wifi, WifiOff, AlertTriangle, CheckCircle2, Circle, Zap, Eye, EyeOff, Link, KeyRound, Server, Copy, ShieldCheck, Clock } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -2750,6 +2750,194 @@ function NeonDatabaseSettings() {
   );
 }
 
+function ApiKeyManager() {
+  const { toast } = useToast();
+  const [keys, setKeys] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPerms, setNewPerms] = useState<string[]>(["all"]);
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [revealedName, setRevealedName] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [revoking, setRevoking] = useState<number | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${apiBase}/api/api-keys`, { credentials: "include" });
+      if (r.ok) setKeys(await r.json());
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const createKey = async () => {
+    if (!newName.trim()) { toast({ variant: "destructive", title: "Nama wajib diisi" }); return; }
+    setCreating(true);
+    try {
+      const r = await fetch(`${apiBase}/api/api-keys`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim(), permissions: newPerms }),
+      });
+      const data = await r.json();
+      if (!r.ok) { toast({ variant: "destructive", title: "Gagal", description: data.error }); return; }
+      setRevealedKey(data.apiKey);
+      setRevealedName(data.name);
+      setShowForm(false);
+      setNewName("");
+      setNewPerms(["all"]);
+      load();
+    } finally { setCreating(false); }
+  };
+
+  const revokeKey = async (id: number, name: string) => {
+    if (!confirm(`Nonaktifkan API Key "${name}"? Semua aplikasi yang menggunakan key ini tidak bisa mengakses API lagi.`)) return;
+    setRevoking(id);
+    try {
+      const r = await fetch(`${apiBase}/api/api-keys/${id}`, { method: "DELETE", credentials: "include" });
+      const data = await r.json();
+      if (r.ok) { toast({ title: "Dinonaktifkan", description: data.message }); load(); }
+      else toast({ variant: "destructive", title: "Gagal", description: data.error });
+    } finally { setRevoking(null); }
+  };
+
+  const copyKey = () => {
+    if (!revealedKey) return;
+    navigator.clipboard.writeText(revealedKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const permLabels: Record<string, string> = { all: "Semua", items: "Master Item", uoms: "Master Satuan" };
+
+  return (
+    <Card className="border-0 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5" /> API Keys (Integrasi Third-Party)
+          </CardTitle>
+          <CardDescription>Kelola kunci API untuk integrasi dengan sistem eksternal (ERP, WMS, dll)</CardDescription>
+        </div>
+        <Button size="sm" className="gap-2" onClick={() => setShowForm(!showForm)}>
+          {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {showForm ? "Batal" : "Buat API Key"}
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+
+        {/* Revealed key banner */}
+        {revealedKey && (
+          <div className="rounded-xl border-2 border-green-500 bg-green-50 p-4 space-y-3">
+            <div className="flex items-center gap-2 text-green-700 font-semibold">
+              <CheckCircle2 className="h-5 w-5" />
+              API Key "{revealedName}" berhasil dibuat — simpan sekarang!
+            </div>
+            <p className="text-xs text-green-700">Key ini <strong>hanya ditampilkan sekali</strong>. Setelah ditutup, tidak bisa dilihat lagi.</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 rounded-lg bg-white border px-3 py-2 text-sm font-mono text-slate-800 break-all select-all">
+                {revealedKey}
+              </code>
+              <Button size="sm" variant="outline" onClick={copyKey} className="shrink-0 gap-2">
+                {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                {copied ? "Disalin!" : "Salin"}
+              </Button>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => setRevealedKey(null)} className="text-green-700">
+              Saya sudah menyimpan key ini, tutup
+            </Button>
+          </div>
+        )}
+
+        {/* Create form */}
+        {showForm && (
+          <div className="rounded-xl border p-4 bg-slate-50/50 space-y-3">
+            <p className="text-sm font-semibold">Buat API Key Baru</p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Nama / Keterangan</Label>
+              <Input placeholder="contoh: ERP System - Production" value={newName} onChange={e => setNewName(e.target.value)} className="text-sm" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Akses yang diizinkan</Label>
+              <div className="flex flex-wrap gap-2">
+                {["all", "items", "uoms"].map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setNewPerms(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${newPerms.includes(p) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}
+                  >
+                    {permLabels[p]}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground">Pilih "Semua" untuk akses penuh ke semua endpoint yang tersedia.</p>
+            </div>
+            <Button size="sm" onClick={createKey} disabled={creating} className="gap-2 bg-blue-600 hover:bg-blue-700">
+              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              Generate API Key
+            </Button>
+          </div>
+        )}
+
+        {/* Keys list */}
+        {loading ? (
+          <div className="text-center py-4 text-muted-foreground animate-pulse text-sm">Memuat...</div>
+        ) : keys.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            <ShieldCheck className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            Belum ada API Key. Buat satu untuk memulai integrasi.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {keys.map((k) => (
+              <div key={k.id} className={`rounded-xl border p-3 flex items-center gap-3 ${k.isActive ? "bg-white" : "bg-slate-50 opacity-60"}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm truncate">{k.name}</span>
+                    <Badge variant="outline" className={`text-[10px] shrink-0 ${k.isActive ? "border-green-500 text-green-700" : "border-slate-300 text-slate-500"}`}>
+                      {k.isActive ? "Aktif" : "Nonaktif"}
+                    </Badge>
+                    {(k.permissions || []).map((p: string) => (
+                      <Badge key={p} variant="secondary" className="text-[10px] shrink-0">{permLabels[p] || p}</Badge>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
+                    <code className="bg-slate-100 rounded px-1.5 py-0.5 font-mono">{k.keyPrefix}</code>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      Dibuat: {k.createdAt ? new Date(k.createdAt).toLocaleDateString("id-ID") : "-"}
+                    </span>
+                    {k.lastUsedAt && (
+                      <span>Terakhir dipakai: {new Date(k.lastUsedAt).toLocaleDateString("id-ID")}</span>
+                    )}
+                    {k.createdBy && <span>oleh {k.createdBy}</span>}
+                  </div>
+                </div>
+                {k.isActive && (
+                  <Button size="sm" variant="outline" className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50 shrink-0"
+                    onClick={() => revokeKey(k.id, k.name)} disabled={revoking === k.id}>
+                    {revoking === k.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+                    Cabut
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700 space-y-1">
+          <p className="font-semibold">Cara Penggunaan:</p>
+          <p>Sertakan header <code className="bg-blue-100 rounded px-1">X-API-Key: &lt;api-key&gt;</code> di setiap request ke endpoint <code className="bg-blue-100 rounded px-1">/api/v1/items</code> atau <code className="bg-blue-100 rounded px-1">/api/v1/uoms</code></p>
+          <p>Lihat dokumentasi lengkap di: <code className="bg-blue-100 rounded px-1">/api/v1</code></p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data, isLoading } = useGetSettings();
   const { toast } = useToast();
@@ -2881,6 +3069,7 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      <ApiKeyManager />
       <NeonDatabaseSettings />
       <DepartmentManager />
       <PrTypeManager />

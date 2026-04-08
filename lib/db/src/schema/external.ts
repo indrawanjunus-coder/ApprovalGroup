@@ -55,6 +55,7 @@ export const masterUomsTable = pgTable("master_uoms", {
   name: text("name").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }),
 });
 
 export const masterItemsTable = pgTable("master_items", {
@@ -63,8 +64,22 @@ export const masterItemsTable = pgTable("master_items", {
   name: text("name").notNull(),
   description: text("description"),
   defaultUomId: integer("default_uom_id"),
+  category: text("category"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }),
+});
+
+export const apiKeysTable = pgTable("api_keys", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  keyHash: text("key_hash").notNull(),
+  keyPrefix: text("key_prefix").notNull(),
+  permissions: text("permissions").array().notNull().default([]),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: text("created_by"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  lastUsedAt: bigint("last_used_at", { mode: "number" }),
 });
 
 export const vendorInvoiceItemsTable = pgTable("vendor_invoice_items", {
