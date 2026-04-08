@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
 import nodemailer from "nodemailer";
 import { handleRouteError } from "../lib/audit.js";
-import { testNeonConnection, isNeonConfigured } from "../lib/neonClient.js";
+import { testNeonConnection, isNeonConfigured, parseNeonUrl, buildNeonUrl, setNeonUrl, getNeonUrl } from "../lib/neonClient.js";
 import { syncAllToNeon, syncAll, checkNeonTablesExist, resetNeonSequences } from "../lib/neonSync.js";
 import type { SyncDirection, SyncMode } from "../lib/neonSync.js";
 import { setPrimaryDb, getPrimaryDb } from "../lib/db.js";
@@ -389,6 +389,10 @@ router.get("/neon", requireRole("admin"), async (req, res) => {
       } catch {}
     }
 
+    // Parse connection info for display (never expose password)
+    const effectiveUrl = getNeonUrl();
+    const parsed = effectiveUrl ? parseNeonUrl(effectiveUrl) : null;
+
     res.json({
       configured,
       enabled: neonEnabled === "true",
@@ -397,6 +401,17 @@ router.get("/neon", requireRole("admin"), async (req, res) => {
       hasAllTables: tableStatus?.hasAllTables ?? false,
       missingTables: tableStatus?.missingTables ?? [],
       existingTablesCount: tableStatus?.existingTables?.length ?? 0,
+      // Parsed fields (password masked)
+      connectionInfo: parsed ? {
+        host: parsed.host,
+        port: parsed.port,
+        user: parsed.user,
+        database: parsed.database,
+        sslmode: parsed.sslmode,
+        hasPassword: !!parsed.password,
+      } : null,
+      // Is connection from env var (read-only in UI) or from settings (editable)
+      connectionSource: neonUrl ? "settings" : (configured ? "env" : "none"),
     });
   } catch (err) { handleRouteError(res, err); }
 });
@@ -445,11 +460,85 @@ router.put("/neon", requireRole("admin"), async (req, res) => {
   } catch (err) { handleRouteError(res, err); }
 });
 
-// Test Neon connection
+// Test Neon connection (existing/current)
 router.post("/neon/test", requireRole("admin"), async (req, res) => {
   try {
     const result = await testNeonConnection();
     res.json(result);
+  } catch (err) { handleRouteError(res, err); }
+});
+
+// Test a specific connection URL before saving
+router.post("/neon/test-url", requireRole("admin"), async (req, res) => {
+  try {
+    const { connectionUrl, host, port, user, password, database, sslmode } = req.body;
+    let url = connectionUrl;
+    if (!url && host && user && password && database) {
+      url = buildNeonUrl({ host, port, user, password, database, sslmode });
+    }
+    if (!url) return res.status(400).json({ ok: false, message: "URL atau field koneksi harus diisi" });
+    const result = await testNeonConnection(url);
+    res.json(result);
+  } catch (err) { handleRouteError(res, err); }
+});
+
+// Update Neon connection credentials
+router.put("/neon/connection", requireRole("admin"), async (req, res) => {
+  try {
+    const { connectionUrl, host, port, user, password, database, sslmode } = req.body;
+
+    let finalUrl = connectionUrl;
+    if (!finalUrl) {
+      if (!host || !user || !password || !database) {
+        return res.status(400).json({ error: "Connection string atau semua field (host, user, password, database) harus diisi" });
+      }
+      finalUrl = buildNeonUrl({ host, port, user, password, database, sslmode });
+    }
+
+    // Validate by testing the connection first
+    const testResult = await testNeonConnection(finalUrl);
+    if (!testResult.ok) {
+      return res.status(400).json({ error: `Koneksi gagal: ${testResult.message}` });
+    }
+
+    // Save to settings (both Replit and Neon)
+    await upsertReplitSetting("neon_db_url", finalUrl);
+    // Try writing to Neon too (if currently connected), ignore errors
+    upsertNeonSetting("neon_db_url", finalUrl).catch(() => {});
+
+    // Apply the new URL to the running server
+    setNeonUrl(finalUrl);
+
+    // Reset sequences since this might be a new/different Neon DB
+    resetNeonSequences().catch(() => {});
+
+    const parsed = parseNeonUrl(finalUrl);
+    res.json({
+      ok: true,
+      message: testResult.message,
+      connectionInfo: parsed ? {
+        host: parsed.host,
+        port: parsed.port,
+        user: parsed.user,
+        database: parsed.database,
+        sslmode: parsed.sslmode,
+        hasPassword: !!parsed.password,
+      } : null,
+      connectionSource: "settings",
+      configured: true,
+    });
+  } catch (err) { handleRouteError(res, err); }
+});
+
+// Remove saved Neon connection URL (revert to env var)
+router.delete("/neon/connection", requireRole("admin"), async (req, res) => {
+  try {
+    await replitDb.delete(settingsTable).where(eq(settingsTable.key, "neon_db_url"));
+    // Reset pool to use env var
+    setNeonUrl(null);
+    const envUrl = process.env.NEON_DATABASE_URL;
+    if (envUrl) setNeonUrl(null); // clears runtime override, pool will use env var
+    res.json({ ok: true, message: "Koneksi URL dihapus, menggunakan NEON_DATABASE_URL dari environment." });
   } catch (err) { handleRouteError(res, err); }
 });
 

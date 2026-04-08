@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin, Utensils, CreditCard, Database, RefreshCw, Wifi, WifiOff, AlertTriangle, CheckCircle2, Circle, Zap } from "lucide-react";
+import { Loader2, Save, Plus, Trash2, Pencil, X, Check, Building2, Settings2, ChevronDown, ChevronRight, Mail, ImageIcon, MapPin, Utensils, CreditCard, Database, RefreshCw, Wifi, WifiOff, AlertTriangle, CheckCircle2, Circle, Zap, Eye, EyeOff, Link, KeyRound, Server } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -2043,6 +2043,84 @@ function NeonDatabaseSettings() {
   const [confirmSwitchTo, setConfirmSwitchTo] = useState<"replit" | "neon" | null>(null);
   const [confirmSyncOpen, setConfirmSyncOpen] = useState(false);
 
+  // Connection settings form
+  const [showConnForm, setShowConnForm] = useState(false);
+  const [connMode, setConnMode] = useState<"string" | "fields">("string");
+  const [connStr, setConnStr] = useState("");
+  const [connHost, setConnHost] = useState("");
+  const [connPort, setConnPort] = useState("5432");
+  const [connUser, setConnUser] = useState("");
+  const [connPass, setConnPass] = useState("");
+  const [connDb, setConnDb] = useState("");
+  const [connSsl, setConnSsl] = useState("require");
+  const [showPass, setShowPass] = useState(false);
+  const [connTesting, setConnTesting] = useState(false);
+  const [connTestResult, setConnTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [connSaving, setConnSaving] = useState(false);
+
+  const testNewConnection = async () => {
+    setConnTesting(true);
+    setConnTestResult(null);
+    try {
+      const body = connMode === "string"
+        ? { connectionUrl: connStr }
+        : { host: connHost, port: connPort, user: connUser, password: connPass, database: connDb, sslmode: connSsl };
+      const r = await fetch(`${apiBase}/api/settings/neon/test-url`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setConnTestResult(await r.json());
+    } catch {
+      setConnTestResult({ ok: false, message: "Gagal menghubungi server" });
+    } finally {
+      setConnTesting(false);
+    }
+  };
+
+  const saveConnection = async () => {
+    setConnSaving(true);
+    try {
+      const body = connMode === "string"
+        ? { connectionUrl: connStr }
+        : { host: connHost, port: connPort, user: connUser, password: connPass, database: connDb, sslmode: connSsl };
+      const r = await fetch(`${apiBase}/api/settings/neon/connection`, {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        toast({ variant: "destructive", title: "Gagal", description: data.error || "Koneksi gagal disimpan" });
+        return;
+      }
+      toast({ title: "Koneksi Tersimpan", description: data.message });
+      setShowConnForm(false);
+      setConnPass("");
+      refetch();
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Gagal menghubungi server" });
+    } finally {
+      setConnSaving(false);
+    }
+  };
+
+  const openConnForm = () => {
+    // Pre-fill form from current connection info if available
+    const info = neonConfig?.connectionInfo;
+    if (info) {
+      setConnHost(info.host || "");
+      setConnPort(info.port || "5432");
+      setConnUser(info.user || "");
+      setConnDb(info.database || "");
+      setConnSsl(info.sslmode || "require");
+    }
+    setConnStr("");
+    setConnPass("");
+    setConnTestResult(null);
+    setShowConnForm(true);
+  };
+
   const doChangePrimaryDb = async (val: "replit" | "neon") => {
     setChangingPrimary(true);
     try {
@@ -2214,6 +2292,141 @@ function NeonDatabaseSettings() {
                 )}
               </div>
             )}
+
+            {/* ─── Pengaturan Koneksi Neon ─── */}
+            <div className="rounded-xl border p-4 space-y-3 bg-slate-50/50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Server className="h-4 w-4 text-slate-500" />
+                  <div>
+                    <p className="text-sm font-semibold">Koneksi Neon DB</p>
+                    {neonConfig?.connectionInfo ? (
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-medium">{neonConfig.connectionInfo.user}</span>
+                        @<span className="font-medium">{neonConfig.connectionInfo.host}</span>
+                        /{neonConfig.connectionInfo.database}
+                        {neonConfig?.connectionSource === "env" && (
+                          <span className="ml-2 text-amber-600">(dari environment var)</span>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-red-500">Belum dikonfigurasi</p>
+                    )}
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={showConnForm ? () => setShowConnForm(false) : openConnForm}>
+                  {showConnForm ? <X className="h-3.5 w-3.5" /> : <Pencil className="h-3.5 w-3.5" />}
+                  {showConnForm ? "Batal" : "Edit Koneksi"}
+                </Button>
+              </div>
+
+              {/* Connection Form */}
+              {showConnForm && (
+                <div className="space-y-4 pt-1 border-t">
+                  {/* Mode toggle */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setConnMode("string")}
+                      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${connMode === "string" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}
+                    >
+                      <Link className="h-3 w-3" /> Connection String
+                    </button>
+                    <button
+                      onClick={() => setConnMode("fields")}
+                      className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${connMode === "fields" ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:border-slate-300"}`}
+                    >
+                      <KeyRound className="h-3 w-3" /> Per Field
+                    </button>
+                  </div>
+
+                  {connMode === "string" ? (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Connection String</Label>
+                      <div className="relative">
+                        <Input
+                          type={showPass ? "text" : "password"}
+                          placeholder="postgresql://user:password@host/dbname?sslmode=require"
+                          value={connStr}
+                          onChange={e => setConnStr(e.target.value)}
+                          className="text-xs font-mono pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPass(!showPass)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">Format: <code>postgresql://user:pass@host:5432/dbname?sslmode=require</code></p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="col-span-2 space-y-1">
+                        <Label className="text-xs">Host</Label>
+                        <Input placeholder="ep-xxx.region.neon.tech" value={connHost} onChange={e => setConnHost(e.target.value)} className="text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Port</Label>
+                        <Input placeholder="5432" value={connPort} onChange={e => setConnPort(e.target.value)} className="text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Database</Label>
+                        <Input placeholder="neondb" value={connDb} onChange={e => setConnDb(e.target.value)} className="text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">User</Label>
+                        <Input placeholder="user@project" value={connUser} onChange={e => setConnUser(e.target.value)} className="text-xs" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Password</Label>
+                        <div className="relative">
+                          <Input
+                            type={showPass ? "text" : "password"}
+                            placeholder="••••••••"
+                            value={connPass}
+                            onChange={e => setConnPass(e.target.value)}
+                            className="text-xs pr-8"
+                          />
+                          <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground">
+                            {showPass ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">SSL Mode</Label>
+                        <Input placeholder="require" value={connSsl} onChange={e => setConnSsl(e.target.value)} className="text-xs" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Test result */}
+                  {connTestResult && (
+                    <div className={`flex items-center gap-2 text-sm rounded-lg p-2 ${connTestResult.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}>
+                      {connTestResult.ok ? <CheckCircle2 className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
+                      {connTestResult.message}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={testNewConnection} disabled={connTesting} className="gap-2">
+                      {connTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wifi className="h-3.5 w-3.5" />}
+                      Test Koneksi
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={saveConnection}
+                      disabled={connSaving || connTesting}
+                      className="gap-2 bg-blue-600 hover:bg-blue-700"
+                    >
+                      {connSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                      Simpan &amp; Reconnect
+                    </Button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Koneksi akan ditest terlebih dahulu sebelum disimpan. Password tersimpan aman di database.</p>
+                </div>
+              )}
+            </div>
 
             {/* Primary DB Selector */}
             {neonConfig?.configured && (

@@ -4,6 +4,7 @@ import { settingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { setPrimaryDb } from "./lib/db.js";
 import { resetNeonSequences } from "./lib/neonSync.js";
+import { setNeonUrl } from "./lib/neonClient.js";
 
 const rawPort = process.env["PORT"];
 
@@ -22,7 +23,21 @@ if (Number.isNaN(port) || port <= 0) {
 app.listen(port, async () => {
   console.log(`Server listening on port ${port}`);
 
-  // Initialize primary DB from saved settings
+  // Initialize Neon connection URL and primary DB from saved settings
+  try {
+    const rows = await db
+      .select()
+      .from(settingsTable)
+      .where(eq(settingsTable.key, "neon_db_url"));
+    const savedUrl = rows[0]?.value;
+    if (savedUrl) {
+      setNeonUrl(savedUrl);
+      console.log("[Neon] URL koneksi dimuat dari pengaturan tersimpan.");
+    }
+  } catch (err) {
+    console.warn("[Neon] Gagal memuat neon_db_url dari DB:", (err as Error).message);
+  }
+
   try {
     const [row] = await db.select().from(settingsTable).where(eq(settingsTable.key, "primary_db"));
     const savedPrimary = row?.value;
