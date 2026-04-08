@@ -16,6 +16,15 @@ export interface SyncProgress {
 export type SyncDirection = "replit_to_neon" | "neon_to_replit";
 export type SyncMode = "upsert_missing" | "upsert_all" | "full_overwrite";
 
+// Override conflict columns for specific tables (instead of using PK)
+// Used when a table has a unique constraint on a non-PK column that causes conflicts during upsert
+const TABLE_CONFLICT_OVERRIDE: Record<string, string[]> = {};
+
+// Override sync mode per table — these tables always use full_overwrite to avoid PK/UK conflicts
+const TABLE_MODE_OVERRIDE: Record<string, SyncMode> = {
+  settings: "full_overwrite",
+};
+
 // All tables to sync (order matters for FK constraints)
 const SYNC_TABLES = [
   "companies",
@@ -267,16 +276,22 @@ async function upsertAllRows(
   }
 
   const cols = Object.keys(rows[0]);
-  const nonPkCols = cols.filter(c => !pkCols.includes(c));
-  const conflictCols = pkCols.map(c => `"${c}"`).join(", ");
   const colList = cols.map(c => `"${c}"`).join(", ");
 
+  // Use override conflict columns if defined (e.g. settings uses "key" not "id")
+  const overrideCols = TABLE_CONFLICT_OVERRIDE[tableName];
+  const conflictColList = overrideCols
+    ? overrideCols.map(c => `"${c}"`).join(", ")
+    : pkCols.map(c => `"${c}"`).join(", ");
+  const conflictKeySet = new Set(overrideCols ?? pkCols);
+  const nonConflictCols = cols.filter(c => !conflictKeySet.has(c));
+
   let upsertSuffix: string;
-  if (nonPkCols.length === 0) {
-    upsertSuffix = `ON CONFLICT (${conflictCols}) DO NOTHING`;
+  if (nonConflictCols.length === 0) {
+    upsertSuffix = `ON CONFLICT (${conflictColList}) DO NOTHING`;
   } else {
-    const updateSet = nonPkCols.map(c => `"${c}" = EXCLUDED."${c}"`).join(", ");
-    upsertSuffix = `ON CONFLICT (${conflictCols}) DO UPDATE SET ${updateSet}`;
+    const updateSet = nonConflictCols.map(c => `"${c}" = EXCLUDED."${c}"`).join(", ");
+    upsertSuffix = `ON CONFLICT (${conflictColList}) DO UPDATE SET ${updateSet}`;
   }
 
   const batchSize = 500;
@@ -310,7 +325,9 @@ async function upsertAllRows(
 }
 
 /**
- * Full overwrite: TRUNCATE destination then INSERT all source rows
+ * Full overwrite: TRUNCATE destination then INSERT all source rows.
+ * After inserting, advances the sequence to MAX(id)+1 so subsequent
+ * auto-increment inserts don't conflict with the explicitly-inserted IDs.
  */
 async function fullOverwrite(
   tableName: string,
@@ -320,7 +337,8 @@ async function fullOverwrite(
   const client = await destPool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`TRUNCATE TABLE "${tableName}" RESTART IDENTITY CASCADE`);
+    // TRUNCATE without RESTART IDENTITY — we'll set the sequence manually below
+    await client.query(`TRUNCATE TABLE "${tableName}" CASCADE`);
 
     if (rows.length === 0) {
       await client.query("COMMIT");
@@ -349,6 +367,23 @@ async function fullOverwrite(
     }
 
     await client.query("COMMIT");
+
+    // Reset the sequence to MAX(id)+1 so future auto-increments don't conflict
+    try {
+      const seqRes = await client.query(
+        `SELECT pg_get_serial_sequence('"${tableName}"', 'id') AS seq`
+      );
+      const seq = seqRes.rows[0]?.seq;
+      if (seq) {
+        await client.query(
+          `SELECT setval($1, COALESCE((SELECT MAX(id) FROM "${tableName}"), 0) + 1, false)`,
+          [seq]
+        );
+      }
+    } catch {
+      // Table may not have a serial id — ignore
+    }
+
     return { inserted: totalInserted, total: rows.length };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
@@ -397,10 +432,11 @@ export async function syncAll(
       try {
         const sourceRows = await getSourceRows(tableName, direction);
 
+        const effectiveMode = TABLE_MODE_OVERRIDE[tableName] ?? mode;
         let syncResult: { inserted: number; total: number };
-        if (mode === "full_overwrite") {
+        if (effectiveMode === "full_overwrite") {
           syncResult = await fullOverwrite(tableName, sourceRows, destPool);
-        } else if (mode === "upsert_all") {
+        } else if (effectiveMode === "upsert_all") {
           syncResult = await upsertAllRows(tableName, sourceRows, destPool);
         } else {
           syncResult = await insertMissingRows(tableName, sourceRows, destPool);
