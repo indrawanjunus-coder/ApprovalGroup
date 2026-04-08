@@ -34,6 +34,16 @@ export function invalidateNeonCache() {
   neonEnabledCache = null;
 }
 
+/**
+ * Force-update the in-memory dual write enabled flag.
+ * Call this whenever the setting is changed via API so the middleware
+ * picks it up immediately without waiting for cache TTL.
+ */
+export function setNeonEnabled(val: boolean) {
+  neonEnabledCache = val;
+  neonEnabledCacheAt = Date.now();
+}
+
 // Map route prefixes to table names to sync
 const ROUTE_TABLE_MAP: Array<{ pattern: RegExp; tables: string[] }> = [
   { pattern: /^\/api\/users/, tables: ["users", "user_companies"] },
