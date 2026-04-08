@@ -14,7 +14,7 @@ export interface SyncProgress {
 }
 
 export type SyncDirection = "replit_to_neon" | "neon_to_replit";
-export type SyncMode = "upsert_missing" | "full_overwrite";
+export type SyncMode = "upsert_missing" | "upsert_all" | "full_overwrite";
 
 // All tables to sync (order matters for FK constraints)
 const SYNC_TABLES = [
@@ -250,6 +250,66 @@ async function insertMissingRows(
 }
 
 /**
+ * Upsert all rows: INSERT ... ON CONFLICT (pk) DO UPDATE SET all non-pk columns
+ * Inserts new rows AND updates changed rows.
+ */
+async function upsertAllRows(
+  tableName: string,
+  rows: any[],
+  destPool: Pool
+): Promise<{ inserted: number; total: number }> {
+  if (rows.length === 0) return { inserted: 0, total: 0 };
+
+  const pkCols = await getPkColumns(tableName);
+  if (pkCols.length === 0) {
+    // No PK found — fall back to insert-missing
+    return insertMissingRows(tableName, rows, destPool);
+  }
+
+  const cols = Object.keys(rows[0]);
+  const nonPkCols = cols.filter(c => !pkCols.includes(c));
+  const conflictCols = pkCols.map(c => `"${c}"`).join(", ");
+  const colList = cols.map(c => `"${c}"`).join(", ");
+
+  let upsertSuffix: string;
+  if (nonPkCols.length === 0) {
+    upsertSuffix = `ON CONFLICT (${conflictCols}) DO NOTHING`;
+  } else {
+    const updateSet = nonPkCols.map(c => `"${c}" = EXCLUDED."${c}"`).join(", ");
+    upsertSuffix = `ON CONFLICT (${conflictCols}) DO UPDATE SET ${updateSet}`;
+  }
+
+  const batchSize = 500;
+  let totalUpserted = 0;
+  const client = await destPool.connect();
+  try {
+    await client.query("BEGIN");
+    for (let b = 0; b < rows.length; b += batchSize) {
+      const batch = rows.slice(b, b + batchSize);
+      const values: any[] = [];
+      const placeholders = batch.map((row: any, rowIdx: number) =>
+        `(${cols.map((_, ci) => {
+          values.push(row[cols[ci]] ?? null);
+          return `$${rowIdx * cols.length + ci + 1}`;
+        }).join(", ")})`
+      );
+      const result = await client.query(
+        `INSERT INTO "${tableName}" (${colList}) VALUES ${placeholders.join(", ")} ${upsertSuffix}`,
+        values
+      );
+      totalUpserted += result.rowCount ?? 0;
+    }
+    await client.query("COMMIT");
+    return { inserted: totalUpserted, total: rows.length };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Full overwrite: TRUNCATE destination then INSERT all source rows
  */
 async function fullOverwrite(
@@ -340,6 +400,8 @@ export async function syncAll(
         let syncResult: { inserted: number; total: number };
         if (mode === "full_overwrite") {
           syncResult = await fullOverwrite(tableName, sourceRows, destPool);
+        } else if (mode === "upsert_all") {
+          syncResult = await upsertAllRows(tableName, sourceRows, destPool);
         } else {
           syncResult = await insertMissingRows(tableName, sourceRows, destPool);
         }

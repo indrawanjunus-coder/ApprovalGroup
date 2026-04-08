@@ -553,7 +553,8 @@ router.post("/neon/sync", requireRole("admin"), async (req, res) => {
   }
 
   const direction: SyncDirection = (req.body?.direction === "neon_to_replit") ? "neon_to_replit" : "replit_to_neon";
-  const mode: SyncMode = (req.body?.mode === "full_overwrite") ? "full_overwrite" : "upsert_missing";
+  const rawMode = req.body?.mode;
+  const mode: SyncMode = rawMode === "full_overwrite" ? "full_overwrite" : rawMode === "upsert_all" ? "upsert_all" : "upsert_missing";
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -565,7 +566,7 @@ router.post("/neon/sync", requireRole("admin"), async (req, res) => {
   };
 
   const dirLabel = direction === "replit_to_neon" ? "Replit → Neon" : "Neon → Replit";
-  const modeLabel = mode === "upsert_missing" ? "hanya data baru" : "timpa penuh";
+  const modeLabel = mode === "upsert_missing" ? "hanya data baru" : mode === "upsert_all" ? "tambah & perbarui" : "timpa penuh";
 
   syncInProgress = true;
   try {

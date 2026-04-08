@@ -2037,7 +2037,7 @@ function NeonDatabaseSettings() {
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [changingPrimary, setChangingPrimary] = useState(false);
   const [syncDirection, setSyncDirection] = useState<"replit_to_neon" | "neon_to_replit">("replit_to_neon");
-  const [syncMode, setSyncMode] = useState<"upsert_missing" | "full_overwrite">("upsert_missing");
+  const [syncMode, setSyncMode] = useState<"upsert_missing" | "upsert_all" | "full_overwrite">("upsert_missing");
 
   // Confirmation dialogs
   const [confirmSwitchTo, setConfirmSwitchTo] = useState<"replit" | "neon" | null>(null);
@@ -2579,7 +2579,7 @@ function NeonDatabaseSettings() {
                 </div>
 
                 {/* Mode Selector */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <button
                     onClick={() => !syncing && setSyncMode("upsert_missing")}
                     disabled={syncing}
@@ -2590,7 +2590,19 @@ function NeonDatabaseSettings() {
                     }`}
                   >
                     <p className={`text-xs font-semibold ${syncMode === "upsert_missing" ? "text-indigo-700" : "text-slate-700"}`}>Hanya data baru</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Insert baris yang belum ada, lewati yang sudah ada</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Insert baris belum ada, lewati yang sudah ada</p>
+                  </button>
+                  <button
+                    onClick={() => !syncing && setSyncMode("upsert_all")}
+                    disabled={syncing}
+                    className={`rounded-lg border-2 px-3 py-2 text-left transition-all ${
+                      syncMode === "upsert_all"
+                        ? "border-green-500 bg-green-50"
+                        : "border-slate-200 hover:border-slate-300 bg-white"
+                    }`}
+                  >
+                    <p className={`text-xs font-semibold ${syncMode === "upsert_all" ? "text-green-700" : "text-slate-700"}`}>Tambah &amp; Perbarui</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Insert baru + update baris yang berubah</p>
                   </button>
                   <button
                     onClick={() => !syncing && setSyncMode("full_overwrite")}
@@ -2602,14 +2614,14 @@ function NeonDatabaseSettings() {
                     }`}
                   >
                     <p className={`text-xs font-semibold ${syncMode === "full_overwrite" ? "text-orange-700" : "text-slate-700"}`}>Timpa penuh</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Hapus semua & salin ulang seluruh data</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Hapus semua &amp; salin ulang seluruh data</p>
                   </button>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
                     {syncDirection === "replit_to_neon" ? "Sumber: Replit → Tujuan: Neon" : "Sumber: Neon → Tujuan: Replit"} &nbsp;·&nbsp;
-                    {syncMode === "upsert_missing" ? "Insert missing only" : "Full overwrite"}
+                    {syncMode === "upsert_missing" ? "Insert missing only" : syncMode === "upsert_all" ? "Insert + update changed" : "Full overwrite"}
                   </p>
                   <Button onClick={() => !syncing && setConfirmSyncOpen(true)} disabled={syncing} className="gap-2" variant="outline">
                     {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -2706,7 +2718,7 @@ function NeonDatabaseSettings() {
               Akan menjalankan sync:{" "}
               <strong>{syncDirection === "replit_to_neon" ? "Replit → Neon" : "Neon → Replit"}</strong>{" "}
               dengan mode{" "}
-              <strong>{syncMode === "upsert_missing" ? "Hanya data baru" : "Timpa penuh"}</strong>.
+              <strong>{syncMode === "upsert_missing" ? "Hanya data baru" : syncMode === "upsert_all" ? "Tambah & Perbarui" : "Timpa penuh"}</strong>.
             </span>
             {syncMode === "full_overwrite" && (
               <span className="block text-red-600 font-medium">
