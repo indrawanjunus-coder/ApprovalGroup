@@ -2091,7 +2091,15 @@ function NeonDatabaseSettings() {
         body: JSON.stringify({ enabled: val }),
       });
       refetch();
-      toast({ title: val ? "Dual Write Aktif" : "Dual Write Nonaktif", description: val ? "Setiap perubahan data akan disinkronkan ke Neon." : "Hanya database Replit yang akan digunakan." });
+      const primary = neonConfig?.primaryDb ?? "replit";
+      const secondary = primary === "replit" ? "Neon" : "Replit";
+      const primaryLabel = primary === "replit" ? "Replit" : "Neon";
+      toast({
+        title: val ? "Dual Write Aktif" : "Dual Write Nonaktif",
+        description: val
+          ? `Setiap perubahan di ${primaryLabel} DB akan otomatis disinkronkan ke ${secondary} DB sebagai backup.`
+          : `Hanya ${primaryLabel} DB (primary) yang digunakan. Sinkronisasi otomatis dinonaktifkan.`,
+      });
     } catch {
       toast({ variant: "destructive", title: "Gagal", description: "Tidak dapat mengubah pengaturan" });
     } finally {

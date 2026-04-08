@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "../lib/db.js";
+import { db as replitDb } from "@workspace/db";
 import { settingsTable, companiesTable, companyLeaveSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../lib/auth.js";
@@ -9,7 +10,21 @@ import { testNeonConnection, isNeonConfigured } from "../lib/neonClient.js";
 import { syncAllToNeon, syncAll, checkNeonTablesExist } from "../lib/neonSync.js";
 import type { SyncDirection, SyncMode } from "../lib/neonSync.js";
 import { setPrimaryDb, getPrimaryDb } from "../lib/db.js";
-import { invalidateNeonCache } from "../lib/neonDualWrite.js";
+import { invalidateNeonCache, setNeonEnabled } from "../lib/neonDualWrite.js";
+
+/**
+ * Write a setting directly to Replit DB (bypassing the proxy).
+ * Used for critical settings that the middleware/startup always reads from Replit
+ * (e.g., neon_db_enabled, primary_db), so they stay in sync regardless of active primary.
+ */
+async function upsertReplitSetting(key: string, value: string) {
+  const existing = await replitDb.select({ id: settingsTable.id }).from(settingsTable).where(eq(settingsTable.key, key));
+  if (existing.length > 0) {
+    await replitDb.update(settingsTable).set({ value, updatedAt: new Date() }).where(eq(settingsTable.key, key));
+  } else {
+    await replitDb.insert(settingsTable).values({ key, value });
+  }
+}
 
 const router = Router();
 
@@ -362,9 +377,21 @@ router.get("/neon", requireRole("admin"), async (req, res) => {
 router.put("/neon", requireRole("admin"), async (req, res) => {
   const { enabled, primaryDb } = req.body;
   try {
-    if (enabled !== undefined) await upsertSetting("neon_db_enabled", String(enabled));
+    if (enabled !== undefined) {
+      const val = String(enabled);
+      // Write to the current primary DB (proxy)
+      await upsertSetting("neon_db_enabled", val);
+      // ALWAYS also write to Replit directly — the dual-write middleware and server
+      // startup both read neon_db_enabled from Replit, regardless of the active primary.
+      if (getPrimaryDb() === "neon") await upsertReplitSetting("neon_db_enabled", val);
+      // Update in-memory cache immediately so middleware sees it without waiting for TTL
+      setNeonEnabled(enabled === true || enabled === "true");
+    }
     if (primaryDb === "replit" || primaryDb === "neon") {
+      // Write to current primary DB (proxy)
       await upsertSetting("primary_db", primaryDb);
+      // ALWAYS also write to Replit directly — server restart reads primary_db from Replit.
+      if (getPrimaryDb() === "neon") await upsertReplitSetting("primary_db", primaryDb);
       setPrimaryDb(primaryDb);
     }
     invalidateNeonCache();
