@@ -22,7 +22,7 @@ interface Item {
   createdAt: number;
 }
 
-interface Uom { id: number; code: string; name: string; }
+interface Uom { id: number; code: string; name: string; isActive?: boolean; }
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 

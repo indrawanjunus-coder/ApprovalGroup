@@ -45,11 +45,13 @@ The system is built as a pnpm workspace monorepo using Node.js 24 and TypeScript
 
 ## External Vendor Portal (`/external-portal/`)
 A standalone React/Vite portal at `/external-portal/` for external vendors and internal users:
-- **Vendor**: Register company, verify auth code, submit invoices (with Google Drive upload), view own invoices, reports
-- **Internal User**: View all invoices, manage vendors, reports, portal settings (SMTP, limits)
-- **Route file**: `artifacts/api-server/src/routes/external.ts` (1322 lines)
-- **Pages**: login, register, verify-code, profile, submit-invoice, invoices, admin/(invoices, vendors, reports, settings, items, uoms)
-- Login page of main portal shows "Login Portal Vendor" + "Daftar sebagai Vendor" buttons
+- **Vendor**: Register company, verify auth code, submit invoices (with Google Drive upload), view own invoices, request bank account changes (from profile page)
+- **Internal User (Admin)**: View all invoices + update status, manage vendors + approve/reject bank change requests (tab in vendors page), invoice & payment reports with Excel export, portal settings (SMTP, file limits, user management), master items & UoMs
+- **Route file**: `artifacts/api-server/src/routes/external.ts` (~1322 lines, comprehensive)
+- **Pages**: login (tabs: vendor/user), register, verify-code, profile, submit-invoice, invoices, admin/(invoices, vendors[+bank-change-requests tab], reports[invoice+payment tabs], settings, items, uoms)
+- Login page of main portal shows "Login Portal Vendor" + "Daftar sebagai Vendor" buttons in "Portal Eksternal" section
+- Default admin: `extadmin` / `admin123` (role=admin, external_users table)
+- Auth: SHA-256 + salt `pr_po_salt_2024` (same as main system)
 
 ## Dual Database Support (Replit DB + Neon PostgreSQL)
 - **Dynamic DB Proxy**: `artifacts/api-server/src/lib/db.ts` — exports `db` as a JS Proxy that transparently routes all Drizzle operations to either Replit DB or Neon DB based on the current primary DB setting

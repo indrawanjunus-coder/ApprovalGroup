@@ -1930,6 +1930,7 @@ function DutyMealApproversManager() {
   const { data: approvers = [], isLoading } = useQuery<any[]>({
     queryKey: [`${apiBase}/api/duty-meals/company-approvers`],
     queryFn: () => fetch(`${apiBase}/api/duty-meals/company-approvers`, { credentials: "include" }).then(r => r.json()),
+    select: (d: any) => Array.isArray(d) ? d : [],
   });
   const { data: companies = [] } = useQuery<any[]>({
     queryKey: [`${apiBase}/api/companies`],

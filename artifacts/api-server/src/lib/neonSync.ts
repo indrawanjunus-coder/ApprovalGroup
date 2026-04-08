@@ -474,10 +474,17 @@ export async function resetNeonSequences(): Promise<void> {
   const pool = getNeonPool();
   if (!pool) return;
 
-  const client = await pool.connect();
+  const neonClient = await pool.connect();
+
+  // Also open a Replit connection so we can take the MAX of both DBs
+  const replitConnStr = process.env.DATABASE_URL!;
+  const { Pool: PgPool } = await import("pg");
+  const replitPool = new PgPool({ connectionString: replitConnStr, max: 2 });
+  const replitClient = await replitPool.connect();
+
   try {
-    // Get all sequences linked to 'id' columns in public schema
-    const seqResult = await client.query(`
+    // Get all sequences linked to 'id' columns in Neon's public schema
+    const seqResult = await neonClient.query(`
       SELECT
         seq.relname AS seq_name,
         tbl.relname AS table_name
@@ -492,11 +499,19 @@ export async function resetNeonSequences(): Promise<void> {
     for (const row of seqResult.rows) {
       try {
         const tableName = row.table_name;
-        // Get max id from the table
-        const maxRes = await client.query(`SELECT COALESCE(MAX(id), 0) AS max_id FROM "${tableName}"`);
-        const maxId = parseInt(maxRes.rows[0].max_id, 10);
+        // Get MAX(id) from Neon
+        const neonMax = await neonClient.query(`SELECT COALESCE(MAX(id), 0) AS max_id FROM "${tableName}"`);
+        const neonMaxId = parseInt(neonMax.rows[0].max_id, 10);
+        // Get MAX(id) from Replit (source of truth)
+        let replitMaxId = 0;
+        try {
+          const replitMax = await replitClient.query(`SELECT COALESCE(MAX(id), 0) AS max_id FROM "${tableName}"`);
+          replitMaxId = parseInt(replitMax.rows[0].max_id, 10);
+        } catch { /* table may not exist in Replit */ }
+        // Use the higher of the two to prevent collisions
+        const maxId = Math.max(neonMaxId, replitMaxId);
         if (maxId > 0) {
-          await client.query(`SELECT setval('${row.seq_name}', $1)`, [maxId]);
+          await neonClient.query(`SELECT setval('${row.seq_name}', $1)`, [maxId]);
         }
       } catch {
         // Table might not have 'id' column — ignore
@@ -504,6 +519,8 @@ export async function resetNeonSequences(): Promise<void> {
     }
     console.log("[Neon] Sequences reset to match MAX(id) values.");
   } finally {
-    client.release();
+    neonClient.release();
+    replitClient.release();
+    await replitPool.end();
   }
 }
