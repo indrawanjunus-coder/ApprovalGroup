@@ -39,6 +39,13 @@ const API_DOCS_JSON = {
       "POST /api/v1/pos": "Buat atau perbarui PO beserta items (upsert by po_number)",
       "DELETE /api/v1/pos/:po_number": "Tutup PO (set status = closed)",
     },
+    vendors: {
+      "GET /api/v1/vendors": "Ambil semua Vendor (opsional filter ?status=&search=&limit=&offset=)",
+      "GET /api/v1/vendors/:email": "Ambil detail Vendor berdasarkan email",
+      "POST /api/v1/vendors": "Buat atau perbarui Vendor (upsert by email)",
+      "PUT /api/v1/vendors/:email": "Perbarui sebagian data Vendor",
+      "DELETE /api/v1/vendors/:email": "Suspend Vendor (set status = suspended)",
+    },
   },
 };
 
@@ -318,6 +325,46 @@ router.get("/", (req, res) => {
         </div>
       </div>
 
+      <!-- Vendors -->
+      <div class="endpoint-group">
+        <div class="group-title">Vendor</div>
+        <div class="endpoint-row">
+          <span class="badge badge-GET">GET</span>
+          <div>
+            <div class="endpoint-path">/vendors</div>
+            <div class="endpoint-desc">Ambil semua Vendor — filter: <code>?status=&amp;search=&amp;limit=&amp;offset=</code></div>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <span class="badge badge-GET">GET</span>
+          <div>
+            <div class="endpoint-path">/vendors/<span class="param">{email}</span></div>
+            <div class="endpoint-desc">Ambil detail Vendor berdasarkan email</div>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <span class="badge badge-POST">POST</span>
+          <div>
+            <div class="endpoint-path">/vendors</div>
+            <div class="endpoint-desc">Buat atau perbarui Vendor (upsert by <code>email</code>)</div>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <span class="badge badge-PUT" style="background:#fef3c7;color:#b45309">PUT</span>
+          <div>
+            <div class="endpoint-path">/vendors/<span class="param">{email}</span></div>
+            <div class="endpoint-desc">Perbarui sebagian field Vendor (partial update)</div>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <span class="badge badge-DELETE">DEL</span>
+          <div>
+            <div class="endpoint-path">/vendors/<span class="param">{email}</span></div>
+            <div class="endpoint-desc">Suspend Vendor — status berubah ke <code>suspended</code></div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -566,6 +613,140 @@ curl <span class="curl-flag">-X POST</span> \\
 
 <span class="curl-comment"># Response</span>
 { <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"message"</span>: <span class="str">"PO 'PO-2024-001' telah ditutup."</span> }</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Schema Vendor -->
+  <div class="card">
+    <div class="card-header" style="background:#f8fafc">
+      <div class="card-title">📐 Schema: Vendor</div>
+    </div>
+    <div class="card-body">
+      <p style="font-size:13px;color:#64748b;margin-bottom:14px">Body untuk <code>POST /api/v1/vendors</code> dan <code>PUT /api/v1/vendors/:email</code></p>
+      <table class="schema-table">
+        <thead><tr><th>Field</th><th>Tipe</th><th>Status (POST)</th><th>Keterangan</th></tr></thead>
+        <tbody>
+          <tr><td class="field-name">email</td><td class="field-type">string</td><td><span class="req">WAJIB</span></td><td>Email unik vendor. Digunakan sebagai kunci upsert. Contoh: <code>supplier@ptcontoh.com</code></td></tr>
+          <tr><td class="field-name">company_name</td><td class="field-type">string</td><td><span class="req">WAJIB (baru)</span></td><td>Nama perusahaan vendor. Wajib saat membuat vendor baru.</td></tr>
+          <tr><td class="field-name">company_address</td><td class="field-type">string</td><td><span class="req">WAJIB (baru)</span></td><td>Alamat lengkap perusahaan. Wajib saat membuat vendor baru.</td></tr>
+          <tr><td class="field-name">pic_name</td><td class="field-type">string</td><td><span class="req">WAJIB (baru)</span></td><td>Nama Person in Charge (PIC). Wajib saat membuat vendor baru.</td></tr>
+          <tr><td class="field-name">pic_phone</td><td class="field-type">string</td><td><span class="req">WAJIB (baru)</span></td><td>Nomor telepon PIC. Wajib saat membuat vendor baru.</td></tr>
+          <tr><td class="field-name">office_phone</td><td class="field-type">string</td><td><span class="opt">OPSIONAL</span></td><td>Nomor telepon kantor.</td></tr>
+          <tr><td class="field-name">bank_name</td><td class="field-type">string</td><td><span class="opt">OPSIONAL</span></td><td>Nama bank. Contoh: <code>BCA</code>, <code>Mandiri</code>.</td></tr>
+          <tr><td class="field-name">bank_account</td><td class="field-type">string</td><td><span class="opt">OPSIONAL</span></td><td>Nomor rekening bank.</td></tr>
+          <tr><td class="field-name">bank_account_name</td><td class="field-type">string</td><td><span class="opt">OPSIONAL</span></td><td>Nama pemilik rekening sesuai buku tabungan.</td></tr>
+          <tr><td class="field-name">password</td><td class="field-type">string</td><td><span class="opt">OPSIONAL</span></td><td>Password untuk login ke portal vendor. Jika tidak diisi saat buat baru, sistem akan generate otomatis.</td></tr>
+          <tr><td class="field-name">status</td><td class="field-type">string</td><td><span class="opt">OPSIONAL</span></td><td>Status vendor. Pilihan: <code>pending</code> | <code>active</code> | <code>suspended</code> | <code>rejected</code>. Default saat buat baru: <code>active</code>.</td></tr>
+        </tbody>
+      </table>
+
+      <p style="font-size:13px;color:#64748b;margin:18px 0 10px;font-weight:600">Field dalam Response (<code>GET</code>)</p>
+      <table class="schema-table">
+        <thead><tr><th>Field</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+        <tbody>
+          <tr><td class="field-name">id</td><td class="field-type">number</td><td>ID internal vendor di sistem</td></tr>
+          <tr><td class="field-name">email</td><td class="field-type">string</td><td>Email vendor</td></tr>
+          <tr><td class="field-name">company_name</td><td class="field-type">string</td><td>Nama perusahaan</td></tr>
+          <tr><td class="field-name">company_address</td><td class="field-type">string</td><td>Alamat perusahaan</td></tr>
+          <tr><td class="field-name">pic_name</td><td class="field-type">string</td><td>Nama PIC</td></tr>
+          <tr><td class="field-name">pic_phone</td><td class="field-type">string</td><td>Telepon PIC</td></tr>
+          <tr><td class="field-name">office_phone</td><td class="field-type">string|null</td><td>Telepon kantor</td></tr>
+          <tr><td class="field-name">bank_name</td><td class="field-type">string|null</td><td>Nama bank</td></tr>
+          <tr><td class="field-name">bank_account</td><td class="field-type">string|null</td><td>Nomor rekening</td></tr>
+          <tr><td class="field-name">bank_account_name</td><td class="field-type">string|null</td><td>Nama pemilik rekening</td></tr>
+          <tr><td class="field-name">status</td><td class="field-type">string</td><td><code>pending</code> | <code>active</code> | <code>suspended</code> | <code>rejected</code></td></tr>
+          <tr><td class="field-name">created_at</td><td class="field-type">number</td><td>Timestamp Unix (ms) saat vendor dibuat</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Examples Vendor -->
+  <div class="card">
+    <div class="card-header" style="background:#f8fafc">
+      <div class="card-title">💡 Contoh Penggunaan — Vendor</div>
+    </div>
+    <div class="card-body">
+
+      <div style="margin-bottom:28px">
+        <div class="section-label">1. Daftar semua Vendor aktif</div>
+        <div class="code-block">curl <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-url">"https://portal.arenacorp.com/api/v1/vendors?status=active"</span>
+
+<span class="curl-comment"># Response</span>
+{
+  <span class="key">"success"</span>: <span class="num">true</span>,
+  <span class="key">"total"</span>: <span class="num">2</span>, <span class="key">"count"</span>: <span class="num">2</span>,
+  <span class="key">"data"</span>: [
+    {
+      <span class="key">"id"</span>: <span class="num">1</span>, <span class="key">"email"</span>: <span class="str">"supplier@ptcontoh.com"</span>,
+      <span class="key">"company_name"</span>: <span class="str">"PT Contoh Supplier"</span>,
+      <span class="key">"pic_name"</span>: <span class="str">"Budi Santoso"</span>, <span class="key">"status"</span>: <span class="str">"active"</span>
+    }
+  ]
+}</div>
+      </div>
+
+      <div style="margin-bottom:28px">
+        <div class="section-label">2. Buat Vendor Baru (dari ERP)</div>
+        <div class="code-block">curl <span class="curl-flag">-X POST</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"Content-Type: application/json"</span> \\
+     <span class="curl-flag">-d</span> <span class="curl-str">'{
+       "email":            "vendor@ptbaru.com",
+       "company_name":     "PT Baru Supplier",
+       "company_address":  "Jl. Industri No.12, Jakarta",
+       "pic_name":         "Siti Rahayu",
+       "pic_phone":        "081234567890",
+       "office_phone":     "021-5550001",
+       "bank_name":        "BCA",
+       "bank_account":     "1234567890",
+       "bank_account_name":"PT Baru Supplier",
+       "password":         "SecurePass123",
+       "status":           "active"
+     }'</span> \\
+     <span class="curl-url">https://portal.arenacorp.com/api/v1/vendors</span>
+
+<span class="curl-comment"># Response (201 Created)</span>
+{ <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"action"</span>: <span class="str">"created"</span>, <span class="key">"data"</span>: { <span class="key">"id"</span>: <span class="num">5</span>, <span class="key">"email"</span>: <span class="str">"vendor@ptbaru.com"</span>, ... } }</div>
+      </div>
+
+      <div style="margin-bottom:28px">
+        <div class="section-label">3. Update Data Bank Vendor</div>
+        <div class="code-block">curl <span class="curl-flag">-X PUT</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"Content-Type: application/json"</span> \\
+     <span class="curl-flag">-d</span> <span class="curl-str">'{"bank_name":"Mandiri","bank_account":"9876543210","bank_account_name":"PT Baru Supplier"}'</span> \\
+     <span class="curl-url">https://portal.arenacorp.com/api/v1/vendors/vendor%40ptbaru.com</span>
+
+<span class="curl-comment"># Response</span>
+{ <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"action"</span>: <span class="str">"updated"</span>, <span class="key">"data"</span>: { ... } }
+
+<span class="curl-comment"># Catatan: email di URL harus di-encode: @ → %40</span></div>
+      </div>
+
+      <div style="margin-bottom:28px">
+        <div class="section-label">4. Ubah Status Vendor menjadi Active</div>
+        <div class="code-block">curl <span class="curl-flag">-X PUT</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"Content-Type: application/json"</span> \\
+     <span class="curl-flag">-d</span> <span class="curl-str">'{"status":"active"}'</span> \\
+     <span class="curl-url">https://portal.arenacorp.com/api/v1/vendors/vendor%40ptbaru.com</span>
+
+<span class="curl-comment"># Response</span>
+{ <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"action"</span>: <span class="str">"updated"</span>, <span class="key">"data"</span>: { <span class="key">"status"</span>: <span class="str">"active"</span>, ... } }</div>
+      </div>
+
+      <div>
+        <div class="section-label">5. Suspend Vendor</div>
+        <div class="code-block">curl <span class="curl-flag">-X DELETE</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-url">https://portal.arenacorp.com/api/v1/vendors/vendor%40ptbaru.com</span>
+
+<span class="curl-comment"># Response</span>
+{ <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"message"</span>: <span class="str">"Vendor 'vendor@ptbaru.com' berhasil di-suspend."</span> }</div>
       </div>
 
     </div>
@@ -850,6 +1031,177 @@ router.delete("/pos/:po_number", requireApiKey, async (req, res) => {
     if (!updated) return res.status(404).json({ error: "PO tidak ditemukan.", po_number: poNumber });
     res.json({ success: true, message: `PO '${poNumber}' telah ditutup.` });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Vendor Endpoints ─────────────────────────────────────────────────────
+
+function hashVendorPassword(pw: string): string {
+  return crypto.createHash("sha256").update(`pr_po_salt_2024${pw}`).digest("hex");
+}
+
+function formatVendor(v: typeof vendorCompaniesTable.$inferSelect) {
+  return {
+    id: v.id,
+    email: v.email,
+    company_name: v.companyName,
+    company_address: v.companyAddress,
+    pic_name: v.picName,
+    pic_phone: v.picPhone,
+    office_phone: v.officePhone || null,
+    bank_name: v.bankName || null,
+    bank_account: v.bankAccount || null,
+    bank_account_name: v.bankAccountName || null,
+    status: v.status,
+    created_at: v.createdAt,
+  };
+}
+
+// GET /api/v1/vendors
+router.get("/vendors", requireApiKey, async (req, res) => {
+  try {
+    const { status, search, limit = "100", offset = "0" } = req.query as any;
+    let rows = await db.select().from(vendorCompaniesTable);
+    if (status) rows = rows.filter(v => v.status === status);
+    if (search) {
+      const q = search.toLowerCase();
+      rows = rows.filter(v =>
+        v.companyName.toLowerCase().includes(q) ||
+        v.email.toLowerCase().includes(q) ||
+        v.picName.toLowerCase().includes(q)
+      );
+    }
+    const total = rows.length;
+    const data = rows.slice(Number(offset), Number(offset) + Number(limit)).map(formatVendor);
+    res.json({ success: true, total, count: data.length, data });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// GET /api/v1/vendors/:email
+router.get("/vendors/:email", requireApiKey, async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email).toLowerCase();
+    const [v] = await db.select().from(vendorCompaniesTable).where(eq(vendorCompaniesTable.email, email));
+    if (!v) { res.status(404).json({ success: false, error: `Vendor dengan email '${email}' tidak ditemukan.` }); return; }
+    res.json({ success: true, data: formatVendor(v) });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// POST /api/v1/vendors (upsert by email)
+router.post("/vendors", requireApiKey, async (req, res) => {
+  try {
+    const {
+      email, company_name, company_address, pic_name, pic_phone,
+      office_phone, bank_name, bank_account, bank_account_name,
+      password, status,
+    } = req.body;
+
+    if (!email) { res.status(400).json({ success: false, error: "'email' wajib diisi." }); return; }
+    const normalEmail = String(email).toLowerCase().trim();
+
+    const [existing] = await db.select().from(vendorCompaniesTable)
+      .where(eq(vendorCompaniesTable.email, normalEmail));
+
+    const allowedStatuses = ["pending", "active", "suspended", "rejected"];
+    if (status && !allowedStatuses.includes(status)) {
+      res.status(400).json({ success: false, error: `Status tidak valid. Pilihan: ${allowedStatuses.join(", ")}.` }); return;
+    }
+
+    if (existing) {
+      // Update existing vendor
+      const updateData: any = { };
+      if (company_name !== undefined) updateData.companyName = company_name;
+      if (company_address !== undefined) updateData.companyAddress = company_address;
+      if (pic_name !== undefined) updateData.picName = pic_name;
+      if (pic_phone !== undefined) updateData.picPhone = pic_phone;
+      if (office_phone !== undefined) updateData.officePhone = office_phone;
+      if (bank_name !== undefined) updateData.bankName = bank_name;
+      if (bank_account !== undefined) updateData.bankAccount = bank_account;
+      if (bank_account_name !== undefined) updateData.bankAccountName = bank_account_name;
+      if (password) updateData.passwordHash = hashVendorPassword(password);
+      if (status) updateData.status = status;
+
+      const [updated] = await db.update(vendorCompaniesTable).set(updateData)
+        .where(eq(vendorCompaniesTable.email, normalEmail)).returning();
+      res.json({ success: true, action: "updated", data: formatVendor(updated) });
+    } else {
+      // Create new vendor
+      if (!company_name) { res.status(400).json({ success: false, error: "'company_name' wajib diisi saat membuat vendor baru." }); return; }
+      if (!company_address) { res.status(400).json({ success: false, error: "'company_address' wajib diisi saat membuat vendor baru." }); return; }
+      if (!pic_name) { res.status(400).json({ success: false, error: "'pic_name' wajib diisi saat membuat vendor baru." }); return; }
+      if (!pic_phone) { res.status(400).json({ success: false, error: "'pic_phone' wajib diisi saat membuat vendor baru." }); return; }
+
+      const pw = password || crypto.randomBytes(12).toString("hex");
+      const [created] = await db.insert(vendorCompaniesTable).values({
+        email: normalEmail,
+        companyName: company_name,
+        companyAddress: company_address,
+        picName: pic_name,
+        picPhone: pic_phone,
+        officePhone: office_phone || "",
+        bankName: bank_name || null,
+        bankAccount: bank_account || null,
+        bankAccountName: bank_account_name || null,
+        passwordHash: hashVendorPassword(pw),
+        status: status || "active",
+        createdAt: Date.now(),
+      }).returning();
+      res.status(201).json({ success: true, action: "created", data: formatVendor(created) });
+    }
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// PUT /api/v1/vendors/:email (partial update)
+router.put("/vendors/:email", requireApiKey, async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email).toLowerCase();
+    const [existing] = await db.select().from(vendorCompaniesTable).where(eq(vendorCompaniesTable.email, email));
+    if (!existing) { res.status(404).json({ success: false, error: `Vendor '${email}' tidak ditemukan.` }); return; }
+
+    const {
+      company_name, company_address, pic_name, pic_phone, office_phone,
+      bank_name, bank_account, bank_account_name, password, status,
+    } = req.body;
+
+    const allowedStatuses = ["pending", "active", "suspended", "rejected"];
+    if (status && !allowedStatuses.includes(status)) {
+      res.status(400).json({ success: false, error: `Status tidak valid. Pilihan: ${allowedStatuses.join(", ")}.` }); return;
+    }
+
+    const updateData: any = {};
+    if (company_name !== undefined) updateData.companyName = company_name;
+    if (company_address !== undefined) updateData.companyAddress = company_address;
+    if (pic_name !== undefined) updateData.picName = pic_name;
+    if (pic_phone !== undefined) updateData.picPhone = pic_phone;
+    if (office_phone !== undefined) updateData.officePhone = office_phone;
+    if (bank_name !== undefined) updateData.bankName = bank_name;
+    if (bank_account !== undefined) updateData.bankAccount = bank_account;
+    if (bank_account_name !== undefined) updateData.bankAccountName = bank_account_name;
+    if (password) updateData.passwordHash = hashVendorPassword(password);
+    if (status) updateData.status = status;
+
+    if (Object.keys(updateData).length === 0) {
+      res.status(400).json({ success: false, error: "Tidak ada field yang diperbarui." }); return;
+    }
+
+    const [updated] = await db.update(vendorCompaniesTable).set(updateData)
+      .where(eq(vendorCompaniesTable.email, email)).returning();
+    res.json({ success: true, action: "updated", data: formatVendor(updated) });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// DELETE /api/v1/vendors/:email (soft delete → status: suspended)
+router.delete("/vendors/:email", requireApiKey, async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email).toLowerCase();
+    const [existing] = await db.select().from(vendorCompaniesTable).where(eq(vendorCompaniesTable.email, email));
+    if (!existing) { res.status(404).json({ success: false, error: `Vendor '${email}' tidak ditemukan.` }); return; }
+    if (existing.status === "suspended") {
+      res.status(400).json({ success: false, error: `Vendor '${email}' sudah dalam status suspended.` }); return;
+    }
+    await db.update(vendorCompaniesTable).set({ status: "suspended" })
+      .where(eq(vendorCompaniesTable.email, email));
+    res.json({ success: true, message: `Vendor '${email}' berhasil di-suspend.` });
+  } catch (err: any) { res.status(500).json({ success: false, error: err.message }); }
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
