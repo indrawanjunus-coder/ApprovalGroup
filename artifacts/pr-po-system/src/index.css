@@ -101,13 +101,7 @@
 
 /* ===== Print Styles ===== */
 [data-print-only] {
-  position: fixed !important;
-  top: -9999px !important;
-  left: -9999px !important;
-  width: 210mm !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-  z-index: -1 !important;
+  display: none !important;
 }
 
 @media print {

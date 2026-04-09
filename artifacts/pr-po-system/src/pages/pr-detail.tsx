@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import {
   useGetPurchaseRequestById, useSubmitPurchaseRequest, useReceivePurchaseRequest,
@@ -33,58 +33,31 @@ export default function PRDetail() {
   const { data: settings } = useGetSettings();
   const { data: pr, isLoading } = useGetPurchaseRequestById(prId);
   const [printMode, setPrintMode] = useState<"pr" | "receiving">("pr");
-  const [isPrinting, setIsPrinting] = useState(false);
 
-  // Wait for all images (logo + signatures) to load before triggering print dialog
-  useEffect(() => {
-    if (!isPrinting) return;
-    let rafId: number;
-    let fallbackId: ReturnType<typeof setTimeout>;
-
-    rafId = requestAnimationFrame(() => {
-      const printDiv = document.querySelector("[data-print-only]");
-      const images = printDiv
-        ? Array.from(printDiv.querySelectorAll<HTMLImageElement>("img"))
-        : [];
-      const incomplete = images.filter((img) => !img.complete);
-
-      const doPrint = () => {
-        clearTimeout(fallbackId);
-        window.print();
-        setIsPrinting(false);
-      };
-
-      if (incomplete.length === 0) {
-        doPrint();
-        return;
-      }
-
-      let doneCount = 0;
-      const onDone = () => {
-        doneCount++;
-        if (doneCount >= incomplete.length) doPrint();
-      };
-      incomplete.forEach((img) => {
-        img.addEventListener("load", onDone, { once: true });
-        img.addEventListener("error", onDone, { once: true });
-      });
-
-      // Safety fallback: print after max 4s even if images stall
-      fallbackId = setTimeout(doPrint, 4000);
-    });
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      clearTimeout(fallbackId);
-    };
-  }, [isPrinting]);
-
-  const autoPrint = (mode: "pr" | "receiving") => {
+  const autoPrint = (mode: "pr" | "receiving", logoUrl?: string) => {
     setPrintMode(mode);
-    setIsPrinting(true);
+    // Guard to ensure window.print() is called exactly once
+    let printed = false;
+    const doPrint = () => {
+      if (printed) return;
+      printed = true;
+      window.print();
+    };
+    // If there's a remote logo URL, preload it first so it appears in print
+    if (logoUrl && !logoUrl.startsWith("data:")) {
+      const img = new Image();
+      img.onload = () => setTimeout(doPrint, 100);
+      img.onerror = () => setTimeout(doPrint, 100);
+      img.src = logoUrl;
+      // Fallback: if logo takes longer than 2s, just print anyway
+      setTimeout(doPrint, 2000);
+    } else {
+      // No external logo — print after React has rendered the print-only div
+      setTimeout(doPrint, 100);
+    }
   };
-  const handlePrintPR = () => autoPrint("pr");
-  const handlePrintReceiving = () => autoPrint("receiving");
+  const handlePrintPR = () => autoPrint("pr", settings?.logoUrl);
+  const handlePrintReceiving = () => autoPrint("receiving", settings?.logoUrl);
 
   const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
   const { data: prTypesData } = useQuery<any[]>({
