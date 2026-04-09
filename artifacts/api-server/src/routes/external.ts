@@ -5,6 +5,11 @@ import { eq, and, desc, gte, lte, ne, ilike, or, sql } from "drizzle-orm";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import { uploadToGoogleDrive, guessMimeType } from "../lib/googleDrive";
+import { getNeonDrizzle } from "../lib/neonDrizzle.js";
+
+function getNeonDb() {
+  try { return getNeonDrizzle(); } catch { return null; }
+}
 
 const router = Router();
 
@@ -1628,15 +1633,20 @@ router.post("/admin/api-keys", requireExtUser("admin"), async (req: any, res) =>
     const keyPrefix = raw.slice(0, 10);
     const sess = req.session as any;
 
-    const [inserted] = await db.insert(apiKeysTable).values({
-      name: name.trim(),
-      keyHash,
-      keyPrefix,
-      permissions: perms,
-      isActive: true,
-      createdBy: sess.extUsername || "admin",
-      createdAt: Date.now(),
-    }).returning();
+    const values = {
+      name: name.trim(), keyHash, keyPrefix, permissions: perms,
+      isActive: true, createdBy: sess.extUsername || "admin", createdAt: Date.now(),
+    };
+    const [inserted] = await db.insert(apiKeysTable).values(values).returning();
+
+    // Dual-write: also insert into Neon DB so production always has the key
+    const neonDb = getNeonDb();
+    if (neonDb) {
+      neonDb.insert(apiKeysTable).values({ ...values, id: inserted.id } as any).onConflictDoUpdate({
+        target: apiKeysTable.id,
+        set: { name: values.name, keyHash, keyPrefix, permissions: perms, isActive: true, createdBy: values.createdBy, createdAt: values.createdAt },
+      }).catch((e: any) => console.error("[Neon dual-write] api_key insert error:", e.message));
+    }
 
     await logAudit(sess.extUserId, "api_key_created", "api_keys", inserted.id, name.trim());
     res.json({ success: true, rawKey: raw, apiKey: { ...inserted, keyHash: undefined } });
@@ -1649,9 +1659,16 @@ router.patch("/admin/api-keys/:id/toggle", requireExtUser("admin"), async (req: 
     const id = Number(req.params.id);
     const [existing] = await db.select().from(apiKeysTable).where(eq(apiKeysTable.id, id));
     if (!existing) return res.status(404).json({ error: "API key tidak ditemukan" });
-    const [updated] = await db.update(apiKeysTable)
-      .set({ isActive: !existing.isActive })
-      .where(eq(apiKeysTable.id, id)).returning();
+    const newStatus = !existing.isActive;
+    const [updated] = await db.update(apiKeysTable).set({ isActive: newStatus }).where(eq(apiKeysTable.id, id)).returning();
+
+    // Dual-write toggle to Neon
+    const neonDb = getNeonDb();
+    if (neonDb) {
+      neonDb.update(apiKeysTable).set({ isActive: newStatus }).where(eq(apiKeysTable.id, id))
+        .catch((e: any) => console.error("[Neon dual-write] api_key toggle error:", e.message));
+    }
+
     const sess = req.session as any;
     await logAudit(sess.extUserId, `api_key_${updated.isActive ? "activated" : "deactivated"}`, "api_keys", id, existing.name);
     res.json({ success: true, apiKey: updated });
@@ -1665,6 +1682,14 @@ router.delete("/admin/api-keys/:id", requireExtUser("admin"), async (req: any, r
     const [existing] = await db.select().from(apiKeysTable).where(eq(apiKeysTable.id, id));
     if (!existing) return res.status(404).json({ error: "API key tidak ditemukan" });
     await db.delete(apiKeysTable).where(eq(apiKeysTable.id, id));
+
+    // Dual-write delete to Neon
+    const neonDb = getNeonDb();
+    if (neonDb) {
+      neonDb.delete(apiKeysTable).where(eq(apiKeysTable.id, id))
+        .catch((e: any) => console.error("[Neon dual-write] api_key delete error:", e.message));
+    }
+
     const sess = req.session as any;
     await logAudit(sess.extUserId, "api_key_deleted", "api_keys", id, existing.name);
     res.json({ success: true });

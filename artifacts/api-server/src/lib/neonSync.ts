@@ -61,6 +61,7 @@ const SYNC_TABLES = [
   "external_po_items",
   "external_po_change_requests",
   "external_po_change_items",
+  "api_keys",
   "audit_logs",
   "notifications",
 ];
