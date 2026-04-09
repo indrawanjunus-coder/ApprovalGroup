@@ -85,7 +85,7 @@ export default function PRDetail() {
       onError: (e: any) => toast({
         variant: "destructive",
         title: "Gagal Mengirim PR",
-        description: e?.response?.data?.message || e?.message || "Terjadi kesalahan. Hubungi Admin.",
+        description: e?.data?.message || e?.message || "Terjadi kesalahan. Hubungi Admin.",
       }),
     }
   });
@@ -246,7 +246,7 @@ export default function PRDetail() {
             <Printer className="mr-2 h-4 w-4" /> Cetak PR
           </Button>
           {(pr.status === "draft" || pr.status === "waiting_approval") && isRequester && (
-            <Button variant="outline" onClick={() => setLocation(`/purchase-requests/create?editId=${prId}`)} className="shadow-sm">
+            <Button variant="outline" onClick={() => setLocation(`/purchase-requests/new?editId=${prId}`)} className="shadow-sm">
               <Pencil className="mr-2 h-4 w-4" /> Edit PR
             </Button>
           )}

@@ -305,7 +305,7 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
   const user = req.user!;
   const id = parseInt(req.params.id);
-  const { type, description, items, notes, companyId, leaveStartDate, leaveEndDate, leaveRequesterId } = req.body;
+  const { type, description, items, notes, companyId, department, leaveStartDate, leaveEndDate, leaveRequesterId, fromLocationId, toLocationId, transferToUserId } = req.body;
   try {
     const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
     if (!pr) { res.status(404).json({ error: "Not Found" }); return; }
@@ -319,14 +319,20 @@ router.put("/:id", async (req, res) => {
       ? items.reduce((sum: number, item: any) => sum + (parseFloat(item.qty) * parseFloat(item.estimatedPrice)), 0)
       : parseFloat(pr.totalAmount);
     const [updated] = await db.update(purchaseRequestsTable).set({
-      type: type || pr.type, description: description || pr.description,
+      type: type || pr.type,
+      description: description || pr.description,
+      department: department || pr.department,
       companyId: companyId !== undefined ? companyId : pr.companyId,
-      totalAmount: totalAmount.toString(), notes,
+      totalAmount: totalAmount.toString(),
+      notes,
       status: "draft",
       currentApprovalLevel: null,
       leaveStartDate: leaveStartDate !== undefined ? leaveStartDate : pr.leaveStartDate,
       leaveEndDate: leaveEndDate !== undefined ? leaveEndDate : pr.leaveEndDate,
       leaveRequesterId: leaveRequesterId !== undefined ? leaveRequesterId : pr.leaveRequesterId,
+      fromLocationId: fromLocationId !== undefined ? fromLocationId : (pr as any).fromLocationId,
+      toLocationId: toLocationId !== undefined ? toLocationId : (pr as any).toLocationId,
+      transferToUserId: transferToUserId !== undefined ? transferToUserId : (pr as any).transferToUserId,
       updatedAt: new Date(),
     }).where(eq(purchaseRequestsTable.id, id)).returning();
     if (items) {
