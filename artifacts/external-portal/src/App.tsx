@@ -15,6 +15,9 @@ import AdminReportsPage from "@/pages/admin/reports";
 import AdminSettingsPage from "@/pages/admin/settings";
 import AdminItemsPage from "@/pages/admin/items";
 import AdminUomsPage from "@/pages/admin/uoms";
+import AdminPosPage from "@/pages/admin/pos";
+import AdminPoChangeRequestsPage from "@/pages/admin/po-change-requests";
+import PoChangeRequestPage from "@/pages/po-change-request";
 
 const queryClient = new QueryClient();
 
@@ -71,6 +74,9 @@ function AppRoutes() {
       <Route path="/admin/items" component={AdminItemsPage} />
       <Route path="/admin/uoms" component={AdminUomsPage} />
       <Route path="/admin/settings" component={AdminSettingsPage} />
+      <Route path="/admin/pos" component={AdminPosPage} />
+      <Route path="/admin/po-change-requests" component={AdminPoChangeRequestsPage} />
+      <Route path="/po-change-request" component={PoChangeRequestPage} />
       <Route>
         {user
           ? user.type === "vendor"

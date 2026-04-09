@@ -1,303 +1,165 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { apiPost, apiGet } from "@/lib/api";
+import { apiPost, apiGet, apiFetch } from "@/lib/api";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle, ArrowLeft, Upload, CheckCircle2, Plus, Trash2, Search, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Upload, CheckCircle2, ClipboardList, GitPullRequest, FileText } from "lucide-react";
 
-interface MasterItem {
+interface Po {
   id: number;
-  code: string;
-  name: string;
-  description: string | null;
-  defaultUomId: number | null;
+  poNumber: string;
+  status: string;
+  notes: string | null;
+  createdAt: number;
+  items?: PoItem[];
 }
 
-interface MasterUom {
+interface PoItem {
   id: number;
-  code: string;
-  name: string;
-}
-
-interface InvoiceItem {
-  key: string;
-  itemId: number | null;
   itemCode: string;
   itemName: string;
-  uomId: number | null;
+  uomCode: string;
   uomName: string;
   qty: string;
-  pricePerUom: string;
+  unitPrice: string;
+  subtotal: string;
 }
 
-/** Nama tampilan item: gunakan description jika name = code atau name berupa angka */
-function getItemDisplayName(item: MasterItem): string {
-  const nameIsCode = item.name === item.code || /^\d+$/.test(item.name.trim());
-  return nameIsCode && item.description ? item.description : item.name;
+type Step = 1 | 2 | 3 | 4;
+
+const STATUS_PO: Record<string, { label: string; color: string }> = {
+  active:   { label: "Aktif",   color: "bg-green-100 text-green-700" },
+  revision: { label: "Revisi",  color: "bg-yellow-100 text-yellow-700" },
+  closed:   { label: "Ditutup", color: "bg-gray-100 text-gray-600" },
+};
+
+function fmt(n: string | number) {
+  return Number(n).toLocaleString("id-ID", { minimumFractionDigits: 0 });
 }
 
-function ItemSearch({ uoms, onSelect }: {
-  uoms: MasterUom[];
-  onSelect: (item: MasterItem, uom: MasterUom | null) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<MasterItem[]>([]);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const updateDropdownPosition = useCallback(() => {
-    if (!inputRef.current) return;
-    const rect = inputRef.current.getBoundingClientRect();
-    setDropdownStyle({
-      position: "fixed",
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: rect.width,
-      zIndex: 9999,
-    });
-  }, []);
-
-  const search = useCallback(async (q: string) => {
-    setLoading(true);
-    try {
-      const res = await apiGet(`/master/items?q=${encodeURIComponent(q)}`);
-      if (res.ok) {
-        const data = await res.json();
-        setResults(Array.isArray(data) ? data : []);
-      }
-    } finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => {
-    const t = setTimeout(() => { if (open) search(query); }, 200);
-    return () => clearTimeout(t);
-  }, [query, open, search]);
-
-  useEffect(() => {
-    if (!open) return;
-    updateDropdownPosition();
-    window.addEventListener("scroll", updateDropdownPosition, true);
-    window.addEventListener("resize", updateDropdownPosition);
-    return () => {
-      window.removeEventListener("scroll", updateDropdownPosition, true);
-      window.removeEventListener("resize", updateDropdownPosition);
-    };
-  }, [open, updateDropdownPosition]);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (
-        wrapRef.current && !wrapRef.current.contains(e.target as Node) &&
-        !(e.target as Element)?.closest?.("[data-item-dropdown]")
-      ) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const handleFocus = () => { setOpen(true); search(query); };
-
-  const handleSelect = (item: MasterItem) => {
-    const defaultUom = item.defaultUomId ? uoms.find(u => u.id === item.defaultUomId) || null : null;
-    onSelect(item, defaultUom);
-    setQuery("");
-    setOpen(false);
-    setResults([]);
-  };
-
-  return (
-    <div ref={wrapRef} className="relative">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-        <Input
-          ref={inputRef}
-          className="pl-9 bg-white"
-          placeholder="Ketik nama atau kode item..."
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          onFocus={handleFocus}
-          autoComplete="off"
-        />
-        {query && (
-          <button onClick={() => { setQuery(""); setResults([]); }}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-            <X className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-      {open && (
-        <div
-          data-item-dropdown
-          style={dropdownStyle}
-          className="bg-white border border-border rounded-lg shadow-xl max-h-64 overflow-y-auto"
-        >
-          {loading ? (
-            <div className="px-4 py-3 text-sm text-muted-foreground">Mencari...</div>
-          ) : results.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-muted-foreground">
-              {query ? "Tidak ada item ditemukan" : "Mulai ketik untuk mencari item"}
-            </div>
-          ) : results.map(item => {
-            const displayName = getItemDisplayName(item);
-            const showSecondary = displayName !== item.name && item.name !== item.code;
-            return (
-              <button key={item.id}
-                className="w-full text-left px-4 py-2.5 hover:bg-blue-50 transition-colors border-b border-border/40 last:border-0"
-                onMouseDown={e => { e.preventDefault(); handleSelect(item); }}
-              >
-                <div className="flex items-start gap-2">
-                  <span className="text-xs font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 flex-shrink-0 mt-0.5">{item.code}</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground leading-tight">{displayName}</p>
-                    {showSecondary && (
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.name}</p>
-                    )}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
+function fmtDate(ts: number) {
+  return new Date(ts).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-const fmt = (n: number) =>
-  new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
-
-const newItem = (): InvoiceItem => ({
-  key: Math.random().toString(36).slice(2),
-  itemId: null, itemCode: "", itemName: "",
-  uomId: null, uomName: "",
-  qty: "", pricePerUom: "",
-});
+function toBase64(file: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result as string);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
 
 export default function SubmitInvoicePage() {
-  const [, setLocation] = useLocation();
-  const [form, setForm] = useState({ poNumber: "", picName: "", picPhone: "" });
-  const [items, setItems] = useState<InvoiceItem[]>([newItem()]);
-  const [uoms, setUoms] = useState<MasterUom[]>([]);
+  const [, navigate] = useLocation();
+
+  const [step, setStep] = useState<Step>(1);
+  const [pos, setPos] = useState<Po[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedPo, setSelectedPo] = useState<Po | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Step 3: invoice form
+  const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [notes, setNotes] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [fileb64, setFileb64] = useState<string>("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
 
   useEffect(() => {
-    apiGet("/master/uoms").then(r => r.ok ? r.json() : []).then(d => setUoms(Array.isArray(d) ? d : []));
+    apiGet("/my-pos").then(async r => {
+      if (r.ok) setPos(await r.json());
+    }).finally(() => setLoading(false));
   }, []);
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm(prev => ({ ...prev, [k]: e.target.value }));
-
-  const setItemField = (key: string, field: keyof InvoiceItem, value: string | number | null) => {
-    setItems(prev => prev.map(it => it.key === key ? { ...it, [field]: value } : it));
-  };
-
-  const addItem = () => setItems(prev => [...prev, newItem()]);
-  const removeItem = (key: string) => setItems(prev => prev.filter(it => it.key !== key));
-
-  const handleItemSelect = (key: string, item: MasterItem, uom: MasterUom | null) => {
-    setItems(prev => prev.map(it => it.key === key
-      ? {
-          ...it,
-          itemId: item.id,
-          itemCode: item.code,
-          itemName: getItemDisplayName(item),
-          uomId: uom?.id || null,
-          uomName: uom?.name || "",
-        }
-      : it
-    ));
-  };
-
-  const subtotal = (it: InvoiceItem) => {
-    const q = Number(it.qty); const p = Number(it.pricePerUom);
-    return (q > 0 && p >= 0) ? q * p : 0;
-  };
-  const grandTotal = items.reduce((s, it) => s + subtotal(it), 0);
-
-  const MAX_FILE_MB = 5;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (items.some(it => !it.itemId)) { setError("Semua item harus dipilih dari daftar, bukan diketik manual"); return; }
-    if (items.some(it => !it.uomId)) { setError("Semua item harus memiliki satuan (UoM)"); return; }
-    if (items.some(it => !it.qty || Number(it.qty) <= 0)) { setError("Qty semua item harus diisi dan lebih dari 0"); return; }
-    if (items.some(it => !it.pricePerUom || Number(it.pricePerUom) < 0)) { setError("Harga semua item harus diisi"); return; }
-    if (file && file.size > MAX_FILE_MB * 1024 * 1024) {
-      setError(`Ukuran file maksimal ${MAX_FILE_MB}MB. File Anda: ${(file.size / 1024 / 1024).toFixed(1)}MB`); return;
-    }
-
-    setLoading(true);
+  async function handleSelectPo(po: Po) {
+    setSelectedPo(po);
+    setStep(2);
+    setLoadingDetail(true);
     try {
-      let attachment: string | undefined;
-      let attachmentFilename: string | undefined;
-
-      if (file) {
-        const reader = new FileReader();
-        await new Promise<void>((resolve, reject) => {
-          reader.onload = () => { attachment = (reader.result as string).split(",")[1]; attachmentFilename = file.name; resolve(); };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+      const r = await apiGet(`/pos/${po.id}`);
+      if (r.ok) {
+        const detail = await r.json();
+        setSelectedPo(detail);
       }
+    } finally { setLoadingDetail(false); }
+  }
 
-      const res = await apiPost("/invoices", {
-        poNumber: form.poNumber,
-        picName: form.picName,
-        picPhone: form.picPhone,
-        items: items.map(it => ({
-          itemId: it.itemId,
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    const b64 = await toBase64(f);
+    setFileb64(b64);
+  }
+
+  async function handleSubmit() {
+    setError("");
+    if (!invoiceNumber.trim()) return setError("Nomor invoice wajib diisi.");
+    if (!invoiceDate) return setError("Tanggal invoice wajib diisi.");
+    if (!file) return setError("File invoice wajib diunggah.");
+    if (!selectedPo) return setError("PO belum dipilih.");
+
+    setSubmitting(true);
+    try {
+      const payload: any = {
+        invoiceNumber: invoiceNumber.trim(),
+        invoiceDate,
+        notes,
+        externalPoId: selectedPo.id,
+        items: (selectedPo.items || []).map(it => ({
+          itemId: null,
           itemCode: it.itemCode,
           itemName: it.itemName,
-          uomId: it.uomId,
+          uomId: null,
           uomName: it.uomName,
           qty: it.qty,
-          pricePerUom: it.pricePerUom,
+          pricePerUom: it.unitPrice,
         })),
-        ...(attachment ? { attachment, attachmentFilename } : {}),
+      };
+      if (file) {
+        payload.file = { data: fileb64, filename: file.name };
+      }
+      const res = await apiFetch("/invoices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || "Gagal mengajukan invoice"); return; }
-      setSuccess(true);
-    } catch { setError("Gagal terhubung ke server"); }
-    finally { setLoading(false); }
-  };
+      if (!res.ok) return setError(data.error || "Gagal mengajukan invoice.");
+      setDone(true);
+      setStep(4);
+    } catch (e: any) { setError(e.message); } finally { setSubmitting(false); }
+  }
 
-  if (success) {
+  const totalValue = (selectedPo?.items || []).reduce((s, i) => s + Number(i.subtotal), 0);
+
+  if (done) {
     return (
       <Layout>
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Card className="w-full max-w-md border-0 shadow-sm text-center">
-            <CardContent className="pt-8 pb-8">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
-                <CheckCircle2 className="w-8 h-8 text-green-600" />
-              </div>
-              <h2 className="text-xl font-bold mb-2">Invoice Berhasil Diajukan!</h2>
-              <p className="text-muted-foreground text-sm mb-6">
-                Invoice Anda sedang diproses oleh tim kami. Anda akan mendapat notifikasi email saat status berubah.
-              </p>
-              <div className="flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={() => {
-                  setSuccess(false);
-                  setForm({ poNumber: "", picName: "", picPhone: "" });
-                  setItems([newItem()]);
-                  setFile(null);
-                }}>Ajukan Lagi</Button>
-                <Button className="flex-1" onClick={() => setLocation("/invoices")}>Lihat Daftar Invoice</Button>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="max-w-lg mx-auto mt-16 text-center space-y-4">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+            <CheckCircle2 className="w-8 h-8 text-green-600" />
+          </div>
+          <h2 className="text-xl font-semibold text-foreground">Invoice Berhasil Diajukan!</h2>
+          <p className="text-sm text-muted-foreground">
+            Invoice Anda sudah kami terima dan sedang dalam proses review. Anda dapat memantau statusnya di halaman "Invoice Saya".
+          </p>
+          <div className="flex justify-center gap-3 pt-2">
+            <Button variant="outline" onClick={() => navigate("/invoices")}>Lihat Invoice Saya</Button>
+            <Button onClick={() => { setDone(false); setStep(1); setSelectedPo(null); setInvoiceNumber(""); setFile(null); setFileb64(""); setNotes(""); }}>
+              Ajukan Invoice Lain
+            </Button>
+          </div>
         </div>
       </Layout>
     );
@@ -305,178 +167,246 @@ export default function SubmitInvoicePage() {
 
   return (
     <Layout>
-      <div className="max-w-4xl mx-auto space-y-5">
+      <div className="max-w-3xl mx-auto space-y-6">
+        {/* Header */}
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")}>
-            <ArrowLeft className="w-4 h-4" />
-          </Button>
+          {step > 1 && (
+            <Button variant="ghost" size="sm" onClick={() => setStep(s => (s - 1) as Step)}>
+              <ArrowLeft className="w-4 h-4" />
+            </Button>
+          )}
           <div>
-            <h1 className="text-xl font-bold">Ajukan Invoice</h1>
-            <p className="text-sm text-muted-foreground">Lengkapi data invoice yang ingin diajukan</p>
+            <h1 className="text-2xl font-bold text-foreground">Ajukan Invoice</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {step === 1 && "Pilih Purchase Order yang sesuai"}
+              {step === 2 && "Tinjau item dalam PO"}
+              {step === 3 && "Isi detail invoice"}
+            </p>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Header Info */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Informasi Invoice</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <Label>Nomor PO <span className="text-destructive">*</span></Label>
-                <Input placeholder="PO-2024-001" value={form.poNumber} onChange={set("poNumber")} required />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label>Nama PIC <span className="text-destructive">*</span></Label>
-                  <Input placeholder="Nama penanggung jawab" value={form.picName} onChange={set("picName")} required />
+        {/* Stepper */}
+        <div className="flex items-center gap-2">
+          {[
+            { n: 1, label: "Pilih PO" },
+            { n: 2, label: "Tinjau Item" },
+            { n: 3, label: "Detail Invoice" },
+          ].map((s, idx, arr) => (
+            <div key={s.n} className="flex items-center gap-2 flex-1">
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm font-semibold ${
+                  step > s.n ? "bg-green-600 text-white" :
+                  step === s.n ? "bg-primary text-white" : "bg-muted text-muted-foreground"
+                }`}>
+                  {step > s.n ? "✓" : s.n}
                 </div>
-                <div className="space-y-1.5">
-                  <Label>No. HP PIC <span className="text-destructive">*</span></Label>
-                  <Input placeholder="08xx-xxxx-xxxx" value={form.picPhone} onChange={set("picPhone")} required />
-                </div>
+                <span className={`text-sm font-medium ${step === s.n ? "text-foreground" : "text-muted-foreground"}`}>
+                  {s.label}
+                </span>
               </div>
-            </CardContent>
-          </Card>
+              {idx < arr.length - 1 && <div className="flex-1 h-px bg-border" />}
+            </div>
+          ))}
+        </div>
 
-          {/* Items */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Item Invoice <span className="text-destructive">*</span></CardTitle>
-              <Button type="button" variant="outline" size="sm" onClick={addItem} className="gap-1.5">
-                <Plus className="w-3.5 h-3.5" /> Tambah Item
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[280px]">Item <span className="text-destructive">*</span></TableHead>
-                      <TableHead className="w-[140px]">Satuan (UoM) <span className="text-destructive">*</span></TableHead>
-                      <TableHead className="w-[100px]">Qty <span className="text-destructive">*</span></TableHead>
-                      <TableHead className="w-[150px]">Harga / UoM (IDR) <span className="text-destructive">*</span></TableHead>
-                      <TableHead className="w-[140px] text-right">Subtotal</TableHead>
-                      <TableHead className="w-10"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {items.map((it) => (
-                      <TableRow key={it.key} className="align-top">
-                        <TableCell className="py-2">
-                          {it.itemId ? (
-                            <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-md px-2 py-1.5">
-                              <span className="text-xs font-mono text-blue-600">{it.itemCode}</span>
-                              <span className="text-sm font-medium text-blue-800 flex-1 truncate">{it.itemName}</span>
-                              <button type="button" onClick={() => {
-                                setItemField(it.key, "itemId", null);
-                                setItemField(it.key, "itemCode", "");
-                                setItemField(it.key, "itemName", "");
-                              }} className="text-blue-400 hover:text-blue-600 flex-shrink-0">
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <ItemSearch uoms={uoms} onSelect={(item, uom) => handleItemSelect(it.key, item, uom)} />
-                          )}
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <select
-                            className="w-full h-9 rounded-md border border-input bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                            value={it.uomId || ""}
-                            onChange={e => {
-                              const uom = uoms.find(u => u.id === Number(e.target.value));
-                              setItemField(it.key, "uomId", uom?.id || null);
-                              setItemField(it.key, "uomName", uom?.name || "");
-                            }}
-                          >
-                            <option value="">Pilih UoM</option>
-                            {uoms.map(u => <option key={u.id} value={u.id}>{u.code} - {u.name}</option>)}
-                          </select>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <Input
-                            type="number" min="0.0001" step="any" placeholder="0"
-                            value={it.qty}
-                            onChange={e => setItemField(it.key, "qty", e.target.value)}
-                            className="bg-white"
-                          />
-                        </TableCell>
-                        <TableCell className="py-2">
-                          <Input
-                            type="number" min="0" step="any" placeholder="0"
-                            value={it.pricePerUom}
-                            onChange={e => setItemField(it.key, "pricePerUom", e.target.value)}
-                            className="bg-white"
-                          />
-                        </TableCell>
-                        <TableCell className="py-2 text-right">
-                          <span className="font-medium text-sm">{subtotal(it) > 0 ? fmt(subtotal(it)) : "—"}</span>
-                        </TableCell>
-                        <TableCell className="py-2">
-                          {items.length > 1 && (
-                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                              onClick={() => removeItem(it.key)}>
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Grand Total */}
-              <div className="flex items-center justify-end px-4 py-3 border-t bg-muted/20">
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground mb-0.5">Total Invoice (Auto)</p>
-                  <p className="text-xl font-bold text-primary">{fmt(grandTotal)}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Lampiran */}
-          <Card className="border-0 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Lampiran</CardTitle>
+        {/* ── Step 1: Pilih PO ── */}
+        {step === 1 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ClipboardList className="w-5 h-5 text-primary" />
+                Purchase Order Tersedia
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div
-                className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary/40 transition-colors cursor-pointer"
-                onClick={() => document.getElementById("file-input")?.click()}
-              >
-                {file ? (
-                  <div className="text-sm">
-                    <p className="font-medium text-foreground">{file.name}</p>
-                    <p className="text-muted-foreground">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
-                  </div>
-                ) : (
-                  <div className="text-sm text-muted-foreground">
-                    <Upload className="w-6 h-6 mx-auto mb-2 text-muted-foreground/50" />
-                    <p>Klik untuk upload file</p>
-                    <p className="text-xs">PDF, JPG, PNG (maks. 5MB)</p>
-                  </div>
-                )}
-              </div>
-              <input id="file-input" type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
-                onChange={e => setFile(e.target.files?.[0] || null)} />
+              {loading ? (
+                <div className="py-6 text-center text-muted-foreground">Memuat daftar PO...</div>
+              ) : pos.length === 0 ? (
+                <div className="py-8 text-center space-y-2">
+                  <ClipboardList className="w-10 h-10 text-muted-foreground mx-auto" />
+                  <p className="text-muted-foreground">Belum ada Purchase Order yang tersedia untuk Anda.</p>
+                  <p className="text-sm text-muted-foreground">Hubungi admin untuk membuat PO terlebih dahulu.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {pos.map(po => {
+                    const st = STATUS_PO[po.status] || { label: po.status, color: "bg-gray-100 text-gray-600" };
+                    const isSelectable = po.status === "active";
+                    return (
+                      <div key={po.id}
+                        className={`border rounded-lg p-4 flex items-center justify-between transition-colors ${
+                          isSelectable ? "cursor-pointer hover:border-primary hover:bg-primary/5" : "opacity-60 cursor-not-allowed"
+                        }`}
+                        onClick={() => isSelectable && handleSelectPo(po)}>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-semibold">{po.poNumber}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
+                          </div>
+                          <div className="text-sm text-muted-foreground">Dibuat: {fmtDate(po.createdAt)}</div>
+                          {po.notes && <div className="text-xs text-muted-foreground">{po.notes}</div>}
+                          {po.status === "revision" && (
+                            <div className="text-xs text-yellow-700 flex items-center gap-1 mt-1">
+                              <GitPullRequest className="w-3.5 h-3.5" />
+                              Sedang dalam proses perubahan — tunggu persetujuan admin
+                            </div>
+                          )}
+                        </div>
+                        {isSelectable && <ArrowRight className="w-4 h-4 text-muted-foreground" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
+        )}
 
-          {error && (
-            <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/5 p-3 rounded-lg">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {error}
+        {/* ── Step 2: Tinjau Item PO ── */}
+        {step === 2 && selectedPo && (
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">
+                    Item dalam PO <span className="font-mono text-primary">{selectedPo.poNumber}</span>
+                  </CardTitle>
+                  <span className="text-sm text-muted-foreground">Hanya-baca</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingDetail ? (
+                  <div className="py-4 text-center text-muted-foreground">Memuat item PO...</div>
+                ) : (
+                  <>
+                    <div className="border rounded-lg overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Kode</TableHead>
+                            <TableHead>Nama Item</TableHead>
+                            <TableHead>Satuan</TableHead>
+                            <TableHead className="text-right">Qty</TableHead>
+                            <TableHead className="text-right">Harga Satuan</TableHead>
+                            <TableHead className="text-right">Subtotal</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(selectedPo.items || []).length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center text-muted-foreground py-4">Tidak ada item</TableCell>
+                            </TableRow>
+                          ) : (selectedPo.items || []).map((it, i) => (
+                            <TableRow key={i}>
+                              <TableCell className="font-mono text-xs">{it.itemCode}</TableCell>
+                              <TableCell>{it.itemName}</TableCell>
+                              <TableCell>{it.uomCode}</TableCell>
+                              <TableCell className="text-right">{fmt(it.qty)}</TableCell>
+                              <TableCell className="text-right">Rp {fmt(it.unitPrice)}</TableCell>
+                              <TableCell className="text-right font-medium">Rp {fmt(it.subtotal)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <div className="px-4 py-2 bg-muted/30 text-right text-sm font-semibold border-t">
+                        Total: Rp {fmt(totalValue)}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                      <p className="font-medium mb-1">Pastikan item PO di atas sudah sesuai</p>
+                      <p>Jika ada perbedaan dengan barang yang Anda kirimkan, ajukan permintaan perubahan PO terlebih dahulu sebelum membuat invoice.</p>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1 border-orange-300 text-orange-600 hover:bg-orange-50"
+                onClick={() => navigate(`/po-change-request?poId=${selectedPo.id}&poNumber=${encodeURIComponent(selectedPo.poNumber)}`)}>
+                <GitPullRequest className="w-4 h-4 mr-2" />
+                Ada Perbedaan — Ajukan Perubahan PO
+              </Button>
+              <Button className="flex-1" onClick={() => setStep(3)} disabled={loadingDetail}>
+                Lanjut ke Invoice
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </div>
-          )}
+          </div>
+        )}
 
-          <Button type="submit" className="w-full" disabled={loading || grandTotal === 0}>
-            {loading ? "Mengajukan..." : `Ajukan Invoice — ${fmt(grandTotal)}`}
-          </Button>
-        </form>
+        {/* ── Step 3: Detail Invoice ── */}
+        {step === 3 && selectedPo && (
+          <div className="space-y-4">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-md px-3 py-2 text-sm flex gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" /> {error}
+              </div>
+            )}
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-primary" />
+                  Detail Invoice
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* PO summary */}
+                <div className="bg-muted/30 rounded-lg p-3 text-sm flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-primary flex-shrink-0" />
+                  <span className="text-muted-foreground">PO terpilih:</span>
+                  <span className="font-mono font-semibold">{selectedPo.poNumber}</span>
+                  <span className="text-muted-foreground ml-auto">Total: Rp {fmt(totalValue)}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label>Nomor Invoice <span className="text-red-500">*</span></Label>
+                    <Input value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)}
+                      placeholder="Contoh: INV-2024-001" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Tanggal Invoice <span className="text-red-500">*</span></Label>
+                    <Input type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Catatan</Label>
+                  <Input value={notes} onChange={e => setNotes(e.target.value)}
+                    placeholder="Catatan tambahan (opsional)" />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>File Invoice <span className="text-red-500">*</span></Label>
+                  <div
+                    className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
+                    onClick={() => fileRef.current?.click()}>
+                    <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={handleFileChange} />
+                    {file ? (
+                      <div className="flex items-center justify-center gap-2 text-green-700">
+                        <CheckCircle2 className="w-5 h-5" />
+                        <span className="font-medium">{file.name}</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <Upload className="w-8 h-8 text-muted-foreground mx-auto" />
+                        <p className="text-sm text-muted-foreground">Klik untuk unggah file invoice</p>
+                        <p className="text-xs text-muted-foreground">PDF, JPG, PNG (maks. 10 MB)</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Button className="w-full" size="lg" onClick={handleSubmit} disabled={submitting}>
+              {submitting ? "Mengajukan..." : "Ajukan Invoice"}
+            </Button>
+          </div>
+        )}
       </div>
     </Layout>
   );

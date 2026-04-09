@@ -25,6 +25,7 @@ export const vendorInvoicesTable = pgTable("vendor_invoices", {
   vendorCompanyId: integer("vendor_company_id").notNull(),
   companyName: text("company_name").notNull(),
   poNumber: text("po_number").notNull(),
+  externalPoId: integer("external_po_id"),
   picName: text("pic_name").notNull(),
   picPhone: text("pic_phone").notNull(),
   totalInvoice: text("total_invoice").notNull(),
@@ -92,6 +93,61 @@ export const vendorInvoiceItemsTable = pgTable("vendor_invoice_items", {
   uomName: text("uom_name").notNull(),
   qty: numeric("qty", { precision: 18, scale: 4 }).notNull(),
   pricePerUom: numeric("price_per_uom", { precision: 18, scale: 2 }).notNull(),
+  subtotal: numeric("subtotal", { precision: 18, scale: 2 }).notNull(),
+});
+
+// ─── External Purchase Orders ─────────────────────────────────────────────
+
+export const externalPurchaseOrdersTable = pgTable("external_purchase_orders", {
+  id: serial("id").primaryKey(),
+  poNumber: text("po_number").notNull(),
+  vendorCompanyId: integer("vendor_company_id").notNull(),
+  status: text("status").notNull().default("active"), // active | revision | closed
+  notes: text("notes"),
+  createdBy: text("created_by"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
+});
+
+export const externalPoItemsTable = pgTable("external_po_items", {
+  id: serial("id").primaryKey(),
+  poId: integer("po_id").notNull(),
+  itemId: integer("item_id"),
+  itemCode: text("item_code").notNull(),
+  itemName: text("item_name").notNull(),
+  uomId: integer("uom_id"),
+  uomCode: text("uom_code").notNull(),
+  uomName: text("uom_name").notNull(),
+  qty: numeric("qty", { precision: 18, scale: 4 }).notNull(),
+  unitPrice: numeric("unit_price", { precision: 18, scale: 2 }).notNull(),
+  subtotal: numeric("subtotal", { precision: 18, scale: 2 }).notNull(),
+});
+
+export const externalPoChangeRequestsTable = pgTable("external_po_change_requests", {
+  id: serial("id").primaryKey(),
+  poId: integer("po_id").notNull(),
+  vendorCompanyId: integer("vendor_company_id").notNull(),
+  status: text("status").notNull().default("pending"), // pending | approved | rejected
+  notes: text("notes"),
+  suratJalanUrl: text("surat_jalan_url"),
+  suratJalanFilename: text("surat_jalan_filename"),
+  reviewedBy: text("reviewed_by"),
+  reviewedAt: bigint("reviewed_at", { mode: "number" }),
+  reviewNotes: text("review_notes"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
+export const externalPoChangeItemsTable = pgTable("external_po_change_items", {
+  id: serial("id").primaryKey(),
+  changeRequestId: integer("change_request_id").notNull(),
+  itemId: integer("item_id"),
+  itemCode: text("item_code").notNull(),
+  itemName: text("item_name").notNull(),
+  uomId: integer("uom_id"),
+  uomCode: text("uom_code").notNull(),
+  uomName: text("uom_name").notNull(),
+  qty: numeric("qty", { precision: 18, scale: 4 }).notNull(),
+  unitPrice: numeric("unit_price", { precision: 18, scale: 2 }).notNull(),
   subtotal: numeric("subtotal", { precision: 18, scale: 2 }).notNull(),
 });
 

@@ -57,6 +57,10 @@ const SYNC_TABLES = [
   "user_leave_balances",
   "vendor_invoices",
   "vendor_invoice_items",
+  "external_purchase_orders",
+  "external_po_items",
+  "external_po_change_requests",
+  "external_po_change_items",
   "audit_logs",
   "notifications",
 ];

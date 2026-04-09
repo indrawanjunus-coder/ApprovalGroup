@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../lib/db.js";
-import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable, masterItemsTable, masterUomsTable, vendorInvoiceItemsTable, auditLogsTable, vendorBankChangeRequestsTable } from "@workspace/db/schema";
+import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable, masterItemsTable, masterUomsTable, vendorInvoiceItemsTable, auditLogsTable, vendorBankChangeRequestsTable, externalPurchaseOrdersTable, externalPoItemsTable, externalPoChangeRequestsTable, externalPoChangeItemsTable } from "@workspace/db/schema";
 import { eq, and, desc, gte, lte, ne, ilike, or, sql } from "drizzle-orm";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
@@ -1317,6 +1317,283 @@ router.patch("/bank-change-requests/:id/status", requireExtUser(), async (req, r
     console.error("[bank-change-status]", err);
     res.status(500).json({ error: String(err instanceof Error ? err.message : err) });
   }
+});
+
+// ─── External Purchase Orders (Admin) ─────────────────────────────────────────
+
+// GET /api/external/pos — list all POs with vendor info
+router.get("/pos", requireExtUser("admin"), async (req: any, res) => {
+  try {
+    const pos = await db.select().from(externalPurchaseOrdersTable)
+      .orderBy(desc(externalPurchaseOrdersTable.createdAt));
+    const vendorIds = [...new Set(pos.map(p => p.vendorCompanyId))];
+    let vendors: any[] = [];
+    if (vendorIds.length > 0) {
+      vendors = await db.select({ id: vendorCompaniesTable.id, companyName: vendorCompaniesTable.companyName })
+        .from(vendorCompaniesTable);
+    }
+    const vendorMap = Object.fromEntries(vendors.map(v => [v.id, v.companyName]));
+    const result = pos.map(p => ({
+      ...p, vendorName: vendorMap[p.vendorCompanyId] || "—",
+    }));
+    res.json(result);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/external/pos — create PO
+router.post("/pos", requireExtUser("admin"), async (req: any, res) => {
+  const sess = req.session as any;
+  const { poNumber, vendorCompanyId, notes, items } = req.body;
+  if (!poNumber || !vendorCompanyId || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "poNumber, vendorCompanyId, dan items wajib diisi." });
+  }
+  const now = Date.now();
+  try {
+    const [po] = await db.insert(externalPurchaseOrdersTable).values({
+      poNumber, vendorCompanyId: Number(vendorCompanyId), status: "active",
+      notes: notes || null, createdBy: sess.extUsername || "admin", createdAt: now, updatedAt: now,
+    }).returning();
+    // Insert items
+    if (items.length > 0) {
+      await db.insert(externalPoItemsTable).values(items.map((it: any) => ({
+        poId: po.id,
+        itemId: it.itemId ? Number(it.itemId) : null,
+        itemCode: it.itemCode, itemName: it.itemName,
+        uomId: it.uomId ? Number(it.uomId) : null,
+        uomCode: it.uomCode, uomName: it.uomName,
+        qty: String(it.qty), unitPrice: String(it.unitPrice),
+        subtotal: String(Number(it.qty) * Number(it.unitPrice)),
+      })));
+    }
+    await logAudit(sess.extUserId, "create_po", "external_purchase_orders", po.id,
+      `PO: ${poNumber}, Vendor: ${vendorCompanyId}`);
+    const poItems = await db.select().from(externalPoItemsTable).where(eq(externalPoItemsTable.poId, po.id));
+    res.json({ success: true, po: { ...po, items: poItems } });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/external/pos/:id — get PO detail with items
+router.get("/pos/:id", requireExternal(), async (req: any, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [po] = await db.select().from(externalPurchaseOrdersTable)
+      .where(eq(externalPurchaseOrdersTable.id, id));
+    if (!po) return res.status(404).json({ error: "PO tidak ditemukan." });
+    // Vendor can only see their own PO
+    const sess = req.session as any;
+    if (sess.extVendorId && po.vendorCompanyId !== sess.extVendorId) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    const items = await db.select().from(externalPoItemsTable).where(eq(externalPoItemsTable.poId, id));
+    const [vendor] = await db.select({ companyName: vendorCompaniesTable.companyName })
+      .from(vendorCompaniesTable).where(eq(vendorCompaniesTable.id, po.vendorCompanyId));
+    res.json({ ...po, vendorName: vendor?.companyName || "—", items });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// PUT /api/external/pos/:id — update PO (admin only, only if no pending change request)
+router.put("/pos/:id", requireExtUser("admin"), async (req: any, res) => {
+  const sess = req.session as any;
+  const id = Number(req.params.id);
+  const { poNumber, vendorCompanyId, notes, items, status } = req.body;
+  try {
+    const [existing] = await db.select().from(externalPurchaseOrdersTable)
+      .where(eq(externalPurchaseOrdersTable.id, id));
+    if (!existing) return res.status(404).json({ error: "PO tidak ditemukan." });
+    const updates: any = { updatedAt: Date.now() };
+    if (poNumber) updates.poNumber = poNumber;
+    if (vendorCompanyId) updates.vendorCompanyId = Number(vendorCompanyId);
+    if (notes !== undefined) updates.notes = notes;
+    if (status) updates.status = status;
+    const [updated] = await db.update(externalPurchaseOrdersTable).set(updates)
+      .where(eq(externalPurchaseOrdersTable.id, id)).returning();
+    if (Array.isArray(items)) {
+      await db.delete(externalPoItemsTable).where(eq(externalPoItemsTable.poId, id));
+      if (items.length > 0) {
+        await db.insert(externalPoItemsTable).values(items.map((it: any) => ({
+          poId: id, itemId: it.itemId ? Number(it.itemId) : null,
+          itemCode: it.itemCode, itemName: it.itemName,
+          uomId: it.uomId ? Number(it.uomId) : null,
+          uomCode: it.uomCode, uomName: it.uomName,
+          qty: String(it.qty), unitPrice: String(it.unitPrice),
+          subtotal: String(Number(it.qty) * Number(it.unitPrice)),
+        })));
+      }
+    }
+    await logAudit(sess.extUserId, "update_po", "external_purchase_orders", id, `PO: ${updated.poNumber}`);
+    const updatedItems = await db.select().from(externalPoItemsTable).where(eq(externalPoItemsTable.poId, id));
+    res.json({ success: true, po: { ...updated, items: updatedItems } });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/external/pos/:id — close/delete PO
+router.delete("/pos/:id", requireExtUser("admin"), async (req: any, res) => {
+  const sess = req.session as any;
+  const id = Number(req.params.id);
+  try {
+    const [updated] = await db.update(externalPurchaseOrdersTable)
+      .set({ status: "closed", updatedAt: Date.now() })
+      .where(eq(externalPurchaseOrdersTable.id, id)).returning();
+    if (!updated) return res.status(404).json({ error: "PO tidak ditemukan." });
+    await logAudit(sess.extUserId, "close_po", "external_purchase_orders", id, `PO: ${updated.poNumber}`);
+    res.json({ success: true });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Vendor: My POs ───────────────────────────────────────────────────────────
+
+// GET /api/external/my-pos — vendor's POs
+router.get("/my-pos", requireVendor(), async (req: any, res) => {
+  const sess = req.session as any;
+  try {
+    const pos = await db.select().from(externalPurchaseOrdersTable)
+      .where(eq(externalPurchaseOrdersTable.vendorCompanyId, sess.extVendorId))
+      .orderBy(desc(externalPurchaseOrdersTable.createdAt));
+    res.json(pos);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── PO Change Requests (Vendor → Admin) ─────────────────────────────────────
+
+// POST /api/external/pos/:id/change-request — vendor submits change request
+router.post("/pos/:id/change-request", requireVendor(), async (req: any, res) => {
+  const sess = req.session as any;
+  const poId = Number(req.params.id);
+  try {
+    const [po] = await db.select().from(externalPurchaseOrdersTable)
+      .where(and(eq(externalPurchaseOrdersTable.id, poId),
+        eq(externalPurchaseOrdersTable.vendorCompanyId, sess.extVendorId)));
+    if (!po) return res.status(404).json({ error: "PO tidak ditemukan." });
+    if (po.status === "closed") return res.status(400).json({ error: "PO sudah ditutup." });
+
+    const { notes, items, suratJalan } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Items perubahan wajib diisi." });
+    }
+
+    // Upload surat jalan if provided
+    let suratJalanUrl: string | null = null;
+    let suratJalanFilename: string | null = null;
+    if (suratJalan?.data && suratJalan?.filename) {
+      try {
+        const buf = Buffer.from(suratJalan.data.replace(/^data:[^;]+;base64,/, ""), "base64");
+        const mime = guessMimeType(suratJalan.filename);
+        const result = await uploadToGoogleDrive(buf, suratJalan.filename, mime, "surat-jalan");
+        suratJalanUrl = result.webViewLink || result.id;
+        suratJalanFilename = suratJalan.filename;
+      } catch (e) { console.error("Surat jalan upload error:", e); }
+    }
+
+    const now = Date.now();
+    const [changeReq] = await db.insert(externalPoChangeRequestsTable).values({
+      poId, vendorCompanyId: sess.extVendorId, status: "pending",
+      notes: notes || null, suratJalanUrl, suratJalanFilename,
+      createdAt: now,
+    }).returning();
+
+    // Insert change items
+    await db.insert(externalPoChangeItemsTable).values(items.map((it: any) => ({
+      changeRequestId: changeReq.id,
+      itemId: it.itemId ? Number(it.itemId) : null,
+      itemCode: it.itemCode, itemName: it.itemName,
+      uomId: it.uomId ? Number(it.uomId) : null,
+      uomCode: it.uomCode, uomName: it.uomName,
+      qty: String(it.qty), unitPrice: String(it.unitPrice),
+      subtotal: String(Number(it.qty) * Number(it.unitPrice)),
+    })));
+
+    // Mark PO as under revision
+    await db.update(externalPurchaseOrdersTable)
+      .set({ status: "revision", updatedAt: now })
+      .where(eq(externalPurchaseOrdersTable.id, poId));
+
+    await logAudit(sess.extVendorId, "po_change_request", "external_po_change_requests",
+      changeReq.id, `PO: ${po.poNumber}, Vendor: ${sess.extVendorId}`);
+    res.json({ success: true, changeRequest: changeReq });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/external/po-change-requests — list all (admin)
+router.get("/po-change-requests", requireExtUser("admin"), async (req: any, res) => {
+  try {
+    const reqs = await db.select().from(externalPoChangeRequestsTable)
+      .orderBy(desc(externalPoChangeRequestsTable.createdAt));
+    const poIds = [...new Set(reqs.map(r => r.poId))];
+    const vendorIds = [...new Set(reqs.map(r => r.vendorCompanyId))];
+    const [pos, vendors] = await Promise.all([
+      poIds.length > 0 ? db.select({ id: externalPurchaseOrdersTable.id, poNumber: externalPurchaseOrdersTable.poNumber })
+        .from(externalPurchaseOrdersTable) : Promise.resolve([]),
+      vendorIds.length > 0 ? db.select({ id: vendorCompaniesTable.id, companyName: vendorCompaniesTable.companyName })
+        .from(vendorCompaniesTable) : Promise.resolve([]),
+    ]);
+    const poMap = Object.fromEntries(pos.map(p => [p.id, p.poNumber]));
+    const vendorMap = Object.fromEntries(vendors.map(v => [v.id, v.companyName]));
+    const result = await Promise.all(reqs.map(async r => {
+      const items = await db.select().from(externalPoChangeItemsTable)
+        .where(eq(externalPoChangeItemsTable.changeRequestId, r.id));
+      return { ...r, poNumber: poMap[r.poId] || "—", vendorName: vendorMap[r.vendorCompanyId] || "—", items };
+    }));
+    res.json(result);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// GET /api/external/po-change-requests/count — pending count (admin)
+router.get("/po-change-requests/count", requireExtUser("admin"), async (_req, res) => {
+  try {
+    const [row] = await db.select({ count: sql<number>`count(*)::int` })
+      .from(externalPoChangeRequestsTable)
+      .where(eq(externalPoChangeRequestsTable.status, "pending"));
+    res.json({ count: row?.count || 0 });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/external/po-change-requests/:id/status — admin approves or rejects
+router.patch("/po-change-requests/:id/status", requireExtUser("admin"), async (req: any, res) => {
+  const sess = req.session as any;
+  const id = Number(req.params.id);
+  const { status, reviewNotes } = req.body;
+  if (!["approved", "rejected"].includes(status)) {
+    return res.status(400).json({ error: "Status harus 'approved' atau 'rejected'." });
+  }
+  try {
+    const [changeReq] = await db.select().from(externalPoChangeRequestsTable)
+      .where(eq(externalPoChangeRequestsTable.id, id));
+    if (!changeReq) return res.status(404).json({ error: "Change request tidak ditemukan." });
+    if (changeReq.status !== "pending") {
+      return res.status(400).json({ error: "Change request sudah diproses." });
+    }
+    const now = Date.now();
+    const [updated] = await db.update(externalPoChangeRequestsTable)
+      .set({ status, reviewedBy: sess.extUsername || "admin", reviewedAt: now, reviewNotes: reviewNotes || null })
+      .where(eq(externalPoChangeRequestsTable.id, id)).returning();
+
+    if (status === "approved") {
+      // Apply change items to PO items
+      const changeItems = await db.select().from(externalPoChangeItemsTable)
+        .where(eq(externalPoChangeItemsTable.changeRequestId, id));
+      await db.delete(externalPoItemsTable).where(eq(externalPoItemsTable.poId, changeReq.poId));
+      if (changeItems.length > 0) {
+        await db.insert(externalPoItemsTable).values(changeItems.map(it => ({
+          poId: changeReq.poId, itemId: it.itemId, itemCode: it.itemCode, itemName: it.itemName,
+          uomId: it.uomId, uomCode: it.uomCode, uomName: it.uomName,
+          qty: it.qty, unitPrice: it.unitPrice, subtotal: it.subtotal,
+        })));
+      }
+      // Set PO back to active
+      await db.update(externalPurchaseOrdersTable)
+        .set({ status: "active", updatedAt: now })
+        .where(eq(externalPurchaseOrdersTable.id, changeReq.poId));
+    } else {
+      // Rejected — restore PO to active
+      await db.update(externalPurchaseOrdersTable)
+        .set({ status: "active", updatedAt: now })
+        .where(eq(externalPurchaseOrdersTable.id, changeReq.poId));
+    }
+
+    await logAudit(sess.extUserId, `po_change_${status}`, "external_po_change_requests", id,
+      `PO ID: ${changeReq.poId}, Status: ${status}`);
+    res.json({ success: true, changeRequest: updated });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 export default router;

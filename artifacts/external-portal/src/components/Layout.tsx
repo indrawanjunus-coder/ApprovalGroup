@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
-import { FileText, BarChart2, Settings, LogOut, Building2, Menu, User, Package, Ruler } from "lucide-react";
+import { FileText, BarChart2, Settings, LogOut, Building2, Menu, User, Package, Ruler, ClipboardList, GitPullRequest } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ const vendorNav = [
 const userNavBase = [
   { href: "/admin/invoices", label: "Semua Invoice", icon: FileText },
   { href: "/admin/vendors", label: "Daftar Vendor", icon: Building2, badgeKey: "vendors" },
+  { href: "/admin/pos", label: "Purchase Order", icon: ClipboardList },
+  { href: "/admin/po-change-requests", label: "Perubahan PO", icon: GitPullRequest, badgeKey: "poChange" },
   { href: "/admin/reports", label: "Laporan", icon: BarChart2 },
   { href: "/admin/items", label: "Master Item", icon: Package },
   { href: "/admin/uoms", label: "Master Satuan", icon: Ruler },
@@ -42,7 +44,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     select: (d) => (d && typeof d.count === "number" ? d : { count: 0 }),
   });
 
+  const { data: poChangeCount } = useQuery<{ count: number }>({
+    queryKey: ["po-change-requests-count"],
+    queryFn: async () => {
+      const res = await fetch(`${BASE}/api/external/po-change-requests/count`, { credentials: "include" });
+      return res.ok ? res.json() : { count: 0 };
+    },
+    enabled: isAdmin,
+    refetchInterval: 60000,
+    select: (d) => (d && typeof d.count === "number" ? d : { count: 0 }),
+  });
+
   const pendingBankCount = bankCount?.count || 0;
+  const pendingPoChangeCount = poChangeCount?.count || 0;
 
   const nav = user?.type === "vendor" ? vendorNav : userNavBase;
   const initials = user?.name?.slice(0, 2).toUpperCase() || "?";
@@ -51,6 +65,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     await logout();
     window.location.href = import.meta.env.BASE_URL + "login";
   };
+
+  function getBadge(item: typeof userNavBase[0], active: boolean) {
+    if ((item as any).badgeKey === "vendors" && pendingBankCount > 0) return pendingBankCount;
+    if ((item as any).badgeKey === "poChange" && pendingPoChangeCount > 0) return pendingPoChangeCount;
+    return null;
+  }
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -67,7 +87,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav className="flex-1 px-3 py-4 space-y-1">
         {nav.map((item) => {
           const active = location === item.href || location.startsWith(item.href + "/");
-          const badge = (item as any).badgeKey === "vendors" && pendingBankCount > 0 ? pendingBankCount : null;
+          const badge = getBadge(item as any, active);
           return (
             <Link
               key={item.href}
@@ -120,12 +140,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Desktop sidebar */}
       <aside className="hidden md:flex w-60 flex-shrink-0 border-r border-border bg-card flex-col">
         <SidebarContent />
       </aside>
 
-      {/* Mobile overlay */}
       {mobileOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
@@ -135,9 +153,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile topbar */}
         <header className="md:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-card">
           <button onClick={() => setMobileOpen(!mobileOpen)} className="p-1 rounded-md text-muted-foreground hover:text-foreground">
             <Menu className="w-5 h-5" />
