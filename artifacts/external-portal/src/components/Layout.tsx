@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
-import { FileText, BarChart2, Settings, LogOut, Building2, Menu, User, Package, Ruler, ClipboardList, GitPullRequest } from "lucide-react";
+import { FileText, BarChart2, Settings, LogOut, Building2, Menu, User, Package, Ruler, ClipboardList, GitPullRequest, KeyRound } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ const userNavBase = [
   { href: "/admin/reports", label: "Laporan", icon: BarChart2 },
   { href: "/admin/items", label: "Master Item", icon: Package },
   { href: "/admin/uoms", label: "Master Satuan", icon: Ruler },
+  { href: "/admin/api-keys", label: "API Keys", icon: KeyRound },
   { href: "/admin/settings", label: "Pengaturan", icon: Settings },
 ];
 

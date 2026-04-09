@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../lib/db.js";
-import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable, masterItemsTable, masterUomsTable, vendorInvoiceItemsTable, auditLogsTable, vendorBankChangeRequestsTable, externalPurchaseOrdersTable, externalPoItemsTable, externalPoChangeRequestsTable, externalPoChangeItemsTable } from "@workspace/db/schema";
+import { vendorCompaniesTable, vendorInvoicesTable, externalUsersTable, masterItemsTable, masterUomsTable, vendorInvoiceItemsTable, auditLogsTable, vendorBankChangeRequestsTable, externalPurchaseOrdersTable, externalPoItemsTable, externalPoChangeRequestsTable, externalPoChangeItemsTable, apiKeysTable } from "@workspace/db/schema";
 import { eq, and, desc, gte, lte, ne, ilike, or, sql } from "drizzle-orm";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
@@ -1593,6 +1593,81 @@ router.patch("/po-change-requests/:id/status", requireExtUser("admin"), async (r
     await logAudit(sess.extUserId, `po_change_${status}`, "external_po_change_requests", id,
       `PO ID: ${changeReq.poId}, Status: ${status}`);
     res.json({ success: true, changeRequest: updated });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// ─── Admin: API Key Management ─────────────────────────────────────────────────
+
+// GET /api/external/admin/api-keys
+router.get("/admin/api-keys", requireExtUser("admin"), async (req: any, res) => {
+  try {
+    const keys = await db.select({
+      id: apiKeysTable.id,
+      name: apiKeysTable.name,
+      keyPrefix: apiKeysTable.keyPrefix,
+      permissions: apiKeysTable.permissions,
+      isActive: apiKeysTable.isActive,
+      createdBy: apiKeysTable.createdBy,
+      createdAt: apiKeysTable.createdAt,
+      lastUsedAt: apiKeysTable.lastUsedAt,
+    }).from(apiKeysTable).orderBy(desc(apiKeysTable.createdAt));
+    res.json(keys);
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /api/external/admin/api-keys — create a new key (returns raw key ONCE)
+router.post("/admin/api-keys", requireExtUser("admin"), async (req: any, res) => {
+  try {
+    const { name, permissions } = req.body;
+    if (!name?.trim()) return res.status(400).json({ error: "Nama wajib diisi" });
+    const perms: string[] = Array.isArray(permissions) ? permissions : [];
+    if (perms.length === 0) return res.status(400).json({ error: "Pilih minimal satu izin akses" });
+
+    const raw = "pf_" + crypto.randomBytes(24).toString("hex");
+    const keyHash = crypto.createHash("sha256").update(raw).digest("hex");
+    const keyPrefix = raw.slice(0, 10);
+    const sess = req.session as any;
+
+    const [inserted] = await db.insert(apiKeysTable).values({
+      name: name.trim(),
+      keyHash,
+      keyPrefix,
+      permissions: perms,
+      isActive: true,
+      createdBy: sess.extUsername || "admin",
+      createdAt: Date.now(),
+    }).returning();
+
+    await logAudit(sess.extUserId, "api_key_created", "api_keys", inserted.id, name.trim());
+    res.json({ success: true, rawKey: raw, apiKey: { ...inserted, keyHash: undefined } });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// PATCH /api/external/admin/api-keys/:id/toggle — activate/deactivate
+router.patch("/admin/api-keys/:id/toggle", requireExtUser("admin"), async (req: any, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [existing] = await db.select().from(apiKeysTable).where(eq(apiKeysTable.id, id));
+    if (!existing) return res.status(404).json({ error: "API key tidak ditemukan" });
+    const [updated] = await db.update(apiKeysTable)
+      .set({ isActive: !existing.isActive })
+      .where(eq(apiKeysTable.id, id)).returning();
+    const sess = req.session as any;
+    await logAudit(sess.extUserId, `api_key_${updated.isActive ? "activated" : "deactivated"}`, "api_keys", id, existing.name);
+    res.json({ success: true, apiKey: updated });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+// DELETE /api/external/admin/api-keys/:id
+router.delete("/admin/api-keys/:id", requireExtUser("admin"), async (req: any, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [existing] = await db.select().from(apiKeysTable).where(eq(apiKeysTable.id, id));
+    if (!existing) return res.status(404).json({ error: "API key tidak ditemukan" });
+    await db.delete(apiKeysTable).where(eq(apiKeysTable.id, id));
+    const sess = req.session as any;
+    await logAudit(sess.extUserId, "api_key_deleted", "api_keys", id, existing.name);
+    res.json({ success: true });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
