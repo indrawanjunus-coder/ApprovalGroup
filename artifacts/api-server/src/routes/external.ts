@@ -429,27 +429,57 @@ router.post("/invoices", requireVendor(), async (req, res) => {
     const [vendor] = await db.select().from(vendorCompaniesTable).where(eq(vendorCompaniesTable.id, sess.vendorId));
     if (!vendor) return res.status(404).json({ error: "Vendor tidak ditemukan" });
 
-    const { poNumber, picName, picPhone, attachment, attachmentFilename, items } = req.body;
-    if (!poNumber || !picName || !picPhone) return res.status(400).json({ error: "Semua field wajib diisi" });
-    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Minimal satu item harus diisi" });
+    // Support both old (manual) and new (PO-based) submission format
+    const {
+      // New PO-based fields
+      invoiceNumber, invoiceDate, externalPoId,
+      // New file format: { data: base64, filename }
+      file,
+      // Old format fields (kept for compatibility)
+      poNumber: legacyPoNumber, picName: legacyPicName, picPhone: legacyPicPhone,
+      attachment: legacyAttachment, attachmentFilename: legacyAttachmentFilename,
+      // Common
+      notes, items,
+    } = req.body;
 
-    // Validate and calculate total from items
+    // Determine PO context
+    let resolvedPoNumber = legacyPoNumber || invoiceNumber || "";
+    let resolvedPicName = legacyPicName || vendor.picName;
+    let resolvedPicPhone = legacyPicPhone || vendor.picPhone;
+    let resolvedExternalPoId: number | null = externalPoId ? Number(externalPoId) : null;
+
+    if (resolvedExternalPoId) {
+      const [po] = await db.select().from(externalPurchaseOrdersTable)
+        .where(eq(externalPurchaseOrdersTable.id, resolvedExternalPoId));
+      if (!po) return res.status(404).json({ error: "PO tidak ditemukan." });
+      if (po.vendorCompanyId !== sess.vendorId) return res.status(403).json({ error: "PO bukan milik vendor ini." });
+      if (po.status === "closed") return res.status(400).json({ error: "PO sudah ditutup." });
+      resolvedPoNumber = po.poNumber;
+    }
+
+    if (!resolvedPoNumber) return res.status(400).json({ error: "Nomor invoice/PO wajib diisi." });
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ error: "Minimal satu item harus diisi." });
+
+    // Calculate total from items (allow null itemId/uomId for PO-based flow)
     let totalCalc = 0;
     for (const item of items) {
-      if (!item.itemId || !item.uomId || !item.qty || !item.pricePerUom) {
-        return res.status(400).json({ error: "Data item tidak lengkap (itemId, uomId, qty, pricePerUom wajib)" });
+      if (!item.qty || !item.pricePerUom) {
+        return res.status(400).json({ error: "Data item tidak lengkap (qty dan pricePerUom wajib)." });
       }
       const qty = Number(item.qty);
       const price = Number(item.pricePerUom);
-      if (qty <= 0 || price < 0) return res.status(400).json({ error: "Qty dan harga harus bernilai positif" });
+      if (qty <= 0 || price < 0) return res.status(400).json({ error: "Qty dan harga harus bernilai positif." });
       totalCalc += qty * price;
     }
     const totalInvoice = String(Math.round(totalCalc));
 
-    let finalAttachment: string | null = attachment || null;
-    let finalAttachmentFilename: string | null = attachmentFilename || null;
+    // Resolve attachment: new format (file.data/file.filename) or old format (attachment/attachmentFilename)
+    const attachData: string | null = file?.data || legacyAttachment || null;
+    const attachFilename: string | null = file?.filename || legacyAttachmentFilename || null;
+    let finalAttachment: string | null = null;
+    let finalAttachmentFilename: string | null = null;
 
-    if (attachment && attachmentFilename) {
+    if (attachData && attachFilename) {
       try {
         const [folderSetting, shareEmails] = await Promise.all([
           getSettingValue("ext_gdrive_folder"),
@@ -457,27 +487,34 @@ router.post("/invoices", requireVendor(), async (req, res) => {
         ]);
         const folderIdOrUrl = folderSetting || "0AAxCInqK40uzUk9PVA";
         const gdrive = await uploadToGoogleDrive({
-          base64Data: attachment,
-          filename: attachmentFilename,
-          mimeType: guessMimeType(attachmentFilename),
+          base64Data: attachData,
+          filename: attachFilename,
+          mimeType: guessMimeType(attachFilename),
           folderIdOrUrl,
           companyName: vendor.companyName,
-          label: poNumber,
+          label: resolvedPoNumber,
           shareWithEmails: shareEmails,
         });
         finalAttachment = gdrive.webViewLink;
-        finalAttachmentFilename = attachmentFilename;
+        finalAttachmentFilename = attachFilename;
       } catch (e) {
         console.error("GDrive upload error (invoice):", e);
+        finalAttachment = attachData;
+        finalAttachmentFilename = attachFilename;
       }
     }
 
     const [inv] = await db.insert(vendorInvoicesTable).values({
       vendorCompanyId: sess.vendorId,
       companyName: vendor.companyName,
-      poNumber, picName, picPhone, totalInvoice,
+      poNumber: resolvedPoNumber,
+      externalPoId: resolvedExternalPoId,
+      picName: resolvedPicName,
+      picPhone: resolvedPicPhone,
+      totalInvoice,
       attachment: finalAttachment,
       attachmentFilename: finalAttachmentFilename,
+      notes: notes || null,
       status: "pending",
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -490,10 +527,10 @@ router.post("/invoices", requireVendor(), async (req, res) => {
       const subtotal = qty * price;
       await db.insert(vendorInvoiceItemsTable).values({
         invoiceId: inv.id,
-        itemId: Number(item.itemId),
+        itemId: item.itemId ? Number(item.itemId) : 0,
         itemCode: item.itemCode || "",
         itemName: item.itemName || "",
-        uomId: Number(item.uomId),
+        uomId: item.uomId ? Number(item.uomId) : 0,
         uomName: item.uomName || "",
         qty: String(qty),
         pricePerUom: String(price),
@@ -512,7 +549,7 @@ router.post("/invoices", requireVendor(), async (req, res) => {
               <p>Invoice baru telah disubmit oleh <b>${vendor.companyName}</b>.</p>
               <table style="border-collapse:collapse;width:100%">
                 <tr><td style="padding:4px 8px;color:#6b7280">No Invoice</td><td style="padding:4px 8px"><b>#${inv.id}</b></td></tr>
-                <tr><td style="padding:4px 8px;color:#6b7280">No PO</td><td style="padding:4px 8px">${poNumber}</td></tr>
+                <tr><td style="padding:4px 8px;color:#6b7280">No PO</td><td style="padding:4px 8px">${resolvedPoNumber}</td></tr>
                 <tr><td style="padding:4px 8px;color:#6b7280">Total Invoice</td><td style="padding:4px 8px"><b>Rp ${Number(totalInvoice).toLocaleString("id-ID")}</b></td></tr>
               </table>
               <p>Silakan login ke Sistem External untuk memproses invoice ini.</p>
@@ -523,7 +560,7 @@ router.post("/invoices", requireVendor(), async (req, res) => {
     } catch (e) { console.error("Notify error:", e); }
 
     await logAudit(sess.vendorId, "submit_invoice", "ext_invoice", inv.id,
-      `PO: ${poNumber}, Total: ${totalInvoice}, Items: ${items.length}`);
+      `PO: ${resolvedPoNumber}, Total: ${totalInvoice}, Items: ${items.length}`);
     res.json({ success: true, invoice: inv });
   } catch (err) {
     console.error("[submit-invoice]", err);
@@ -1402,7 +1439,7 @@ router.get("/pos/:id", requireExternal(), async (req: any, res) => {
     if (!po) return res.status(404).json({ error: "PO tidak ditemukan." });
     // Vendor can only see their own PO
     const sess = req.session as any;
-    if (sess.extVendorId && po.vendorCompanyId !== sess.extVendorId) {
+    if (sess.vendorId && po.vendorCompanyId !== sess.vendorId) {
       return res.status(403).json({ error: "Forbidden" });
     }
     const items = await db.select().from(externalPoItemsTable).where(eq(externalPoItemsTable.poId, id));
@@ -1468,7 +1505,7 @@ router.get("/my-pos", requireVendor(), async (req: any, res) => {
   const sess = req.session as any;
   try {
     const pos = await db.select().from(externalPurchaseOrdersTable)
-      .where(eq(externalPurchaseOrdersTable.vendorCompanyId, sess.extVendorId))
+      .where(eq(externalPurchaseOrdersTable.vendorCompanyId, sess.vendorId))
       .orderBy(desc(externalPurchaseOrdersTable.createdAt));
     res.json(pos);
   } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -1483,7 +1520,7 @@ router.post("/pos/:id/change-request", requireVendor(), async (req: any, res) =>
   try {
     const [po] = await db.select().from(externalPurchaseOrdersTable)
       .where(and(eq(externalPurchaseOrdersTable.id, poId),
-        eq(externalPurchaseOrdersTable.vendorCompanyId, sess.extVendorId)));
+        eq(externalPurchaseOrdersTable.vendorCompanyId, sess.vendorId)));
     if (!po) return res.status(404).json({ error: "PO tidak ditemukan." });
     if (po.status === "closed") return res.status(400).json({ error: "PO sudah ditutup." });
 
@@ -1528,8 +1565,8 @@ router.post("/pos/:id/change-request", requireVendor(), async (req: any, res) =>
       .set({ status: "revision", updatedAt: now })
       .where(eq(externalPurchaseOrdersTable.id, poId));
 
-    await logAudit(sess.extVendorId, "po_change_request", "external_po_change_requests",
-      changeReq.id, `PO: ${po.poNumber}, Vendor: ${sess.extVendorId}`);
+    await logAudit(sess.vendorId, "po_change_request", "external_po_change_requests",
+      changeReq.id, `PO: ${po.poNumber}, Vendor: ${sess.vendorId}`);
     res.json({ success: true, changeRequest: changeReq });
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });

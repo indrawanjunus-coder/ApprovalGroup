@@ -22,6 +22,7 @@ import LeaveManagement from "./pages/leave-management";
 import AuditLogs from "./pages/audit-logs";
 import Profile from "./pages/profile";
 import DutyMeal from "./pages/duty-meal";
+import PRPrint from "./pages/pr-print";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient({
@@ -64,6 +65,7 @@ function Router() {
       
       <ProtectedRoute path="/purchase-requests" component={PRList} />
       <ProtectedRoute path="/purchase-requests/new" component={PRCreate} />
+      <Route path="/purchase-requests/:id/print" component={PRPrint} />
       <ProtectedRoute path="/purchase-requests/:id" component={PRDetail} />
       
       <ProtectedRoute path="/approvals" component={ApprovalList} />

@@ -75,7 +75,7 @@ export default function PoChangeRequestPage() {
     if (!poId) return;
     Promise.all([
       apiGet(`/pos/${poId}`),
-      apiGet("/master/uoms/all"),
+      apiGet("/master/uoms"),
     ]).then(async ([poRes, uomsRes]) => {
       if (poRes.ok) {
         const po = await poRes.json();

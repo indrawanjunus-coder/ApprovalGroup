@@ -32,38 +32,18 @@ export default function PRDetail() {
   const { data: user } = useGetMe();
   const { data: settings } = useGetSettings();
   const { data: pr, isLoading } = useGetPurchaseRequestById(prId);
-  const [printMode, setPrintMode] = useState<"pr" | "receiving">("pr");
-
-  const autoPrint = (mode: "pr" | "receiving", logoUrl?: string) => {
-    setPrintMode(mode);
-    // Guard to ensure window.print() is called exactly once
-    let printed = false;
-    const doPrint = () => {
-      if (printed) return;
-      printed = true;
-      window.print();
-    };
-    // If there's a remote logo URL, preload it first so it appears in print
-    if (logoUrl && !logoUrl.startsWith("data:")) {
-      const img = new Image();
-      img.onload = () => setTimeout(doPrint, 100);
-      img.onerror = () => setTimeout(doPrint, 100);
-      img.src = logoUrl;
-      // Fallback: if logo takes longer than 2s, just print anyway
-      setTimeout(doPrint, 2000);
-    } else {
-      // No external logo — print after React has rendered the print-only div
-      setTimeout(doPrint, 100);
-    }
+  const BASE_PATH = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+  const handlePrintPR = () => {
+    window.open(`${BASE_PATH}/purchase-requests/${prId}/print?mode=pr`, "_blank");
   };
-  const handlePrintPR = () => autoPrint("pr", settings?.logoUrl);
-  const handlePrintReceiving = () => autoPrint("receiving", settings?.logoUrl);
+  const handlePrintReceiving = () => {
+    window.open(`${BASE_PATH}/purchase-requests/${prId}/print?mode=receiving`, "_blank");
+  };
 
-  const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
   const { data: prTypesData } = useQuery<any[]>({
     queryKey: ["/api/pr-types"],
     queryFn: async () => {
-      const res = await fetch(`${BASE_URL}/api/pr-types`, { credentials: "include" });
+      const res = await fetch(`${BASE_PATH}/api/pr-types`, { credentials: "include" });
       return res.ok ? res.json() : [];
     },
   });
