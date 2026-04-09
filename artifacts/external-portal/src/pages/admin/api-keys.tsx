@@ -9,9 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { apiFetch, apiGet } from "@/lib/api";
 import { Key, Plus, Trash2, Power, PowerOff, Copy, Check, AlertTriangle } from "lucide-react";
-
-const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 interface ApiKey {
   id: number;
@@ -56,7 +55,7 @@ export default function AdminApiKeysPage() {
   const { data: keys = [], isLoading } = useQuery<ApiKey[]>({
     queryKey: ["admin-api-keys"],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/external/admin/api-keys`, { credentials: "include" });
+      const res = await apiGet("/admin/api-keys");
       if (!res.ok) throw new Error("Gagal memuat data");
       return res.json();
     },
@@ -64,10 +63,8 @@ export default function AdminApiKeysPage() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`${BASE}/api/external/admin/api-keys`, {
+      const res = await apiFetch("/admin/api-keys", {
         method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: formName, permissions: formPerms }),
       });
       const data = await res.json();
@@ -87,10 +84,7 @@ export default function AdminApiKeysPage() {
 
   const toggleMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${BASE}/api/external/admin/api-keys/${id}/toggle`, {
-        method: "PATCH",
-        credentials: "include",
-      });
+      const res = await apiFetch(`/admin/api-keys/${id}/toggle`, { method: "PATCH" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Gagal mengubah status");
       return data;
@@ -101,10 +95,7 @@ export default function AdminApiKeysPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await fetch(`${BASE}/api/external/admin/api-keys/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const res = await apiFetch(`/admin/api-keys/${id}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Gagal menghapus");
       return data;
