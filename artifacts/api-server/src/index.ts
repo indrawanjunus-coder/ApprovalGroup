@@ -23,7 +23,20 @@ if (Number.isNaN(port) || port <= 0) {
 app.listen(port, async () => {
   console.log(`Server listening on port ${port}`);
 
-  // Initialize Neon connection URL and primary DB from saved settings
+  // AUTO-SWITCH: If NEON_DATABASE_URL is set in environment, always use Neon as primary.
+  // This ensures production deployments work correctly without manual configuration.
+  const envNeonUrl = process.env.NEON_DATABASE_URL;
+  if (envNeonUrl) {
+    setNeonUrl(envNeonUrl);
+    setPrimaryDb("neon");
+    console.log("[DB] Primary database: NEON (auto dari NEON_DATABASE_URL env)");
+    resetNeonSequences().catch(err =>
+      console.warn("[Neon] Sequence reset gagal (tidak kritis):", (err as Error).message)
+    );
+    return; // Skip reading from local Replit DB
+  }
+
+  // Fallback: read saved settings from local Replit DB (development only)
   try {
     const rows = await db
       .select()
@@ -44,7 +57,6 @@ app.listen(port, async () => {
     if (savedPrimary === "neon") {
       setPrimaryDb("neon");
       console.log("[DB] Primary database: NEON (dari pengaturan tersimpan)");
-      // Reset Neon sequences on startup to prevent duplicate key errors
       resetNeonSequences().catch(err =>
         console.warn("[Neon] Sequence reset gagal (tidak kritis):", (err as Error).message)
       );

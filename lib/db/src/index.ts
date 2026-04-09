@@ -11,6 +11,14 @@ if (!process.env.DATABASE_URL) {
 }
 
 export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// Prevent unhandled 'error' events from crashing the process
+// (e.g. when running in production with Neon as primary DB,
+//  the Replit DB connection may be terminated externally)
+pool.on("error", (err) => {
+  console.warn("[Replit DB Pool] Connection error (non-fatal):", err.message);
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
