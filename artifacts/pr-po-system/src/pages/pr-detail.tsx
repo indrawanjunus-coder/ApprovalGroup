@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useParams } from "wouter";
 import {
   useGetPurchaseRequestById, useSubmitPurchaseRequest, useReceivePurchaseRequest,
@@ -33,10 +33,55 @@ export default function PRDetail() {
   const { data: settings } = useGetSettings();
   const { data: pr, isLoading } = useGetPurchaseRequestById(prId);
   const [printMode, setPrintMode] = useState<"pr" | "receiving">("pr");
+  const [isPrinting, setIsPrinting] = useState(false);
+
+  // Wait for all images (logo + signatures) to load before triggering print dialog
+  useEffect(() => {
+    if (!isPrinting) return;
+    let rafId: number;
+    let fallbackId: ReturnType<typeof setTimeout>;
+
+    rafId = requestAnimationFrame(() => {
+      const printDiv = document.querySelector("[data-print-only]");
+      const images = printDiv
+        ? Array.from(printDiv.querySelectorAll<HTMLImageElement>("img"))
+        : [];
+      const incomplete = images.filter((img) => !img.complete);
+
+      const doPrint = () => {
+        clearTimeout(fallbackId);
+        window.print();
+        setIsPrinting(false);
+      };
+
+      if (incomplete.length === 0) {
+        doPrint();
+        return;
+      }
+
+      let doneCount = 0;
+      const onDone = () => {
+        doneCount++;
+        if (doneCount >= incomplete.length) doPrint();
+      };
+      incomplete.forEach((img) => {
+        img.addEventListener("load", onDone, { once: true });
+        img.addEventListener("error", onDone, { once: true });
+      });
+
+      // Safety fallback: print after max 4s even if images stall
+      fallbackId = setTimeout(doPrint, 4000);
+    });
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(fallbackId);
+    };
+  }, [isPrinting]);
 
   const autoPrint = (mode: "pr" | "receiving") => {
     setPrintMode(mode);
-    setTimeout(() => window.print(), 150);
+    setIsPrinting(true);
   };
   const handlePrintPR = () => autoPrint("pr");
   const handlePrintReceiving = () => autoPrint("receiving");
