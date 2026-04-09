@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useCreatePurchaseRequest, useGetCompanies, useGetUsers, useGetMe } from "@workspace/api-client-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatIDR } from "@/lib/utils";
-import { ArrowLeft, Plus, Trash2, Save, Loader2, CalendarDays, User, ArrowRightLeft } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Save, Loader2, CalendarDays, User, ArrowRightLeft, Pencil } from "lucide-react";
 
 export default function PRCreate() {
   const [, setLocation] = useLocation();
+  const search = useSearch();
+  const editId = new URLSearchParams(search).get("editId");
+  const isEditMode = !!editId;
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -24,6 +28,7 @@ export default function PRCreate() {
   const [items, setItems] = useState([
     { name: "", description: "", qty: 1, unit: "Pcs", estimatedPrice: 0 }
   ]);
+  const [editLoaded, setEditLoaded] = useState(false);
 
   // Leave-specific fields
   const [leaveStartDate, setLeaveStartDate] = useState("");
@@ -78,12 +83,46 @@ export default function PRCreate() {
     }
   }, [activeTypes.length]);
 
-  // Pre-populate department from user profile
+  // Pre-populate department from user profile (only when NOT in edit mode)
   useEffect(() => {
-    if (me?.department && !department) {
+    if (!isEditMode && me?.department && !department) {
       setDepartment(me.department);
     }
-  }, [me?.department]);
+  }, [me?.department, isEditMode]);
+
+  // Fetch existing PR data when in edit mode
+  useEffect(() => {
+    if (!isEditMode || editLoaded) return;
+    const fetchPR = async () => {
+      try {
+        const res = await fetch(`${BASE}/api/purchase-requests/${editId}`, { credentials: "include" });
+        if (!res.ok) { toast({ variant: "destructive", title: "Gagal", description: "PR tidak ditemukan" }); return; }
+        const data = await res.json();
+        setType(data.type || "purchase");
+        setDescription(data.description || "");
+        setNotes(data.notes || "");
+        setCompanyId(data.companyId || "");
+        setDepartment(data.department || "");
+        if (data.leaveStartDate) setLeaveStartDate(data.leaveStartDate);
+        if (data.leaveEndDate) setLeaveEndDate(data.leaveEndDate);
+        if (data.leaveRequesterId) setLeaveRequesterId(data.leaveRequesterId);
+        if (data.fromLocationId) setFromLocationId(data.fromLocationId);
+        if (data.toLocationId) setToLocationId(data.toLocationId);
+        if (data.transferToUserId) setTransferToUserId(data.transferToUserId);
+        if (data.items && data.items.length > 0) {
+          setItems(data.items.map((it: any) => ({
+            name: it.name || "",
+            description: it.description || "",
+            qty: parseFloat(it.qty) || 1,
+            unit: it.unit || "Pcs",
+            estimatedPrice: parseFloat(it.estimatedPrice) || 0,
+          })));
+        }
+        setEditLoaded(true);
+      } catch { toast({ variant: "destructive", title: "Gagal", description: "Terjadi kesalahan saat memuat PR" }); }
+    };
+    fetchPR();
+  }, [isEditMode, editId, editLoaded]);
 
   // Fetch leave balance when type is "leave"
   const leaveTargetUserId = leaveRequesterId || me?.id;
@@ -104,7 +143,7 @@ export default function PRCreate() {
   const leaveAvailable = leaveBalance?.availableDays ?? null;
   const leaveExceeded = leaveAvailable !== null && requestedDays > leaveAvailable;
 
-  const { mutate: createPR, isPending } = useCreatePurchaseRequest({
+  const { mutate: createPR, isPending: isCreating } = useCreatePurchaseRequest({
     mutation: {
       onSuccess: (data) => {
         toast({ title: "Berhasil", description: `PR ${data.prNumber} berhasil dibuat.` });
@@ -116,6 +155,28 @@ export default function PRCreate() {
       }
     }
   });
+
+  const { mutate: updatePR, isPending: isUpdating } = useMutation({
+    mutationFn: async (body: any) => {
+      const res = await fetch(`${BASE}/api/purchase-requests/${editId}`, {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || "Gagal menyimpan"); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Berhasil", description: `PR ${data.prNumber} berhasil diperbarui.` });
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
+      setLocation(`/purchase-requests/${editId}`);
+    },
+    onError: (err: any) => {
+      toast({ variant: "destructive", title: "Gagal", description: err.message || "Terjadi kesalahan" });
+    },
+  });
+
+  const isPending = isCreating || isUpdating;
 
   const addItem = () => {
     setItems([...items, { name: "", description: "", qty: 1, unit: "Pcs", estimatedPrice: 0 }]);
@@ -144,6 +205,7 @@ export default function PRCreate() {
       toast({ variant: "destructive", title: "Validasi", description: "Departemen wajib dipilih." });
       return;
     }
+
     if (type === "leave") {
       if (!leaveStartDate || !leaveEndDate) {
         toast({ variant: "destructive", title: "Validasi", description: "Tanggal cuti wajib diisi." });
@@ -153,18 +215,8 @@ export default function PRCreate() {
         toast({ variant: "destructive", title: "Saldo Cuti Tidak Cukup", description: `Sisa cuti: ${leaveAvailable} hari. Permintaan: ${requestedDays} hari.` });
         return;
       }
-      createPR({
-        data: {
-          type,
-          description,
-          notes,
-          department,
-          companyId: companyId || null,
-          leaveStartDate,
-          leaveEndDate,
-          leaveRequesterId: leaveRequesterId || null,
-        } as any
-      });
+      const payload = { type, description, notes, department, companyId: companyId || null, leaveStartDate, leaveEndDate, leaveRequesterId: leaveRequesterId || null };
+      if (isEditMode) { updatePR(payload); } else { createPR({ data: payload as any }); }
     } else if (type === "transfer") {
       if (!fromLocationId || !toLocationId) {
         toast({ variant: "destructive", title: "Validasi", description: "Lokasi asal dan tujuan wajib dipilih." });
@@ -182,13 +234,15 @@ export default function PRCreate() {
         toast({ variant: "destructive", title: "Validasi", description: "Lengkapi semua item yang ditransfer." });
         return;
       }
-      createPR({ data: { type, description, notes, department, companyId: companyId || null, items, fromLocationId, toLocationId, transferToUserId } as any });
+      const payload = { type, description, notes, department, companyId: companyId || null, items, fromLocationId, toLocationId, transferToUserId };
+      if (isEditMode) { updatePR(payload); } else { createPR({ data: payload as any }); }
     } else {
       if (items.some(i => !i.name || i.qty <= 0)) {
         toast({ variant: "destructive", title: "Validasi", description: "Lengkapi semua item." });
         return;
       }
-      createPR({ data: { type, description, notes, department, companyId: companyId || null, items } as any });
+      const payload = { type, description, notes, department, companyId: companyId || null, items };
+      if (isEditMode) { updatePR(payload); } else { createPR({ data: payload as any }); }
     }
   };
 
@@ -202,12 +256,16 @@ export default function PRCreate() {
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="outline" size="icon" onClick={() => setLocation("/purchase-requests")} className="rounded-xl">
+        <Button variant="outline" size="icon" onClick={() => setLocation(isEditMode ? `/purchase-requests/${editId}` : "/purchase-requests")} className="rounded-xl">
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h2 className="text-2xl font-display font-bold text-foreground">Buat Purchase Request</h2>
-          <p className="text-sm text-muted-foreground">Pengajuan pembelian, perbaikan, atau permintaan cuti</p>
+          <h2 className="text-2xl font-display font-bold text-foreground">
+            {isEditMode ? "Edit Purchase Request" : "Buat Purchase Request"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {isEditMode ? "Perubahan akan mengembalikan PR ke status draft" : "Pengajuan pembelian, perbaikan, atau permintaan cuti"}
+          </p>
         </div>
       </div>
 
@@ -513,10 +571,10 @@ export default function PRCreate() {
         )}
 
         <div className="flex justify-end gap-4">
-          <Button type="button" variant="ghost" onClick={() => setLocation("/purchase-requests")}>Batal</Button>
+          <Button type="button" variant="ghost" onClick={() => setLocation(isEditMode ? `/purchase-requests/${editId}` : "/purchase-requests")}>Batal</Button>
           <Button type="submit" disabled={isPending || (type === "leave" && leaveExceeded)} className="shadow-lg shadow-primary/20">
-            {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-            Simpan Draft
+            {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : isEditMode ? <Pencil className="mr-2 h-4 w-4" /> : <Save className="mr-2 h-4 w-4" />}
+            {isEditMode ? "Simpan Perubahan" : "Simpan Draft"}
           </Button>
         </div>
       </form>

@@ -17,7 +17,7 @@ import { formatIDR, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Send, CheckCircle2, XCircle, PackageCheck, Receipt,
-  Paperclip, Plus, Trash2, Building, ExternalLink, ChevronDown, Loader2, CheckSquare, Printer, Ban
+  Paperclip, Plus, Trash2, Building, ExternalLink, ChevronDown, Loader2, CheckSquare, Printer, Ban, Pencil
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -245,6 +245,11 @@ export default function PRDetail() {
           <Button variant="outline" className="shadow-sm" onClick={handlePrintPR}>
             <Printer className="mr-2 h-4 w-4" /> Cetak PR
           </Button>
+          {(pr.status === "draft" || pr.status === "waiting_approval") && isRequester && (
+            <Button variant="outline" onClick={() => setLocation(`/purchase-requests/create?editId=${prId}`)} className="shadow-sm">
+              <Pencil className="mr-2 h-4 w-4" /> Edit PR
+            </Button>
+          )}
           {pr.status === "draft" && isRequester && (
             <Button onClick={() => submitPR({ id: prId })} disabled={isSubmitting} className="shadow-md shadow-primary/20">
               <Send className="mr-2 h-4 w-4" /> Kirim untuk Approval

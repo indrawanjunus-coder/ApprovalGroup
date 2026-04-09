@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { AlertCircle, Plus, Trash2, Edit2, Save, Mail, HardDrive, Users, FolderOpen, ExternalLink } from "lucide-react";
+import { AlertCircle, Plus, Trash2, Edit2, Save, Mail, HardDrive, Users, FolderOpen, ExternalLink, Globe, ToggleLeft } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 interface ExtUser {
@@ -47,6 +47,8 @@ export default function AdminSettingsPage() {
   const [gdriveFolderUrl, setGdriveFolderUrl] = useState("https://drive.google.com/drive/folders/0AAxCInqK40uzUk9PVA");
   const [gdriveMsg, setGdriveMsg] = useState("");
   const [users, setUsers] = useState<ExtUser[]>([]);
+  const [vendorRegistrationEnabled, setVendorRegistrationEnabled] = useState(true);
+  const [portalMsg, setPortalMsg] = useState("");
   const [smtpLoading, setSmtpLoading] = useState(false);
   const [smtpMsg, setSmtpMsg] = useState("");
   const [fileMsg, setFileMsg] = useState("");
@@ -73,7 +75,14 @@ export default function AdminSettingsPage() {
         allowedTypes: d.allowedFileTypes || "jpg,jpeg,png,pdf",
       });
       if (d.gdriveFolderUrl) setGdriveFolderUrl(d.gdriveFolderUrl);
+      setVendorRegistrationEnabled(d.vendorRegistrationEnabled !== false);
     }
+  };
+
+  const savePortalSettings = async () => {
+    setPortalMsg("");
+    const res = await apiPut("/settings", { vendorRegistrationEnabled });
+    setPortalMsg(res.ok ? "Pengaturan portal disimpan" : "Gagal menyimpan");
   };
 
   const loadUsers = async () => {
@@ -162,6 +171,7 @@ export default function AdminSettingsPage() {
         <Tabs defaultValue="users">
           <TabsList>
             <TabsTrigger value="users" className="gap-2"><Users className="w-3.5 h-3.5" />Pengguna</TabsTrigger>
+            {isAdmin && <TabsTrigger value="portal" className="gap-2"><Globe className="w-3.5 h-3.5" />Portal</TabsTrigger>}
             {isAdmin && <TabsTrigger value="smtp" className="gap-2"><Mail className="w-3.5 h-3.5" />Email SMTP</TabsTrigger>}
             {isAdmin && <TabsTrigger value="file" className="gap-2"><HardDrive className="w-3.5 h-3.5" />Batasan File</TabsTrigger>}
             {isAdmin && <TabsTrigger value="gdrive" className="gap-2"><FolderOpen className="w-3.5 h-3.5" />Google Drive</TabsTrigger>}
@@ -236,6 +246,50 @@ export default function AdminSettingsPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* Portal Tab */}
+          {isAdmin && (
+            <TabsContent value="portal" className="mt-4">
+              <Card className="border-0 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-primary" />
+                    Pengaturan Portal Vendor
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="flex items-start justify-between gap-4 p-4 rounded-lg border bg-slate-50/50">
+                    <div>
+                      <p className="font-medium text-sm">Pendaftaran Vendor Baru</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Aktifkan untuk mengizinkan vendor mendaftar sendiri melalui halaman registrasi.
+                        Nonaktifkan untuk menutup pendaftaran sementara.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={vendorRegistrationEnabled}
+                      onCheckedChange={setVendorRegistrationEnabled}
+                    />
+                  </div>
+                  {!vendorRegistrationEnabled && (
+                    <div className="flex items-center gap-2 text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      Pendaftaran vendor sedang ditutup. Vendor baru tidak dapat mendaftar mandiri.
+                    </div>
+                  )}
+                  {portalMsg && (
+                    <p className={`text-sm ${portalMsg.includes("Gagal") ? "text-destructive" : "text-green-600"}`}>
+                      {portalMsg}
+                    </p>
+                  )}
+                  <Button onClick={savePortalSettings} className="gap-2">
+                    <Save className="w-4 h-4" />
+                    Simpan Pengaturan Portal
+                  </Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
 
           {/* SMTP Tab */}
           {isAdmin && (

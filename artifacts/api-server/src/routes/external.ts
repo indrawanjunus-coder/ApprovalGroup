@@ -149,9 +149,23 @@ async function getFileConfig() {
 
 // ─── Auth: Vendor ──────────────────────────────────────────────────────────────
 
+// GET /api/external/registration-status (public — no auth required)
+router.get("/registration-status", async (_req, res) => {
+  try {
+    const val = await getSettingValue("vendor_registration_enabled");
+    res.json({ enabled: val !== "false" });
+  } catch { res.json({ enabled: true }); }
+});
+
 // POST /api/external/auth/register
 router.post("/auth/register", async (req, res) => {
   try {
+    // Check if vendor registration is enabled
+    const regEnabled = await getSettingValue("vendor_registration_enabled");
+    if (regEnabled === "false") {
+      return res.status(403).json({ error: "Pendaftaran vendor saat ini sedang ditutup oleh administrator" });
+    }
+
     const {
       companyName, companyAddress, picName, picPhone,
       officePhone, email, password,
@@ -777,7 +791,7 @@ async function upsertSetting(key: string, value: string) {
 // GET /api/external/settings
 router.get("/settings", requireExtUser("admin"), async (req, res) => {
   try {
-    const keys = ["ext_smtp_host", "ext_smtp_port", "ext_smtp_user", "ext_smtp_security", "ext_max_file_size", "ext_allowed_file_types", "ext_gdrive_folder"];
+    const keys = ["ext_smtp_host", "ext_smtp_port", "ext_smtp_user", "ext_smtp_security", "ext_max_file_size", "ext_allowed_file_types", "ext_gdrive_folder", "vendor_registration_enabled"];
     const vals = await Promise.all(keys.map(k => getSettingValue(k)));
     res.json({
       smtpHost: vals[0] || "",
@@ -787,6 +801,7 @@ router.get("/settings", requireExtUser("admin"), async (req, res) => {
       maxFileSizeMb: vals[4] || "5",
       allowedFileTypes: vals[5] || "jpg,jpeg,png,pdf",
       gdriveFolderUrl: vals[6] || "https://drive.google.com/drive/folders/0AAxCInqK40uzUk9PVA",
+      vendorRegistrationEnabled: vals[7] !== "false",
     });
   } catch (err) { res.status(500).json({ error: "Internal server error" }); }
 });
@@ -795,7 +810,7 @@ router.get("/settings", requireExtUser("admin"), async (req, res) => {
 router.put("/settings", requireExtUser("admin"), async (req, res) => {
   const sess = req.session as any;
   try {
-    const { smtpHost, smtpPort, smtpUser, smtpPass, smtpSecurity, maxFileSizeMb, allowedFileTypes, gdriveFolderUrl } = req.body;
+    const { smtpHost, smtpPort, smtpUser, smtpPass, smtpSecurity, maxFileSizeMb, allowedFileTypes, gdriveFolderUrl, vendorRegistrationEnabled } = req.body;
     if (smtpHost !== undefined) await upsertSetting("ext_smtp_host", smtpHost);
     if (smtpPort !== undefined) await upsertSetting("ext_smtp_port", smtpPort);
     if (smtpUser !== undefined) await upsertSetting("ext_smtp_user", smtpUser);
@@ -804,6 +819,7 @@ router.put("/settings", requireExtUser("admin"), async (req, res) => {
     if (maxFileSizeMb !== undefined) await upsertSetting("ext_max_file_size", String(maxFileSizeMb));
     if (allowedFileTypes !== undefined) await upsertSetting("ext_allowed_file_types", allowedFileTypes);
     if (gdriveFolderUrl !== undefined) await upsertSetting("ext_gdrive_folder", gdriveFolderUrl);
+    if (vendorRegistrationEnabled !== undefined) await upsertSetting("vendor_registration_enabled", vendorRegistrationEnabled ? "true" : "false");
     await logAudit(sess.extUserId, "update_ext_settings", "ext_settings", 0,
       `Keys: ${Object.keys(req.body).join(", ")}`);
     res.json({ success: true });

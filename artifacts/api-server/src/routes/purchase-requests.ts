@@ -309,8 +309,12 @@ router.put("/:id", async (req, res) => {
   try {
     const [pr] = await db.select().from(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
     if (!pr) { res.status(404).json({ error: "Not Found" }); return; }
-    if (pr.status !== "draft") { res.status(400).json({ error: "Can only edit draft PRs" }); return; }
+    if (!["draft", "waiting_approval"].includes(pr.status)) { res.status(400).json({ error: "Hanya PR dengan status draft atau menunggu approval yang dapat diedit" }); return; }
     if (pr.requesterId !== user.id && user.role !== "admin") { res.status(403).json({ error: "Forbidden" }); return; }
+    // If PR was waiting_approval, reset to draft by removing pending approvals
+    if (pr.status === "waiting_approval") {
+      await db.delete(approvalsTable).where(eq(approvalsTable.prId, id));
+    }
     const totalAmount = items
       ? items.reduce((sum: number, item: any) => sum + (parseFloat(item.qty) * parseFloat(item.estimatedPrice)), 0)
       : parseFloat(pr.totalAmount);
@@ -318,6 +322,8 @@ router.put("/:id", async (req, res) => {
       type: type || pr.type, description: description || pr.description,
       companyId: companyId !== undefined ? companyId : pr.companyId,
       totalAmount: totalAmount.toString(), notes,
+      status: "draft",
+      currentApprovalLevel: null,
       leaveStartDate: leaveStartDate !== undefined ? leaveStartDate : pr.leaveStartDate,
       leaveEndDate: leaveEndDate !== undefined ? leaveEndDate : pr.leaveEndDate,
       leaveRequesterId: leaveRequesterId !== undefined ? leaveRequesterId : pr.leaveRequesterId,

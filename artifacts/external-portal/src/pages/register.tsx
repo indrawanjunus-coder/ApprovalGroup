@@ -1,14 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { apiPost } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Building2, AlertCircle, CheckCircle2, ArrowLeft, Upload, FileImage } from "lucide-react";
+import { Building2, AlertCircle, CheckCircle2, ArrowLeft, Upload, FileImage, Lock } from "lucide-react";
 
 export default function RegisterPage() {
   const [, setLocation] = useLocation();
+  const [registrationEnabled, setRegistrationEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+    fetch(`${BASE}/api/external/registration-status`)
+      .then(r => r.json())
+      .then(d => setRegistrationEnabled(d.enabled !== false))
+      .catch(() => setRegistrationEnabled(true));
+  }, []);
   const [form, setForm] = useState({
     companyName: "",
     email: "",
@@ -64,6 +73,31 @@ export default function RegisterPage() {
     } catch { setError("Gagal terhubung ke server"); }
     finally { setLoading(false); }
   };
+
+  if (registrationEnabled === null) {
+    return <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 flex items-center justify-center" />;
+  }
+
+  if (registrationEnabled === false) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-lg border-0">
+          <CardContent className="pt-8 pb-8 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-amber-100 rounded-full mb-4">
+              <Lock className="w-8 h-8 text-amber-600" />
+            </div>
+            <h2 className="text-xl font-bold mb-2">Pendaftaran Ditutup</h2>
+            <p className="text-muted-foreground text-sm mb-6">
+              Pendaftaran vendor baru sedang ditutup sementara oleh administrator. Silakan hubungi kami untuk informasi lebih lanjut.
+            </p>
+            <Button variant="outline" onClick={() => setLocation("/login")} className="w-full">
+              <ArrowLeft className="mr-2 w-4 h-4" /> Kembali ke Login
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (success) {
     return (
