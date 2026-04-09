@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { apiPost } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2, LogIn, AlertCircle } from "lucide-react";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -19,6 +21,14 @@ export default function LoginPage() {
   const [userPass, setUserPass] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [registrationEnabled, setRegistrationEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch(`${BASE}/api/external/registration-status`)
+      .then(r => r.ok ? r.json() : { enabled: false })
+      .then(d => setRegistrationEnabled(d.enabled === true))
+      .catch(() => setRegistrationEnabled(false));
+  }, []);
 
   const handleVendorLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,12 +99,14 @@ export default function LoginPage() {
                     <LogIn className="w-4 h-4 mr-2" />
                     {loading ? "Masuk..." : "Masuk"}
                   </Button>
-                  <p className="text-center text-sm text-muted-foreground">
-                    Belum terdaftar?{" "}
-                    <a href={import.meta.env.BASE_URL + "register"} className="text-primary hover:underline font-medium">
-                      Daftar Vendor
-                    </a>
-                  </p>
+                  {registrationEnabled === true && (
+                    <p className="text-center text-sm text-muted-foreground">
+                      Belum terdaftar?{" "}
+                      <a href={import.meta.env.BASE_URL + "register"} className="text-primary hover:underline font-medium">
+                        Daftar Vendor
+                      </a>
+                    </p>
+                  )}
                 </form>
               </TabsContent>
 
