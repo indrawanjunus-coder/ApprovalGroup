@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "../lib/db.js";
-import { apiKeysTable, masterItemsTable, masterUomsTable } from "@workspace/db/schema";
+import { apiKeysTable, masterItemsTable, masterUomsTable, vendorCompaniesTable, externalPurchaseOrdersTable, externalPoItemsTable } from "@workspace/db/schema";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
 
@@ -32,6 +32,12 @@ const API_DOCS_JSON = {
       "POST /api/v1/items": "Tambah atau perbarui 1 Item",
       "POST /api/v1/items/bulk": "Tambah atau perbarui banyak Item sekaligus (max 500)",
       "DELETE /api/v1/items/:code": "Nonaktifkan Item",
+    },
+    purchase_orders: {
+      "GET /api/v1/pos": "Ambil semua Purchase Order (opsional filter ?vendor_email=&status=)",
+      "GET /api/v1/pos/:po_number": "Ambil detail PO beserta item-itemnya",
+      "POST /api/v1/pos": "Buat atau perbarui PO beserta items (upsert by po_number)",
+      "DELETE /api/v1/pos/:po_number": "Tutup PO (set status = closed)",
     },
   },
 };
@@ -279,6 +285,39 @@ router.get("/", (req, res) => {
         </div>
       </div>
 
+      <!-- Purchase Orders -->
+      <div class="endpoint-group">
+        <div class="group-title">Purchase Order (PO)</div>
+        <div class="endpoint-row">
+          <span class="badge badge-GET">GET</span>
+          <div>
+            <div class="endpoint-path">/pos</div>
+            <div class="endpoint-desc">Ambil semua PO — filter opsional: <code>?vendor_email=&amp;status=</code></div>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <span class="badge badge-GET">GET</span>
+          <div>
+            <div class="endpoint-path">/pos/<span class="param">{po_number}</span></div>
+            <div class="endpoint-desc">Ambil detail PO beserta seluruh item-nya</div>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <span class="badge badge-POST">POST</span>
+          <div>
+            <div class="endpoint-path">/pos</div>
+            <div class="endpoint-desc">Buat atau perbarui PO beserta items (upsert by <code>po_number</code>)</div>
+          </div>
+        </div>
+        <div class="endpoint-row">
+          <span class="badge badge-DELETE">DEL</span>
+          <div>
+            <div class="endpoint-path">/pos/<span class="param">{po_number}</span></div>
+            <div class="endpoint-desc">Tutup PO — status berubah ke <code>closed</code></div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -389,6 +428,144 @@ curl <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxx
 
 <span class="curl-comment"># Response</span>
 { <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"message"</span>: <span class="str">"Item 'ITM003' dinonaktifkan."</span> }</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Schema PO -->
+  <div class="card">
+    <div class="card-header" style="background:#f8fafc">
+      <div class="card-title">📐 Schema: Purchase Order (PO)</div>
+    </div>
+    <div class="card-body">
+      <p style="font-size:13px;color:#64748b;margin-bottom:14px">Body untuk <code>POST /api/v1/pos</code></p>
+      <table class="schema-table">
+        <thead><tr><th>Field</th><th>Tipe</th><th>Status</th><th>Keterangan</th></tr></thead>
+        <tbody>
+          <tr><td class="field-name">po_number</td><td class="field-type">string</td><td><span class="req">WAJIB</span></td><td>Nomor PO unik. Digunakan sebagai kunci upsert. Contoh: <code>PO-2024-001</code></td></tr>
+          <tr><td class="field-name">vendor_email</td><td class="field-type">string</td><td><span class="req">WAJIB</span></td><td>Email vendor yang terdaftar di sistem. Digunakan untuk mencari ID vendor.</td></tr>
+          <tr><td class="field-name">notes</td><td class="field-type">string</td><td><span class="opt">OPSIONAL</span></td><td>Catatan atau keterangan tambahan untuk PO.</td></tr>
+          <tr><td class="field-name">items</td><td class="field-type">array</td><td><span class="req">WAJIB</span></td><td>Minimal 1 item. Lihat schema Item PO di bawah.</td></tr>
+        </tbody>
+      </table>
+
+      <p style="font-size:13px;color:#64748b;margin:18px 0 10px;font-weight:600">Schema Item dalam PO (<code>items[]</code>)</p>
+      <table class="schema-table">
+        <thead><tr><th>Field</th><th>Tipe</th><th>Status</th><th>Keterangan</th></tr></thead>
+        <tbody>
+          <tr><td class="field-name">item_code</td><td class="field-type">string</td><td><span class="req">WAJIB</span></td><td>Kode barang. Jika ada di master item akan di-link otomatis.</td></tr>
+          <tr><td class="field-name">item_name</td><td class="field-type">string</td><td><span class="req">WAJIB</span></td><td>Nama barang.</td></tr>
+          <tr><td class="field-name">uom_code</td><td class="field-type">string</td><td><span class="req">WAJIB</span></td><td>Kode satuan. Contoh: <code>PCS</code>, <code>KG</code>. Jika ada di master UoM akan di-link otomatis.</td></tr>
+          <tr><td class="field-name">uom_name</td><td class="field-type">string</td><td><span class="opt">OPSIONAL</span></td><td>Nama satuan. Jika kosong dan uom_code ada di master, nama master akan digunakan.</td></tr>
+          <tr><td class="field-name">qty</td><td class="field-type">number</td><td><span class="req">WAJIB</span></td><td>Kuantitas barang. Harus lebih dari 0.</td></tr>
+          <tr><td class="field-name">unit_price</td><td class="field-type">number</td><td><span class="req">WAJIB</span></td><td>Harga satuan (dalam Rupiah). Harus lebih dari 0.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Examples PO -->
+  <div class="card">
+    <div class="card-header" style="background:#f8fafc">
+      <div class="card-title">💡 Contoh Penggunaan — Purchase Order</div>
+    </div>
+    <div class="card-body">
+
+      <div style="margin-bottom:28px">
+        <div class="section-label">1. Buat PO Baru dengan Items</div>
+        <div class="code-block">curl <span class="curl-flag">-X POST</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"Content-Type: application/json"</span> \\
+     <span class="curl-flag">-d</span> <span class="curl-str">'{
+  "po_number":    "PO-2024-001",
+  "vendor_email": "supplier@ptcontoh.com",
+  "notes":        "Pengiriman ke gudang A",
+  "items": [
+    {
+      "item_code":  "ITM001",
+      "item_name":  "Baut M8 x 20mm",
+      "uom_code":   "PCS",
+      "qty":        500,
+      "unit_price": 350
+    },
+    {
+      "item_code":  "ITM002",
+      "item_name":  "Mur M8",
+      "uom_code":   "PCS",
+      "qty":        500,
+      "unit_price": 200
+    }
+  ]
+}'</span> \\
+     <span class="curl-url">https://portal.arenacorp.com/api/v1/pos</span>
+
+<span class="curl-comment"># Response (created)</span>
+{
+  <span class="key">"success"</span>: <span class="num">true</span>,
+  <span class="key">"action"</span>:  <span class="str">"created"</span>,
+  <span class="key">"data"</span>: {
+    <span class="key">"id"</span>:             <span class="num">42</span>,
+    <span class="key">"po_number"</span>:     <span class="str">"PO-2024-001"</span>,
+    <span class="key">"vendor_email"</span>:  <span class="str">"supplier@ptcontoh.com"</span>,
+    <span class="key">"vendor_name"</span>:   <span class="str">"PT Contoh Supplier"</span>,
+    <span class="key">"status"</span>:        <span class="str">"active"</span>,
+    <span class="key">"notes"</span>:         <span class="str">"Pengiriman ke gudang A"</span>,
+    <span class="key">"total_value"</span>:   <span class="num">275000</span>,
+    <span class="key">"created_at"</span>:    <span class="num">1712000000000</span>,
+    <span class="key">"items"</span>: [
+      { <span class="key">"item_code"</span>: <span class="str">"ITM001"</span>, <span class="key">"item_name"</span>: <span class="str">"Baut M8 x 20mm"</span>, <span class="key">"uom_code"</span>: <span class="str">"PCS"</span>, <span class="key">"qty"</span>: <span class="str">"500"</span>, <span class="key">"unit_price"</span>: <span class="str">"350.00"</span>, <span class="key">"subtotal"</span>: <span class="str">"175000.00"</span> },
+      { <span class="key">"item_code"</span>: <span class="str">"ITM002"</span>, <span class="key">"item_name"</span>: <span class="str">"Mur M8"</span>,       <span class="key">"uom_code"</span>: <span class="str">"PCS"</span>, <span class="key">"qty"</span>: <span class="str">"500"</span>, <span class="key">"unit_price"</span>: <span class="str">"200.00"</span>, <span class="key">"subtotal"</span>: <span class="str">"100000.00"</span> }
+    ]
+  }
+}</div>
+      </div>
+
+      <div style="margin-bottom:28px">
+        <div class="section-label">2. Update PO (upsert — ganti items)</div>
+        <div class="code-block"><span class="curl-comment"># Kirim ulang dengan po_number yang sama → items lama dihapus, diganti yang baru</span>
+curl <span class="curl-flag">-X POST</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"Content-Type: application/json"</span> \\
+     <span class="curl-flag">-d</span> <span class="curl-str">'{
+  "po_number":    "PO-2024-001",
+  "vendor_email": "supplier@ptcontoh.com",
+  "items": [
+    { "item_code": "ITM001", "item_name": "Baut M8 x 20mm", "uom_code": "PCS", "qty": 600, "unit_price": 350 }
+  ]
+}'</span> \\
+     <span class="curl-url">https://portal.arenacorp.com/api/v1/pos</span>
+
+<span class="curl-comment"># Response (updated)</span>
+{ <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"action"</span>: <span class="str">"updated"</span>, <span class="key">"data"</span>: { <span class="key">"po_number"</span>: <span class="str">"PO-2024-001"</span>, <span class="key">"total_value"</span>: <span class="num">210000</span>, ... } }</div>
+      </div>
+
+      <div style="margin-bottom:28px">
+        <div class="section-label">3. Ambil Detail PO</div>
+        <div class="code-block">curl <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-url">https://portal.arenacorp.com/api/v1/pos/PO-2024-001</span>
+
+<span class="curl-comment"># Response</span>
+{ <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"data"</span>: { <span class="key">"po_number"</span>: <span class="str">"PO-2024-001"</span>, <span class="key">"status"</span>: <span class="str">"active"</span>, <span class="key">"items"</span>: [...] } }</div>
+      </div>
+
+      <div style="margin-bottom:28px">
+        <div class="section-label">4. List PO per Vendor</div>
+        <div class="code-block">curl <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-url">"https://portal.arenacorp.com/api/v1/pos?vendor_email=supplier@ptcontoh.com&amp;status=active"</span>
+
+<span class="curl-comment"># Response</span>
+{ <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"count"</span>: <span class="num">2</span>, <span class="key">"data"</span>: [ { <span class="key">"po_number"</span>: <span class="str">"PO-2024-001"</span>, ... }, ... ] }</div>
+      </div>
+
+      <div>
+        <div class="section-label">5. Tutup PO</div>
+        <div class="code-block">curl <span class="curl-flag">-X DELETE</span> \\
+     <span class="curl-flag">-H</span> <span class="curl-str">"X-API-Key: pf_xxxxxxxxxx"</span> \\
+     <span class="curl-url">https://portal.arenacorp.com/api/v1/pos/PO-2024-001</span>
+
+<span class="curl-comment"># Response</span>
+{ <span class="key">"success"</span>: <span class="num">true</span>, <span class="key">"message"</span>: <span class="str">"PO 'PO-2024-001' telah ditutup."</span> }</div>
       </div>
 
     </div>
@@ -614,6 +791,67 @@ router.delete("/items/:code", requireApiKey, async (req, res) => {
   }
 });
 
+// ─── Purchase Order Endpoints ─────────────────────────────────────────────
+
+router.get("/pos", requireApiKey, async (req, res) => {
+  try {
+    const { vendor_email, status } = req.query as { vendor_email?: string; status?: string };
+    let vendorId: number | null = null;
+    if (vendor_email) {
+      const [v] = await db.select({ id: vendorCompaniesTable.id })
+        .from(vendorCompaniesTable).where(eq(vendorCompaniesTable.email, vendor_email));
+      if (!v) return res.status(404).json({ error: "Vendor tidak ditemukan.", vendor_email });
+      vendorId = v.id;
+    }
+
+    let q = db.select().from(externalPurchaseOrdersTable).$dynamic();
+    const conditions: any[] = [];
+    if (vendorId) conditions.push(eq(externalPurchaseOrdersTable.vendorCompanyId, vendorId));
+    if (status) conditions.push(eq(externalPurchaseOrdersTable.status, status));
+    if (conditions.length) q = q.where(and(...conditions));
+
+    const pos = await q.orderBy(externalPurchaseOrdersTable.createdAt);
+    const vendorIds = [...new Set(pos.map(p => p.vendorCompanyId))];
+    const vendors = vendorIds.length > 0
+      ? await db.select({ id: vendorCompaniesTable.id, companyName: vendorCompaniesTable.companyName, email: vendorCompaniesTable.email })
+          .from(vendorCompaniesTable)
+      : [];
+    const vMap = Object.fromEntries(vendors.map(v => [v.id, { name: v.companyName, email: v.email }]));
+
+    const data = await Promise.all(pos.map(p => formatPo(p, vMap[p.vendorCompanyId], false)));
+    res.json({ success: true, count: data.length, data });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+router.get("/pos/:po_number", requireApiKey, async (req, res) => {
+  try {
+    const poNumber = req.params.po_number;
+    const [po] = await db.select().from(externalPurchaseOrdersTable)
+      .where(eq(externalPurchaseOrdersTable.poNumber, poNumber));
+    if (!po) return res.status(404).json({ error: "PO tidak ditemukan.", po_number: poNumber });
+    const [vendor] = await db.select({ companyName: vendorCompaniesTable.companyName, email: vendorCompaniesTable.email })
+      .from(vendorCompaniesTable).where(eq(vendorCompaniesTable.id, po.vendorCompanyId));
+    res.json({ success: true, data: await formatPo(po, vendor, true) });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
+router.post("/pos", requireApiKey, async (req, res) => {
+  const result = await upsertPo(req.body);
+  res.status(result.error ? (result.statusCode || 400) : 200).json(result);
+});
+
+router.delete("/pos/:po_number", requireApiKey, async (req, res) => {
+  try {
+    const poNumber = req.params.po_number;
+    const [updated] = await db.update(externalPurchaseOrdersTable)
+      .set({ status: "closed", updatedAt: Date.now() })
+      .where(eq(externalPurchaseOrdersTable.poNumber, poNumber))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "PO tidak ditemukan.", po_number: poNumber });
+    res.json({ success: true, message: `PO '${poNumber}' telah ditutup.` });
+  } catch (err: any) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 function formatUom(u: typeof masterUomsTable.$inferSelect) {
@@ -710,6 +948,130 @@ async function upsertItem(data: any): Promise<any> {
     }
   } catch (err: any) {
     return { error: err.message, code };
+  }
+}
+
+async function formatPo(
+  po: typeof externalPurchaseOrdersTable.$inferSelect,
+  vendor: { name?: string; companyName?: string; email?: string } | undefined,
+  withItems: boolean,
+) {
+  const totalValue = withItems
+    ? (await db.select().from(externalPoItemsTable).where(eq(externalPoItemsTable.poId, po.id)))
+        .reduce((s, i) => s + Number(i.subtotal), 0)
+    : undefined;
+  const base: any = {
+    id: po.id,
+    po_number: po.poNumber,
+    vendor_email: vendor?.email ?? null,
+    vendor_name: vendor?.name ?? vendor?.companyName ?? null,
+    status: po.status,
+    notes: po.notes,
+    created_by: po.createdBy,
+    created_at: po.createdAt,
+    updated_at: po.updatedAt,
+  };
+  if (totalValue !== undefined) base.total_value = totalValue;
+  if (withItems) {
+    const items = await db.select().from(externalPoItemsTable).where(eq(externalPoItemsTable.poId, po.id));
+    base.items = items.map(it => ({
+      item_code: it.itemCode, item_name: it.itemName,
+      uom_code: it.uomCode, uom_name: it.uomName,
+      qty: it.qty, unit_price: it.unitPrice, subtotal: it.subtotal,
+    }));
+  }
+  return base;
+}
+
+async function upsertPo(data: any): Promise<any> {
+  const poNumber = (data?.po_number || "").trim();
+  const vendorEmail = (data?.vendor_email || "").trim();
+  if (!poNumber) return { error: "Field 'po_number' wajib diisi." };
+  if (!vendorEmail) return { error: "Field 'vendor_email' wajib diisi." };
+  if (!Array.isArray(data?.items) || data.items.length === 0) {
+    return { error: "Field 'items' wajib berupa array minimal 1 elemen." };
+  }
+
+  // Validate all items
+  for (let i = 0; i < data.items.length; i++) {
+    const it = data.items[i];
+    if (!it.item_code || !it.item_name) return { error: `items[${i}]: 'item_code' dan 'item_name' wajib diisi.` };
+    if (!it.uom_code) return { error: `items[${i}]: 'uom_code' wajib diisi.` };
+    if (!it.qty || Number(it.qty) <= 0) return { error: `items[${i}]: 'qty' harus lebih dari 0.` };
+    if (!it.unit_price || Number(it.unit_price) <= 0) return { error: `items[${i}]: 'unit_price' harus lebih dari 0.` };
+  }
+
+  // Lookup vendor
+  const [vendor] = await db.select().from(vendorCompaniesTable)
+    .where(eq(vendorCompaniesTable.email, vendorEmail));
+  if (!vendor) return { statusCode: 404, error: `Vendor dengan email '${vendorEmail}' tidak ditemukan di sistem.` };
+
+  // Resolve item IDs and UoM IDs from master (optional, best effort)
+  const itemCodes = data.items.map((it: any) => it.item_code);
+  const uomCodes  = data.items.map((it: any) => it.uom_code);
+  const [masterItems, masterUoms] = await Promise.all([
+    db.select().from(masterItemsTable).where(inArray(masterItemsTable.code, itemCodes)),
+    db.select().from(masterUomsTable).where(inArray(masterUomsTable.code, uomCodes)),
+  ]);
+  const itemMap = Object.fromEntries(masterItems.map(i => [i.code, i]));
+  const uomMap  = Object.fromEntries(masterUoms.map(u => [u.code, u]));
+
+  const now = Date.now();
+  try {
+    // Check if PO exists
+    const [existing] = await db.select().from(externalPurchaseOrdersTable)
+      .where(eq(externalPurchaseOrdersTable.poNumber, poNumber));
+
+    let po: typeof externalPurchaseOrdersTable.$inferSelect;
+    let action: "created" | "updated";
+
+    if (existing) {
+      if (existing.status === "closed") {
+        return { statusCode: 400, error: `PO '${poNumber}' sudah ditutup dan tidak dapat diubah.` };
+      }
+      [po] = await db.update(externalPurchaseOrdersTable)
+        .set({
+          vendorCompanyId: vendor.id,
+          notes: data.notes !== undefined ? data.notes : existing.notes,
+          updatedAt: now,
+        })
+        .where(eq(externalPurchaseOrdersTable.id, existing.id))
+        .returning();
+      // Replace all items
+      await db.delete(externalPoItemsTable).where(eq(externalPoItemsTable.poId, po.id));
+      action = "updated";
+    } else {
+      [po] = await db.insert(externalPurchaseOrdersTable).values({
+        poNumber, vendorCompanyId: vendor.id, status: "active",
+        notes: data.notes || null, createdBy: "api", createdAt: now, updatedAt: now,
+      }).returning();
+      action = "created";
+    }
+
+    // Insert items
+    const itemRows = data.items.map((it: any) => {
+      const masterItem = itemMap[it.item_code];
+      const masterUom  = uomMap[it.uom_code];
+      const qty       = String(Number(it.qty));
+      const unitPrice = String(Number(it.unit_price));
+      const subtotal  = String(Number(it.qty) * Number(it.unit_price));
+      return {
+        poId: po.id,
+        itemId: masterItem?.id ?? null,
+        itemCode: it.item_code, itemName: it.item_name,
+        uomId: masterUom?.id ?? null,
+        uomCode: it.uom_code,
+        uomName: it.uom_name || masterUom?.name || it.uom_code,
+        qty, unitPrice, subtotal,
+      };
+    });
+    await db.insert(externalPoItemsTable).values(itemRows);
+
+    const formatted = await formatPo(po, { name: vendor.companyName, email: vendor.email }, true);
+    formatted.total_value = itemRows.reduce((s: number, r: any) => s + Number(r.subtotal), 0);
+    return { success: true, action, data: formatted };
+  } catch (err: any) {
+    return { statusCode: 500, error: err.message };
   }
 }
 
