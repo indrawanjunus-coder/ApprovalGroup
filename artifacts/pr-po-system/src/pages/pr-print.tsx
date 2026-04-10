@@ -160,7 +160,6 @@ function DocumentContent({ pr, settings, mode, getTypeLabel }: {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {settings?.logoUrl && <img src={settings.logoUrl} alt="Logo" style={{ height: 44, objectFit: "contain" }} />}
             <div>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{settings?.companyName || settings?.appName || "ProcureFlow"}</div>
               {settings?.companyAddress && <div style={{ fontSize: 9, color: "#555" }}>{settings.companyAddress}</div>}
               {(settings as any)?.companyPhone && <div style={{ fontSize: 9, color: "#555" }}>Telp: {(settings as any).companyPhone}</div>}
             </div>
@@ -256,7 +255,6 @@ function DocumentContent({ pr, settings, mode, getTypeLabel }: {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {settings?.logoUrl && <img src={settings.logoUrl} alt="Logo" style={{ height: 36, objectFit: "contain" }} />}
           <div>
-            <div style={{ fontWeight: 700, fontSize: 12 }}>{settings?.companyName || settings?.appName || "ProcureFlow"}</div>
             {settings?.companyAddress && <div style={{ fontSize: 8, color: "#666" }}>{settings.companyAddress}</div>}
           </div>
         </div>

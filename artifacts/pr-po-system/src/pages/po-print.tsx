@@ -131,7 +131,6 @@ function PODocument({ po, settings }: { po: any; settings: any }) {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {settings?.logoUrl && <img src={settings.logoUrl} alt="Logo" style={{ height: 36, objectFit: "contain" }} />}
           <div>
-            <div style={{ fontWeight: 700, fontSize: 12 }}>{settings?.companyName || settings?.appName || "ProcureFlow"}</div>
             {settings?.companyAddress && <div style={{ fontSize: 8, color: "#666" }}>{settings.companyAddress}</div>}
           </div>
         </div>
