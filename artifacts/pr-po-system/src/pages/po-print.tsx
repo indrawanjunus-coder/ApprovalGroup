@@ -192,31 +192,39 @@ function PODocument({ po, settings }: { po: any; settings: any }) {
       {/* Items Table */}
       <div style={{ marginBottom: 6 }}>
         <div style={{ fontWeight: 700, fontSize: 9, borderBottom: "1.5px solid #7e22ce", color: "#7e22ce", paddingBottom: 2, marginBottom: 2 }}>DAFTAR ITEM</div>
-        <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+        <table style={{ width: "100%", fontSize: 10, borderCollapse: "collapse" }}>
+          <colgroup>
+            <col style={{ width: "5%" }} />
+            <col style={{ width: "42%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "19%" }} />
+          </colgroup>
           <thead>
             <tr style={{ background: "#f3e8ff" }}>
-              <th style={{ padding: "2px 4px", border: "1px solid #e9d5ff", textAlign: "center" }}>No</th>
-              <th style={{ padding: "2px 4px", border: "1px solid #e9d5ff", textAlign: "left" }}>NAMA BARANG</th>
-              <th style={{ padding: "2px 4px", border: "1px solid #e9d5ff", textAlign: "right" }}>QTY</th>
-              <th style={{ padding: "2px 4px", border: "1px solid #e9d5ff", textAlign: "center" }}>SAT</th>
-              <th style={{ padding: "2px 4px", border: "1px solid #e9d5ff", textAlign: "right" }}>HARGA FINAL</th>
-              <th style={{ padding: "2px 4px", border: "1px solid #e9d5ff", textAlign: "right" }}>TOTAL</th>
+              <th style={{ padding: "4px 6px", border: "1px solid #e9d5ff", textAlign: "center" }}>No</th>
+              <th style={{ padding: "4px 6px", border: "1px solid #e9d5ff", textAlign: "left" }}>NAMA BARANG</th>
+              <th style={{ padding: "4px 6px", border: "1px solid #e9d5ff", textAlign: "right" }}>QTY</th>
+              <th style={{ padding: "4px 6px", border: "1px solid #e9d5ff", textAlign: "center" }}>SAT</th>
+              <th style={{ padding: "4px 6px", border: "1px solid #e9d5ff", textAlign: "right" }}>HARGA FINAL</th>
+              <th style={{ padding: "4px 6px", border: "1px solid #e9d5ff", textAlign: "right" }}>TOTAL</th>
             </tr>
           </thead>
           <tbody>
             {po.items.map((item: any, i: number) => (
               <tr key={item.id} style={{ background: i % 2 === 1 ? "#faf5ff" : undefined }}>
-                <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>{i + 1}</td>
-                <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", fontWeight: 600, textTransform: "uppercase" }}>{item.name}</td>
-                <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "right" }}>{item.quantity}</td>
-                <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>{item.unit}</td>
-                <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatIDR(item.finalPrice)}</td>
-                <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }}>{formatIDR(item.quantity * item.finalPrice)}</td>
+                <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "center" }}>{i + 1}</td>
+                <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", fontWeight: 600, textTransform: "uppercase" }}>{item.name}</td>
+                <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right" }}>{item.quantity}</td>
+                <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "center" }}>{item.unit}</td>
+                <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatIDR(item.finalPrice)}</td>
+                <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }}>{formatIDR(item.quantity * item.finalPrice)}</td>
               </tr>
             ))}
             <tr style={{ fontWeight: 700 }}>
-              <td colSpan={5} style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "right", background: "#f1f5f9" }}>TOTAL</td>
-              <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "right", color: "#7e22ce", background: "#f1f5f9" }}>{formatIDR(po.totalAmount)}</td>
+              <td colSpan={5} style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right", background: "#f1f5f9" }}>TOTAL</td>
+              <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right", color: "#7e22ce", background: "#f1f5f9" }}>{formatIDR(po.totalAmount)}</td>
             </tr>
           </tbody>
         </table>

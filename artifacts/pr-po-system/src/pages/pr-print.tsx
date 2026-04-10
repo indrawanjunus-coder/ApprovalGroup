@@ -202,15 +202,24 @@ function DocumentContent({ pr, settings, mode, getTypeLabel }: {
         <div style={{ marginBottom: 8 }}>
           <div style={{ fontWeight: 700, fontSize: 10, background: "#0d9488", color: "#fff", padding: "3px 8px" }}>DETAIL BARANG & PENERIMAAN</div>
           <table style={{ width: "100%", fontSize: 10, borderCollapse: "collapse" }}>
+            <colgroup>
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "37%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "11%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "17%" }} />
+            </colgroup>
             <thead>
               <tr style={{ background: "#ccfbf1" }}>
-                <th style={{ textAlign: "center", padding: "4px 6px", border: "1px solid #99f6e4" }}>No</th>
-                <th style={{ textAlign: "left", padding: "4px 6px", border: "1px solid #99f6e4" }}>NAMA BARANG</th>
-                <th style={{ textAlign: "center", padding: "4px 6px", border: "1px solid #99f6e4" }}>SAT</th>
-                <th style={{ textAlign: "right", padding: "4px 6px", border: "1px solid #99f6e4" }}>QTY ORDER</th>
-                <th style={{ textAlign: "right", padding: "4px 6px", border: "1px solid #99f6e4" }}>QTY DITERIMA</th>
-                <th style={{ textAlign: "right", padding: "4px 6px", border: "1px solid #99f6e4" }}>SISA</th>
-                <th style={{ textAlign: "center", padding: "4px 6px", border: "1px solid #99f6e4" }}>STATUS</th>
+                <th style={{ textAlign: "center", padding: "5px 6px", border: "1px solid #99f6e4" }}>No</th>
+                <th style={{ textAlign: "left", padding: "5px 6px", border: "1px solid #99f6e4" }}>NAMA BARANG</th>
+                <th style={{ textAlign: "center", padding: "5px 6px", border: "1px solid #99f6e4" }}>SAT</th>
+                <th style={{ textAlign: "right", padding: "5px 6px", border: "1px solid #99f6e4" }}>QTY ORDER</th>
+                <th style={{ textAlign: "right", padding: "5px 6px", border: "1px solid #99f6e4" }}>QTY DITERIMA</th>
+                <th style={{ textAlign: "right", padding: "5px 6px", border: "1px solid #99f6e4" }}>SISA</th>
+                <th style={{ textAlign: "center", padding: "5px 6px", border: "1px solid #99f6e4" }}>STATUS</th>
               </tr>
             </thead>
             <tbody>
@@ -222,13 +231,13 @@ function DocumentContent({ pr, settings, mode, getTypeLabel }: {
                 const remaining = Math.max(0, item.qty - received);
                 return (
                   <tr key={item.id} style={{ background: isDone ? "#f0fdf4" : idx % 2 === 1 ? "#f8fffe" : undefined }}>
-                    <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", textAlign: "center" }}>{idx + 1}</td>
-                    <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", fontWeight: 600, textTransform: "uppercase" }}>{item.name}</td>
-                    <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", textAlign: "center" }}>{item.unit}</td>
-                    <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", textAlign: "right" }}>{item.qty}</td>
-                    <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 700, color: isDone ? "#15803d" : received > 0 ? "#d97706" : "#555" }}>{received}</td>
-                    <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", textAlign: "right", color: remaining > 0 ? "#dc2626" : "#15803d" }}>{remaining}</td>
-                    <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", textAlign: "center", fontWeight: 600, color: isDone ? "#15803d" : received > 0 ? "#d97706" : "#555" }}>
+                    <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "center" }}>{idx + 1}</td>
+                    <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", fontWeight: 600, textTransform: "uppercase" }}>{item.name}</td>
+                    <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "center" }}>{item.unit}</td>
+                    <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right" }}>{item.qty}</td>
+                    <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 700, color: isDone ? "#15803d" : received > 0 ? "#d97706" : "#555" }}>{received}</td>
+                    <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right", color: remaining > 0 ? "#dc2626" : "#15803d" }}>{remaining}</td>
+                    <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "center", fontWeight: 600, color: isDone ? "#15803d" : received > 0 ? "#d97706" : "#555" }}>
                       {isDone ? "LENGKAP" : received > 0 ? "SEBAGIAN" : "BELUM"}
                     </td>
                   </tr>
@@ -317,26 +326,34 @@ function DocumentContent({ pr, settings, mode, getTypeLabel }: {
       {pr.items.length > 0 && (
         <div style={{ marginBottom: 6 }}>
           <div style={{ fontWeight: 700, fontSize: 9, borderBottom: "1.5px solid #1a56db", color: "#1a56db", paddingBottom: 2, marginBottom: 2 }}>DAFTAR BARANG / ITEM</div>
-          <table style={{ width: "100%", fontSize: 9, borderCollapse: "collapse" }}>
+          <table style={{ width: "100%", fontSize: 10, borderCollapse: "collapse" }}>
+            <colgroup>
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "42%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "18%" }} />
+              <col style={{ width: "19%" }} />
+            </colgroup>
             <thead>
               <tr style={{ background: "#e8f0fe" }}>
-                <th style={{ padding: "2px 4px", border: "1px solid #c7d2fe", textAlign: "center" }}>No</th>
-                <th style={{ padding: "2px 4px", border: "1px solid #c7d2fe", textAlign: "left" }}>NAMA BARANG</th>
-                <th style={{ padding: "2px 4px", border: "1px solid #c7d2fe", textAlign: "right" }}>QTY</th>
-                <th style={{ padding: "2px 4px", border: "1px solid #c7d2fe", textAlign: "center" }}>SAT</th>
-                <th style={{ padding: "2px 4px", border: "1px solid #c7d2fe", textAlign: "right" }}>EST. HARGA</th>
-                <th style={{ padding: "2px 4px", border: "1px solid #c7d2fe", textAlign: "right" }}>SUBTOTAL</th>
+                <th style={{ padding: "4px 6px", border: "1px solid #c7d2fe", textAlign: "center" }}>No</th>
+                <th style={{ padding: "4px 6px", border: "1px solid #c7d2fe", textAlign: "left" }}>NAMA BARANG</th>
+                <th style={{ padding: "4px 6px", border: "1px solid #c7d2fe", textAlign: "right" }}>QTY</th>
+                <th style={{ padding: "4px 6px", border: "1px solid #c7d2fe", textAlign: "center" }}>SAT</th>
+                <th style={{ padding: "4px 6px", border: "1px solid #c7d2fe", textAlign: "right" }}>EST. HARGA</th>
+                <th style={{ padding: "4px 6px", border: "1px solid #c7d2fe", textAlign: "right" }}>SUBTOTAL</th>
               </tr>
             </thead>
             <tbody>
               {pr.items.map((item: any, i: number) => (
                 <tr key={item.id} style={{ background: i % 2 === 1 ? "#f5f8ff" : undefined }}>
-                  <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>{i + 1}</td>
-                  <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", fontWeight: 600, textTransform: "uppercase" }}>{item.name}{item.description ? ` — ${item.description}` : ""}</td>
-                  <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "right" }}>{item.qty}</td>
-                  <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>{item.unit}</td>
-                  <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatIDR(item.estimatedPrice)}</td>
-                  <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }}>{formatIDR(item.qty * item.estimatedPrice)}</td>
+                  <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "center" }}>{i + 1}</td>
+                  <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", fontWeight: 600, textTransform: "uppercase" }}>{item.name}{item.description ? ` — ${item.description}` : ""}</td>
+                  <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right" }}>{item.qty}</td>
+                  <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "center" }}>{item.unit}</td>
+                  <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right" }}>{formatIDR(item.estimatedPrice)}</td>
+                  <td style={{ padding: "4px 6px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 600 }}>{formatIDR(item.qty * item.estimatedPrice)}</td>
                 </tr>
               ))}
               <tr style={{ fontWeight: 700 }}>
