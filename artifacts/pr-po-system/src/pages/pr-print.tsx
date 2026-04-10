@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearch } from "wouter";
 import { useGetPurchaseRequestById, useGetSettings } from "@workspace/api-client-react";
 import { useQuery } from "@tanstack/react-query";
@@ -31,24 +31,127 @@ export default function PRPrint() {
   };
 
   const isReady = !prLoading && !settingsLoading && !!pr;
+  const docRef = useRef<HTMLDivElement>(null);
+  const [status, setStatus] = useState<"loading" | "generating" | "done" | "error">("loading");
 
   useEffect(() => {
     if (!isReady) return;
-    // Small delay to let images (logo) load, then auto-print
-    const t = setTimeout(() => {
-      window.print();
-    }, 600);
-    return () => clearTimeout(t);
+    if (status !== "loading") return;
+
+    const generate = async () => {
+      setStatus("generating");
+      try {
+        // Wait for images to load
+        await new Promise((r) => setTimeout(r, 800));
+
+        const el = docRef.current;
+        if (!el) throw new Error("Element not found");
+
+        const [html2canvasModule, jsPDFModule] = await Promise.all([
+          import("html2canvas"),
+          import("jspdf"),
+        ]);
+        const html2canvas = html2canvasModule.default;
+        const jsPDF = jsPDFModule.default;
+
+        const canvas = await html2canvas(el, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: "#ffffff",
+        });
+
+        const imgData = canvas.toDataURL("image/png");
+        const pdf = new jsPDF("p", "mm", "a4");
+        const pageWidth = 210;
+        const pageHeight = 297;
+        const imgWidth = pageWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+
+        const filename = mode === "receiving"
+          ? `BPB-${(pr as any).prNumber}.pdf`
+          : `PR-${(pr as any).prNumber}.pdf`;
+        pdf.save(filename);
+        setStatus("done");
+      } catch (e) {
+        console.error(e);
+        setStatus("error");
+      }
+    };
+
+    generate();
   }, [isReady]);
 
-  if (!isReady) {
+  if (!isReady || status === "loading") {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "Arial, sans-serif", fontSize: 14, color: "#666" }}>
-        Memuat dokumen cetak...
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "Arial, sans-serif", fontSize: 14, color: "#666", gap: 12 }}>
+        <div style={{ width: 40, height: 40, border: "3px solid #e2e8f0", borderTop: "3px solid #1a56db", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+        <span>Memuat dokumen...</span>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
+  if (status === "generating") {
+    return (
+      <>
+        {/* Hidden document for capture */}
+        <div ref={docRef} style={{ position: "absolute", left: "-9999px", top: 0, width: "794px", background: "#fff" }}>
+          <DocumentContent pr={pr} settings={settings} mode={mode} getTypeLabel={getTypeLabel} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "Arial, sans-serif", fontSize: 14, color: "#666", gap: 12 }}>
+          <div style={{ width: 40, height: 40, border: "3px solid #e2e8f0", borderTop: "3px solid #1a56db", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+          <span>Membuat PDF, harap tunggu...</span>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "Arial, sans-serif", fontSize: 14, color: "#dc2626", gap: 12 }}>
+        <span>Gagal membuat PDF. Silakan coba lagi.</span>
+        <button onClick={() => setStatus("loading")} style={{ padding: "8px 16px", background: "#1a56db", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 14 }}>
+          Coba Lagi
+        </button>
+      </div>
+    );
+  }
+
+  // done
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", fontFamily: "Arial, sans-serif", gap: 12 }}>
+      <div style={{ fontSize: 48 }}>✅</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: "#15803d" }}>PDF Berhasil Diunduh</div>
+      <div style={{ fontSize: 13, color: "#555" }}>
+        File <strong>{mode === "receiving" ? `BPB-${(pr as any).prNumber}.pdf` : `PR-${(pr as any).prNumber}.pdf`}</strong> tersimpan di folder unduhan Anda.
+      </div>
+      <button onClick={() => window.close()} style={{ marginTop: 8, padding: "8px 20px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 6, cursor: "pointer", fontSize: 14, color: "#374151" }}>
+        Tutup Tab
+      </button>
+    </div>
+  );
+}
+
+// ─── Document Content ────────────────────────────────────────────────────────
+
+function DocumentContent({ pr, settings, mode, getTypeLabel }: {
+  pr: any; settings: any; mode: string; getTypeLabel: (c: string) => string;
+}) {
   if (mode === "receiving") {
     return (
       <div style={{ fontFamily: "Arial, sans-serif", color: "#111", fontSize: 10, lineHeight: 1.35, padding: "10mm", background: "#fff" }}>
@@ -66,8 +169,8 @@ export default function PRPrint() {
             <div style={{ fontSize: 16, fontWeight: 800, letterSpacing: 1 }}>BUKTI PENERIMAAN BARANG</div>
             <div style={{ fontSize: 12, fontWeight: 700, color: "#0d9488" }}>Ref: {pr.prNumber}</div>
             <div style={{ fontSize: 9, color: "#666" }}>Dicetak: {new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })}</div>
-            <div style={{ display: "inline-block", marginTop: 3, padding: "2px 8px", background: (pr as any).receivingStatus === "closed" ? "#dcfce7" : "#fef3c7", color: (pr as any).receivingStatus === "closed" ? "#15803d" : "#92400e", borderRadius: 4, fontWeight: 700, fontSize: 9 }}>
-              STATUS: {(pr as any).receivingStatus === "closed" ? "SELESAI" : (pr as any).receivingStatus === "partial" ? "PARSIAL" : "PENDING"}
+            <div style={{ display: "inline-block", marginTop: 3, padding: "2px 8px", background: pr.receivingStatus === "closed" ? "#dcfce7" : "#fef3c7", color: pr.receivingStatus === "closed" ? "#15803d" : "#92400e", borderRadius: 4, fontWeight: 700, fontSize: 9 }}>
+              STATUS: {pr.receivingStatus === "closed" ? "SELESAI" : pr.receivingStatus === "partial" ? "PARSIAL" : "PENDING"}
             </div>
           </div>
         </div>
@@ -88,9 +191,9 @@ export default function PRPrint() {
             <tr>
               <td style={{ color: "#666", paddingBottom: 3 }}>Departemen</td>
               <td style={{ paddingBottom: 3 }}>{pr.department}</td>
-              {(pr as any).vendorName && <>
+              {pr.vendorName && <>
                 <td style={{ color: "#666", paddingBottom: 3 }}>Vendor</td>
-                <td style={{ paddingBottom: 3, fontWeight: 600 }}>{(pr as any).vendorName}</td>
+                <td style={{ paddingBottom: 3, fontWeight: 600 }}>{pr.vendorName}</td>
               </>}
             </tr>
           </tbody>
@@ -127,7 +230,7 @@ export default function PRPrint() {
                     <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", textAlign: "right", fontWeight: 700, color: isDone ? "#15803d" : received > 0 ? "#d97706" : "#555" }}>{received}</td>
                     <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", textAlign: "right", color: remaining > 0 ? "#dc2626" : "#15803d" }}>{remaining}</td>
                     <td style={{ padding: "3px 6px", border: "1px solid #e2e8f0", textAlign: "center", fontWeight: 600, color: isDone ? "#15803d" : received > 0 ? "#d97706" : "#555" }}>
-                      {isDone ? "✓ LENGKAP" : received > 0 ? "SEBAGIAN" : "BELUM"}
+                      {isDone ? "LENGKAP" : received > 0 ? "SEBAGIAN" : "BELUM"}
                     </td>
                   </tr>
                 );
@@ -145,7 +248,7 @@ export default function PRPrint() {
     );
   }
 
-  // Default: PR mode
+  // PR mode
   return (
     <div style={{ fontFamily: "Arial, sans-serif", color: "#111", fontSize: 9, lineHeight: 1.3, padding: "10mm", background: "#fff" }}>
       {/* Header */}
@@ -192,7 +295,7 @@ export default function PRPrint() {
           {pr.type === "leave" && (
             <tr>
               <td style={{ color: "#666", paddingBottom: 2 }}>Karyawan</td>
-              <td style={{ paddingBottom: 2 }}>{(pr as any).leaveRequesterName || pr.requesterName}</td>
+              <td style={{ paddingBottom: 2 }}>{pr.leaveRequesterName || pr.requesterName}</td>
               <td style={{ color: "#666", paddingBottom: 2 }}>Tgl Cuti</td>
               <td style={{ paddingBottom: 2 }}>{pr.leaveStartDate} s/d {pr.leaveEndDate}</td>
             </tr>
@@ -200,9 +303,9 @@ export default function PRPrint() {
           {pr.type === "transfer" && (
             <tr>
               <td style={{ color: "#666", paddingBottom: 2 }}>Dari</td>
-              <td style={{ paddingBottom: 2 }}>{(pr as any).fromLocationName}</td>
+              <td style={{ paddingBottom: 2 }}>{pr.fromLocationName}</td>
               <td style={{ color: "#666", paddingBottom: 2 }}>Ke</td>
-              <td style={{ paddingBottom: 2 }}>{(pr as any).toLocationName}</td>
+              <td style={{ paddingBottom: 2 }}>{pr.toLocationName}</td>
             </tr>
           )}
           <tr>
@@ -284,7 +387,7 @@ export default function PRPrint() {
                   <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center" }}>{app.level === 0 ? "Atasan" : `L${app.level}`}</td>
                   <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", fontWeight: 600 }}>{app.approverName}</td>
                   <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center", fontWeight: 700, color: app.status === "approved" ? "#15803d" : app.status === "rejected" ? "#dc2626" : "#888" }}>
-                    {app.status === "approved" ? "✓ Disetujui" : app.status === "rejected" ? "✗ Ditolak" : "Menunggu"}
+                    {app.status === "approved" ? "Disetujui" : app.status === "rejected" ? "Ditolak" : "Menunggu"}
                   </td>
                   <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", textAlign: "center", color: "#555" }}>{app.actionAt ? formatDate(app.actionAt) : "—"}</td>
                   <td style={{ padding: "2px 4px", border: "1px solid #e2e8f0", color: "#555" }}>{app.notes || "—"}</td>

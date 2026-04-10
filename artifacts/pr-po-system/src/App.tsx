@@ -23,6 +23,7 @@ import AuditLogs from "./pages/audit-logs";
 import Profile from "./pages/profile";
 import DutyMeal from "./pages/duty-meal";
 import PRPrint from "./pages/pr-print";
+import POPrint from "./pages/po-print";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient({
@@ -72,6 +73,7 @@ function Router() {
       
       <ProtectedRoute path="/purchase-orders" component={POList} />
       <ProtectedRoute path="/purchase-orders/new" component={POCreate} />
+      <Route path="/purchase-orders/:id/print" component={POPrint} />
       <ProtectedRoute path="/purchase-orders/:id" component={PODetail} />
       
       <ProtectedRoute path="/receiving" component={Receiving} />

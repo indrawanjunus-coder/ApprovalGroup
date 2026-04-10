@@ -17,7 +17,7 @@ import { formatIDR, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Send, CheckCircle2, XCircle, PackageCheck, Receipt,
-  Paperclip, Plus, Trash2, Building, ExternalLink, ChevronDown, Loader2, CheckSquare, Printer, Ban, Pencil
+  Paperclip, Plus, Trash2, Building, ExternalLink, ChevronDown, Loader2, CheckSquare, Download, Ban, Pencil
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
@@ -241,7 +241,7 @@ export default function PRDetail() {
 
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="shadow-sm" onClick={handlePrintPR}>
-            <Printer className="mr-2 h-4 w-4" /> Cetak PR
+            <Download className="mr-2 h-4 w-4" /> Download PDF PR
           </Button>
           {(pr.status === "draft" || pr.status === "waiting_approval") && isRequester && (
             <Button variant="outline" onClick={() => setLocation(`/purchase-requests/new?editId=${prId}`)} className="shadow-sm">
@@ -497,7 +497,7 @@ export default function PRDetail() {
                   </span>
                 </CardTitle>
                 <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={handlePrintReceiving}>
-                  <Printer className="h-3.5 w-3.5" /> Cetak Penerimaan
+                  <Download className="h-3.5 w-3.5" /> Download PDF Penerimaan
                 </Button>
               </CardHeader>
               <CardContent className="p-4 space-y-2">
