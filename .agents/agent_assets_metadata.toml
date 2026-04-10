@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "vaBdfaUTyjeVwwTQDpenr"
+uri = "file://ProcureFlow_API_Documentation.docx"
+type = "word_document"
+title = "ProcureFlow API Documentation v1.docx"
