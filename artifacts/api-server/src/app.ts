@@ -5,6 +5,7 @@ import connectPg from "connect-pg-simple";
 import router from "./routes/index.js";
 import { errorAuditMiddleware } from "./lib/errorAudit.js";
 import { neonDualWriteMiddleware } from "./lib/neonDualWrite.js";
+import { geoRestrictMiddleware } from "./lib/geoRestrict.js";
 
 const PgStore = connectPg(session);
 
@@ -38,6 +39,7 @@ app.use(session({
 
 app.use("/api", errorAuditMiddleware);
 app.use("/api", neonDualWriteMiddleware);
+app.use("/api", geoRestrictMiddleware);
 app.use("/api", router);
 
 export default app;

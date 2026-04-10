@@ -11,6 +11,7 @@ import { syncAllToNeon, syncAll, checkNeonTablesExist, resetNeonSequences } from
 import type { SyncDirection, SyncMode } from "../lib/neonSync.js";
 import { setPrimaryDb, getPrimaryDb } from "../lib/db.js";
 import { invalidateNeonCache, setNeonEnabled } from "../lib/neonDualWrite.js";
+import { invalidateGeoCache } from "../lib/geoRestrict.js";
 import { getNeonPool } from "../lib/neonClient.js";
 
 /**
@@ -102,13 +103,15 @@ async function upsertSetting(key: string, value: string) {
 
 router.get("/", async (req, res) => {
   try {
-    const [poEnabled, companyName, currency, featureDutyMeal, featurePembayaran, featurePurchaseRequest] = await Promise.all([
+    const [poEnabled, companyName, currency, featureDutyMeal, featurePembayaran, featurePurchaseRequest, geoRestrictIndonesia, geoIpWhitelist] = await Promise.all([
       getSettingValue("poEnabled"),
       getSettingValue("companyName"),
       getSettingValue("currency"),
       getSettingValue("feature_duty_meal"),
       getSettingValue("feature_pembayaran"),
       getSettingValue("feature_purchase_request"),
+      getSettingValue("geo_restrict_indonesia"),
+      getSettingValue("geo_ip_whitelist"),
     ]);
     res.json({
       poEnabled: poEnabled === "true",
@@ -117,12 +120,14 @@ router.get("/", async (req, res) => {
       featureDutyMeal: featureDutyMeal !== "false",
       featurePembayaran: featurePembayaran !== "false",
       featurePurchaseRequest: featurePurchaseRequest !== "false",
+      geoRestrictIndonesia: geoRestrictIndonesia === "true",
+      geoIpWhitelist: geoIpWhitelist || "",
     });
   } catch (err) { handleRouteError(res, err); }
 });
 
 router.put("/", requireRole("admin"), async (req, res) => {
-  const { poEnabled, companyName, currency, featureDutyMeal, featurePembayaran, featurePurchaseRequest } = req.body;
+  const { poEnabled, companyName, currency, featureDutyMeal, featurePembayaran, featurePurchaseRequest, geoRestrictIndonesia, geoIpWhitelist } = req.body;
   try {
     if (poEnabled !== undefined) await upsertSetting("poEnabled", String(poEnabled));
     if (companyName !== undefined) await upsertSetting("companyName", companyName);
@@ -130,14 +135,24 @@ router.put("/", requireRole("admin"), async (req, res) => {
     if (featureDutyMeal !== undefined) await upsertSetting("feature_duty_meal", String(featureDutyMeal));
     if (featurePembayaran !== undefined) await upsertSetting("feature_pembayaran", String(featurePembayaran));
     if (featurePurchaseRequest !== undefined) await upsertSetting("feature_purchase_request", String(featurePurchaseRequest));
+    if (geoRestrictIndonesia !== undefined) {
+      await upsertSetting("geo_restrict_indonesia", String(geoRestrictIndonesia));
+      invalidateGeoCache();
+    }
+    if (geoIpWhitelist !== undefined) {
+      await upsertSetting("geo_ip_whitelist", geoIpWhitelist);
+      invalidateGeoCache();
+    }
 
-    const [poEnabledVal, companyNameVal, currencyVal, fdm, fp, fpr] = await Promise.all([
+    const [poEnabledVal, companyNameVal, currencyVal, fdm, fp, fpr, geoRestrict, geoWhitelist] = await Promise.all([
       getSettingValue("poEnabled"),
       getSettingValue("companyName"),
       getSettingValue("currency"),
       getSettingValue("feature_duty_meal"),
       getSettingValue("feature_pembayaran"),
       getSettingValue("feature_purchase_request"),
+      getSettingValue("geo_restrict_indonesia"),
+      getSettingValue("geo_ip_whitelist"),
     ]);
     res.json({
       poEnabled: poEnabledVal === "true",
@@ -146,6 +161,8 @@ router.put("/", requireRole("admin"), async (req, res) => {
       featureDutyMeal: fdm !== "false",
       featurePembayaran: fp !== "false",
       featurePurchaseRequest: fpr !== "false",
+      geoRestrictIndonesia: geoRestrict === "true",
+      geoIpWhitelist: geoWhitelist || "",
     });
   } catch (err) { handleRouteError(res, err); }
 });

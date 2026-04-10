@@ -3063,6 +3063,8 @@ export default function Settings() {
   const [featureDutyMeal, setFeatureDutyMeal] = useState(true);
   const [featurePembayaran, setFeaturePembayaran] = useState(true);
   const [featurePurchaseRequest, setFeaturePurchaseRequest] = useState(true);
+  const [geoRestrictIndonesia, setGeoRestrictIndonesia] = useState(false);
+  const [geoIpWhitelist, setGeoIpWhitelist] = useState("");
 
   useEffect(() => {
     if (data) {
@@ -3072,6 +3074,8 @@ export default function Settings() {
       setFeatureDutyMeal(data.featureDutyMeal !== false);
       setFeaturePembayaran(data.featurePembayaran !== false);
       setFeaturePurchaseRequest(data.featurePurchaseRequest !== false);
+      setGeoRestrictIndonesia(data.geoRestrictIndonesia === true);
+      setGeoIpWhitelist(data.geoIpWhitelist || "");
     }
   }, [data]);
 
@@ -3179,6 +3183,49 @@ export default function Settings() {
             disabled={isPending} className="shadow-md">
             {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             Simpan Pengaturan Fitur
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Pembatasan Akses Geografis */}
+      <Card className="border-0 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5" /> Keamanan Akses
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">Batasi akses sistem berdasarkan lokasi geografis pengguna.</p>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex flex-row items-center justify-between rounded-xl border p-4 bg-slate-50/50">
+            <div className="space-y-0.5 flex-1 mr-4">
+              <Label className="text-base font-semibold">Pembatasan Wilayah Indonesia</Label>
+              <p className="text-sm text-muted-foreground">
+                Jika aktif, hanya pengguna dengan alamat IP dari wilayah Indonesia yang dapat mengakses sistem.
+                IP lokal/private selalu diizinkan. Perubahan berlaku dalam 60 detik.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-medium ${geoRestrictIndonesia ? "text-green-600" : "text-slate-400"}`}>
+                {geoRestrictIndonesia ? "Aktif" : "Nonaktif"}
+              </span>
+              <Switch checked={geoRestrictIndonesia} onCheckedChange={setGeoRestrictIndonesia} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Whitelist IP (selalu diizinkan)</Label>
+            <p className="text-xs text-muted-foreground mb-1">Daftar IP yang selalu diizinkan meski berada di luar Indonesia. Pisahkan dengan koma atau baris baru.</p>
+            <textarea
+              className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 resize-y"
+              placeholder={"Contoh:\n203.0.113.10\n198.51.100.42"}
+              value={geoIpWhitelist}
+              onChange={e => setGeoIpWhitelist(e.target.value)}
+            />
+          </div>
+          <Button
+            onClick={() => mutate({ data: { geoRestrictIndonesia, geoIpWhitelist } })}
+            disabled={isPending} className="shadow-md">
+            {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            Simpan Pengaturan Keamanan
           </Button>
         </CardContent>
       </Card>
