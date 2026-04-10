@@ -2043,6 +2043,9 @@ function NeonDatabaseSettings() {
   // Confirmation dialogs
   const [confirmSwitchTo, setConfirmSwitchTo] = useState<"replit" | "neon" | null>(null);
   const [confirmSyncOpen, setConfirmSyncOpen] = useState(false);
+  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnectResult, setDisconnectResult] = useState<{ ok: boolean; message: string; envStillSet?: boolean; warning?: string } | null>(null);
 
   // Connection settings form
   const [showConnForm, setShowConnForm] = useState(false);
@@ -2236,6 +2239,30 @@ function NeonDatabaseSettings() {
       setSyncSummary(`Error: ${err.message}`);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const disconnectNeon = async () => {
+    setDisconnecting(true);
+    setDisconnectResult(null);
+    try {
+      const r = await fetch(`${apiBase}/api/settings/neon/connection`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await r.json();
+      setDisconnectResult(data);
+      refetch();
+      if (data.ok) {
+        toast({ title: "Koneksi Neon Dihapus", description: data.message });
+      } else {
+        toast({ variant: "destructive", title: "Gagal", description: data.error || "Gagal menghapus koneksi" });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Error", description: "Gagal menghubungi server" });
+    } finally {
+      setDisconnecting(false);
+      setConfirmDisconnectOpen(false);
     }
   };
 
@@ -2666,6 +2693,55 @@ function NeonDatabaseSettings() {
                 )}
               </div>
             )}
+
+            {/* ─── Danger Zone: Hapus Koneksi Neon ─── */}
+            {neonConfig?.configured && (
+              <div className="rounded-xl border border-red-200 p-4 bg-red-50/40 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="rounded-full bg-red-100 p-1.5">
+                      <WifiOff className="h-4 w-4 text-red-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-red-700">Hapus Koneksi Neon DB</p>
+                      <p className="text-xs text-red-600/80">Putus semua koneksi Neon dan kembalikan ke Replit DB sebagai satu-satunya database.</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-red-300 text-red-600 hover:bg-red-100 shrink-0 gap-1.5"
+                    onClick={() => setConfirmDisconnectOpen(true)}
+                    disabled={disconnecting}
+                  >
+                    {disconnecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WifiOff className="h-3.5 w-3.5" />}
+                    Hapus Koneksi
+                  </Button>
+                </div>
+
+                {/* Result after disconnect */}
+                {disconnectResult && (
+                  <div className={`flex items-start gap-2 rounded-lg border p-3 text-xs ${disconnectResult.ok ? "bg-green-50 border-green-200 text-green-800" : "bg-red-50 border-red-300 text-red-700"}`}>
+                    {disconnectResult.ok
+                      ? <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5 text-green-600" />
+                      : <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    }
+                    <div>
+                      <p className="font-medium">{disconnectResult.message}</p>
+                      {disconnectResult.warning && (
+                        <p className="mt-1.5 text-amber-700 font-medium">{disconnectResult.warning}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <ul className="text-[11px] text-red-600/70 space-y-0.5 pl-1">
+                  <li>• URL koneksi Neon dihapus dari pengaturan</li>
+                  <li>• Primary database dikembalikan ke Replit DB</li>
+                  <li>• Dual Write dinonaktifkan otomatis</li>
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
@@ -2743,6 +2819,43 @@ function NeonDatabaseSettings() {
             }}
           >
             {syncMode === "full_overwrite" ? "Ya, Timpa Sekarang" : "Ya, Sync Sekarang"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    {/* Konfirmasi Hapus Koneksi Neon */}
+    <AlertDialog open={confirmDisconnectOpen} onOpenChange={(open) => !open && setConfirmDisconnectOpen(false)}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2 text-red-700">
+            <WifiOff className="h-5 w-5" />
+            Hapus Koneksi Neon DB?
+          </AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-3 text-sm">
+              <p>Tindakan ini akan melakukan hal berikut secara otomatis:</p>
+              <ul className="list-disc ml-5 space-y-1 text-slate-700">
+                <li>Menghapus URL koneksi Neon dari pengaturan</li>
+                <li>Mengembalikan <strong>Primary Database ke Replit DB</strong></li>
+                <li>Menonaktifkan <strong>Dual Write</strong></li>
+                <li>Memutus pool koneksi aktif ke Neon</li>
+              </ul>
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-amber-800 text-xs">
+                <strong>Catatan:</strong> Jika <code>NEON_DATABASE_URL</code> masih terdapat di environment variables (Secrets), Anda perlu menghapusnya secara manual agar Neon tidak dapat diakses sama sekali.
+              </div>
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={disconnecting}>Batal</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-red-600 hover:bg-red-700"
+            onClick={disconnectNeon}
+            disabled={disconnecting}
+          >
+            {disconnecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Ya, Hapus Koneksi
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

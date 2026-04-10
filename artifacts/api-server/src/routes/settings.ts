@@ -530,15 +530,35 @@ router.put("/neon/connection", requireRole("admin"), async (req, res) => {
   } catch (err) { handleRouteError(res, err); }
 });
 
-// Remove saved Neon connection URL (revert to env var)
+// Remove/disconnect Neon connection completely
 router.delete("/neon/connection", requireRole("admin"), async (req, res) => {
   try {
+    // 1. Remove saved URL from settings table
     await replitDb.delete(settingsTable).where(eq(settingsTable.key, "neon_db_url"));
-    // Reset pool to use env var
-    setNeonUrl(null);
-    const envUrl = process.env.NEON_DATABASE_URL;
-    if (envUrl) setNeonUrl(null); // clears runtime override, pool will use env var
-    res.json({ ok: true, message: "Koneksi URL dihapus, menggunakan NEON_DATABASE_URL dari environment." });
+
+    // 2. Reset primary DB to Replit and disable dual write
+    await Promise.all([
+      upsertReplitSetting("primary_db", "replit"),
+      upsertReplitSetting("neon_db_enabled", "false"),
+    ]);
+
+    // 3. Update in-memory runtime state immediately
+    setPrimaryDb("replit");
+    setNeonEnabled(false);
+    setNeonUrl(null);  // closes pool, clears URL override
+    invalidateNeonCache();
+
+    // 4. Check if env var is still set (user must remove it manually)
+    const envStillSet = !!process.env.NEON_DATABASE_URL;
+
+    res.json({
+      ok: true,
+      message: "Koneksi Neon berhasil dihapus. Primary DB dikembalikan ke Replit.",
+      envStillSet,
+      warning: envStillSet
+        ? "NEON_DATABASE_URL masih terdapat di environment variables. Hapus manual dari Secrets agar Neon tidak bisa diakses sama sekali."
+        : null,
+    });
   } catch (err) { handleRouteError(res, err); }
 });
 
