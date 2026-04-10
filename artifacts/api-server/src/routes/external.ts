@@ -1534,17 +1534,30 @@ router.post("/pos/:id/change-request", requireVendor(), async (req: any, res) =>
     let suratJalanFilename: string | null = null;
     if (suratJalan?.data && suratJalan?.filename) {
       try {
-        const buf = Buffer.from(suratJalan.data.replace(/^data:[^;]+;base64,/, ""), "base64");
-        const mime = guessMimeType(suratJalan.filename);
-        const result = await uploadToGoogleDrive(buf, suratJalan.filename, mime, "surat-jalan");
-        suratJalanUrl = result.webViewLink || result.id;
+        const [folderSetting, vendor] = await Promise.all([
+          getSettingValue("ext_gdrive_folder"),
+          db.select({ companyName: vendorCompaniesTable.companyName, email: vendorCompaniesTable.email })
+            .from(vendorCompaniesTable).where(eq(vendorCompaniesTable.id, sess.vendorId)).then(r => r[0]),
+        ]);
+        const folderIdOrUrl = folderSetting || "0AAxCInqK40uzUk9PVA";
+        const shareEmails = await getShareEmails(vendor?.email);
+        const gdrive = await uploadToGoogleDrive({
+          base64Data: suratJalan.data,
+          filename: suratJalan.filename,
+          mimeType: guessMimeType(suratJalan.filename),
+          folderIdOrUrl,
+          companyName: vendor?.companyName || "Vendor",
+          label: `SJ-${po.poNumber}`,
+          shareWithEmails: shareEmails,
+        });
+        suratJalanUrl = gdrive.webViewLink;
         suratJalanFilename = suratJalan.filename;
       } catch (e) { console.error("Surat jalan upload error:", e); }
     }
 
     const now = Date.now();
     const [changeReq] = await db.insert(externalPoChangeRequestsTable).values({
-      poId, vendorCompanyId: sess.extVendorId, status: "pending",
+      poId, vendorCompanyId: sess.vendorId, status: "pending",
       notes: notes || null, suratJalanUrl, suratJalanFilename,
       createdAt: now,
     }).returning();
