@@ -304,19 +304,28 @@ router.post("/app/github", requireAuth, requireRole("admin"), async (req, res) =
     const safeUrl = repoUrl.trim().replace(/^https?:\/\//, "");
     const authUrl = `https://${token.trim()}@${safeUrl}`;
 
-    await execAsync(
-      `cd "${WORKSPACE_DIR}" && git config user.email "backup@procureflow.app" && git config user.name "ProcureFlow Backup"`
-    );
-    await execAsync(`cd "${WORKSPACE_DIR}" && git add -A`);
+    const gitEnv = {
+      ...process.env,
+      GIT_DIR: `${WORKSPACE_DIR}/.git`,
+      GIT_WORK_TREE: WORKSPACE_DIR,
+    };
+
+    const runGit = (args: string) =>
+      execAsync(`git ${args}`, { env: gitEnv, cwd: WORKSPACE_DIR });
+
+    await runGit(`config --global safe.directory "${WORKSPACE_DIR}"`);
+    await runGit(`config --global user.email "backup@procureflow.app"`);
+    await runGit(`config --global user.name "ProcureFlow Backup"`);
+    await runGit(`add -A`);
 
     const commitMsg = `ProcureFlow Backup: ${new Date().toISOString()}`;
-    await execAsync(
-      `cd "${WORKSPACE_DIR}" && git commit -m "${commitMsg}" || echo "nothing to commit"`
-    );
+    try {
+      await runGit(`commit -m "${commitMsg}"`);
+    } catch {
+      // nothing to commit — ok
+    }
 
-    await execAsync(
-      `cd "${WORKSPACE_DIR}" && git push "${authUrl}" HEAD:${branch} --force`
-    );
+    await runGit(`push "${authUrl}" HEAD:${branch} --force`);
 
     res.json({ success: true, message: `Backup berhasil dikirim ke ${repoUrl} (branch: ${branch})` });
   } catch (e: any) {
