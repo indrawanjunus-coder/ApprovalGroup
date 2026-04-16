@@ -23,6 +23,7 @@ import dutyMealsRouter from "./duty-meals.js";
 import externalRouter from "./external.js";
 import publicApiRouter from "./public-api.js";
 import apiKeysRouter from "./api-keys.js";
+import backupRouter from "./backup.js";
 
 const router = Router();
 
@@ -50,5 +51,6 @@ router.use("/duty-meals", dutyMealsRouter);
 router.use("/external", externalRouter);
 router.use("/v1", publicApiRouter);
 router.use("/api-keys", apiKeysRouter);
+router.use("/backup", backupRouter);
 
 export default router;

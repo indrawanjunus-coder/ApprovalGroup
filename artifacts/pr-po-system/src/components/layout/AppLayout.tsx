@@ -4,7 +4,7 @@ import { useGetMe, useLogout, useGetNotifications, useGetReceivingList, useGetSe
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard, FileText, CheckSquare, ShoppingCart,
-  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound, Wallet, CalendarDays, History, UserCircle, Utensils
+  Users, Settings, LogOut, Bell, Menu, X, ShieldAlert, PackageCheck, KeyRound, Wallet, CalendarDays, History, UserCircle, Utensils, ServerCog
 } from "lucide-react";
 import { cn, getInitials } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -116,6 +116,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     { name: "User Management", href: "/users", icon: Users, roles: ["admin", "approver"], show: true },
     { name: "Audit Log", href: "/audit-logs", icon: ShieldAlert, roles: ["admin"], show: true },
     { name: "Settings", href: "/settings", icon: Settings, roles: ["admin"], show: true },
+    { name: "Backup Sistem", href: "/backup", icon: ServerCog, roles: ["admin"], show: true },
   ].filter(item => item.show && (item.roles.includes(user.role) || (item as any).departments?.includes(user.department)));
 
   const NavLink = ({ item, mobile = false, onClick }: { item: typeof navItems[0], mobile?: boolean, onClick?: () => void }) => {

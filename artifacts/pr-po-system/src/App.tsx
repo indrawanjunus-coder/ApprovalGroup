@@ -24,6 +24,7 @@ import Profile from "./pages/profile";
 import DutyMeal from "./pages/duty-meal";
 import PRPrint from "./pages/pr-print";
 import POPrint from "./pages/po-print";
+import Backup from "./pages/backup";
 import NotFound from "./pages/not-found";
 
 const queryClient = new QueryClient({
@@ -85,6 +86,7 @@ function Router() {
       <ProtectedRoute path="/audit-logs" component={AuditLogs} />
       <ProtectedRoute path="/profile" component={Profile} />
       <ProtectedRoute path="/duty-meal" component={DutyMeal} />
+      <ProtectedRoute path="/backup" component={Backup} />
       
       <Route path="/">
         {() => {
