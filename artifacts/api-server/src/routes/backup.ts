@@ -12,6 +12,38 @@ const execAsync = promisify(exec);
 const router = Router();
 const WORKSPACE_DIR = "/home/runner/workspace";
 const BACKUP_DIR = path.join(WORKSPACE_DIR, "backup");
+const GIT_CONFIG_FILE = path.join(WORKSPACE_DIR, ".git", "procureflow-backup.cfg");
+
+function getGitEnv(): NodeJS.ProcessEnv {
+  // Write our own git config file to avoid missing system/user config directories
+  const cfg = [
+    "[safe]",
+    `\tdirectory = ${WORKSPACE_DIR}`,
+    "[user]",
+    "\temail = backup@procureflow.app",
+    "\tname = ProcureFlow Backup",
+  ].join("\n") + "\n";
+  fs.writeFileSync(GIT_CONFIG_FILE, cfg);
+
+  return {
+    ...process.env,
+    GIT_DIR: `${WORKSPACE_DIR}/.git`,
+    GIT_WORK_TREE: WORKSPACE_DIR,
+    GIT_CONFIG_GLOBAL: GIT_CONFIG_FILE,
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+}
+
+function cleanGitLocks() {
+  const lockFile = path.join(WORKSPACE_DIR, ".git", "index.lock");
+  if (fs.existsSync(lockFile)) {
+    try { fs.unlinkSync(lockFile); } catch { /* ignore */ }
+  }
+}
+
+function runGit(args: string) {
+  return execAsync(`git ${args}`, { env: getGitEnv(), cwd: WORKSPACE_DIR });
+}
 
 // --- Helpers ---
 
@@ -444,17 +476,7 @@ router.post("/db/github", requireAuth, requireRole("admin"), async (req, res) =>
     const safeUrl = repoUrl.trim().replace(/^https?:\/\//, "");
     const authUrl = `https://${token.trim()}@${safeUrl}`;
 
-    const gitEnv = {
-      ...process.env,
-      GIT_DIR: `${WORKSPACE_DIR}/.git`,
-      GIT_WORK_TREE: WORKSPACE_DIR,
-    };
-    const runGit = (args: string) =>
-      execAsync(`git ${args}`, { env: gitEnv, cwd: WORKSPACE_DIR });
-
-    await runGit(`config --global safe.directory "${WORKSPACE_DIR}"`);
-    await runGit(`config --global user.email "backup@procureflow.app"`);
-    await runGit(`config --global user.name "ProcureFlow Backup"`);
+    cleanGitLocks();
     await runGit(`add backup/${filename}`);
 
     const commitMsg = `DB Backup [${format.toUpperCase()}]: ${new Date().toISOString()}`;
@@ -488,18 +510,7 @@ router.post("/app/github", requireAuth, requireRole("admin"), async (req, res) =
     const safeUrl = repoUrl.trim().replace(/^https?:\/\//, "");
     const authUrl = `https://${token.trim()}@${safeUrl}`;
 
-    const gitEnv = {
-      ...process.env,
-      GIT_DIR: `${WORKSPACE_DIR}/.git`,
-      GIT_WORK_TREE: WORKSPACE_DIR,
-    };
-
-    const runGit = (args: string) =>
-      execAsync(`git ${args}`, { env: gitEnv, cwd: WORKSPACE_DIR });
-
-    await runGit(`config --global safe.directory "${WORKSPACE_DIR}"`);
-    await runGit(`config --global user.email "backup@procureflow.app"`);
-    await runGit(`config --global user.name "ProcureFlow Backup"`);
+    cleanGitLocks();
     await runGit(`add -A`);
 
     const commitMsg = `ProcureFlow Backup: ${new Date().toISOString()}`;
