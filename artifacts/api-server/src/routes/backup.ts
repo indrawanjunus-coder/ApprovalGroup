@@ -12,10 +12,10 @@ const execAsync = promisify(exec);
 const router = Router();
 const WORKSPACE_DIR = "/home/runner/workspace";
 const BACKUP_DIR = path.join(WORKSPACE_DIR, "backup");
-const GIT_CONFIG_FILE = path.join(WORKSPACE_DIR, ".git", "procureflow-backup.cfg");
+const GIT_DIR = path.join(WORKSPACE_DIR, ".git");
+const GIT_CONFIG_FILE = "/tmp/procureflow-backup.cfg";
 
 function getGitEnv(): NodeJS.ProcessEnv {
-  // Write our own git config file to avoid missing system/user config directories
   const cfg = [
     "[safe]",
     `\tdirectory = ${WORKSPACE_DIR}`,
@@ -23,11 +23,11 @@ function getGitEnv(): NodeJS.ProcessEnv {
     "\temail = backup@procureflow.app",
     "\tname = ProcureFlow Backup",
   ].join("\n") + "\n";
-  fs.writeFileSync(GIT_CONFIG_FILE, cfg);
+  try { fs.writeFileSync(GIT_CONFIG_FILE, cfg); } catch { /* ignore if /tmp unavailable */ }
 
   return {
     ...process.env,
-    GIT_DIR: `${WORKSPACE_DIR}/.git`,
+    GIT_DIR,
     GIT_WORK_TREE: WORKSPACE_DIR,
     GIT_CONFIG_GLOBAL: GIT_CONFIG_FILE,
     GIT_CONFIG_NOSYSTEM: "1",
@@ -35,14 +35,63 @@ function getGitEnv(): NodeJS.ProcessEnv {
 }
 
 function cleanGitLocks() {
-  const lockFile = path.join(WORKSPACE_DIR, ".git", "index.lock");
+  const lockFile = path.join(GIT_DIR, "index.lock");
   if (fs.existsSync(lockFile)) {
     try { fs.unlinkSync(lockFile); } catch { /* ignore */ }
   }
 }
 
 function runGit(args: string) {
+  if (!fs.existsSync(GIT_DIR)) {
+    throw new Error("Repositori git tidak ditemukan. Fitur push GitHub hanya tersedia di lingkungan pengembangan (Replit), bukan di server produksi.");
+  }
   return execAsync(`git ${args}`, { env: getGitEnv(), cwd: WORKSPACE_DIR });
+}
+
+// --- GitHub API helper (works everywhere, no git required) ---
+
+async function githubApiPutFile(opts: {
+  token: string;
+  repoUrl: string;
+  branch: string;
+  filePath: string;
+  content: Buffer | string;
+  commitMsg: string;
+}) {
+  const { token, repoUrl, branch, filePath, content, commitMsg } = opts;
+  const match = repoUrl.replace(/\.git$/, "").match(/github\.com[/:]([^/]+)\/([^/]+)$/);
+  if (!match) throw new Error("Format URL GitHub tidak valid. Contoh: https://github.com/username/repo.git");
+  const [, owner, repo] = match;
+
+  const apiBase = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+  const headers = {
+    Authorization: `Bearer ${token.trim()}`,
+    Accept: "application/vnd.github.v3+json",
+    "Content-Type": "application/json",
+    "User-Agent": "ProcureFlow-Backup/1.0",
+  };
+
+  // Get existing SHA if file exists (needed for update)
+  let sha: string | undefined;
+  const getResp = await fetch(`${apiBase}?ref=${branch}`, { headers });
+  if (getResp.ok) {
+    const existing = await getResp.json() as any;
+    sha = existing.sha;
+  }
+
+  const b64 = Buffer.isBuffer(content)
+    ? content.toString("base64")
+    : Buffer.from(content as string, "utf8").toString("base64");
+
+  const body: any = { message: commitMsg, content: b64, branch };
+  if (sha) body.sha = sha;
+
+  const putResp = await fetch(apiBase, { method: "PUT", headers, body: JSON.stringify(body) });
+  if (!putResp.ok) {
+    const err = await putResp.json().catch(() => ({})) as any;
+    throw new Error(err.message || `GitHub API error: ${putResp.status} ${putResp.statusText}`);
+  }
+  return putResp.json();
 }
 
 // --- Helpers ---
@@ -431,7 +480,7 @@ router.get("/app/zip", requireAuth, requireRole("admin"), (req, res) => {
   archive.finalize();
 });
 
-// --- Database GitHub Backup ---
+// --- Database GitHub Backup (via GitHub REST API — works in all environments) ---
 
 router.post("/db/github", requireAuth, requireRole("admin"), async (req, res) => {
   const { format, repoUrl, token, branch = "main" } = req.body;
@@ -444,16 +493,6 @@ router.post("/db/github", requireAuth, requireRole("admin"), async (req, res) =>
   }
 
   try {
-    // Ensure backup directory exists
-    if (!fs.existsSync(BACKUP_DIR)) {
-      fs.mkdirSync(BACKUP_DIR, { recursive: true });
-      // Add a README so the folder is tracked by git
-      fs.writeFileSync(
-        path.join(BACKUP_DIR, "README.md"),
-        "# ProcureFlow Database Backups\n\nFolder ini berisi file backup database yang di-push otomatis oleh sistem.\n"
-      );
-    }
-
     // Generate dump content
     let content: string | Buffer;
     let filename: string;
@@ -468,33 +507,30 @@ router.post("/db/github", requireAuth, requireRole("admin"), async (req, res) =>
       filename = "db_sqlserver.sql";
     }
 
-    // Write to backup/
-    const filePath = path.join(BACKUP_DIR, filename);
-    fs.writeFileSync(filePath, content as any);
-
-    // Git push
-    const safeUrl = repoUrl.trim().replace(/^https?:\/\//, "");
-    const authUrl = `https://${token.trim()}@${safeUrl}`;
-
-    cleanGitLocks();
-    await runGit(`add backup/${filename}`);
-
+    const ghFilePath = `backup/${filename}`;
     const commitMsg = `DB Backup [${format.toUpperCase()}]: ${new Date().toISOString()}`;
+
+    // Push README to backup/ first (creates folder if not exists in repo)
     try {
-      await runGit(`commit -m "${commitMsg}"`);
+      await githubApiPutFile({
+        token, repoUrl, branch,
+        filePath: "backup/README.md",
+        content: "# ProcureFlow Database Backups\n\nFolder ini berisi file backup database yang di-push otomatis oleh sistem ProcureFlow.\n",
+        commitMsg: "chore: init backup folder",
+      });
     } catch {
-      // nothing to commit — ok
+      // README already exists — ok to ignore
     }
 
-    await runGit(`push "${authUrl}" HEAD:${branch} --force`);
+    // Push the SQL file via GitHub API
+    await githubApiPutFile({ token, repoUrl, branch, filePath: ghFilePath, content, commitMsg });
 
     res.json({
       success: true,
-      message: `Backup database (${format}) berhasil dikirim ke ${repoUrl} (branch: ${branch}) — file: backup/${filename}`,
+      message: `Backup database (${format.toUpperCase()}) berhasil dikirim ke ${repoUrl} — file: ${ghFilePath} (branch: ${branch})`,
     });
   } catch (e: any) {
-    const errMsg = (e.message || "").replace(/https?:\/\/[^@]+@/g, "https://***@");
-    res.status(500).json({ error: errMsg });
+    res.status(500).json({ error: e.message });
   }
 });
 
