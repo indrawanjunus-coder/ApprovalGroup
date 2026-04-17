@@ -6,10 +6,12 @@ import archiver from "archiver";
 import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import path from "path";
+import fs from "fs";
 
 const execAsync = promisify(exec);
 const router = Router();
 const WORKSPACE_DIR = "/home/runner/workspace";
+const BACKUP_DIR = path.join(WORKSPACE_DIR, "backup");
 
 // --- Helpers ---
 
@@ -117,6 +119,111 @@ function escapeSqlServerValue(val: any, pgType: string): string {
   }
   const s = String(val).replace(/'/g, "''");
   return `N'${s}'`;
+}
+
+// --- Dump Generators (return string/buffer, reusable for GitHub push) ---
+
+async function buildMysqlDump(): Promise<string> {
+  const tablesData = await getAllTablesData();
+  const lines: string[] = [];
+  lines.push("-- ProcureFlow Database Backup — MySQL Format");
+  lines.push(`-- Generated: ${new Date().toISOString()}`);
+  lines.push("-- Source: PostgreSQL (converted to MySQL-compatible SQL)");
+  lines.push("");
+  lines.push("SET NAMES utf8mb4;");
+  lines.push("SET FOREIGN_KEY_CHECKS=0;");
+  lines.push("");
+
+  for (const [table, { columns, rows }] of Object.entries(tablesData)) {
+    lines.push(`-- Table: \`${table}\``);
+    lines.push(`DROP TABLE IF EXISTS \`${table}\`;`);
+    lines.push(`CREATE TABLE \`${table}\` (`);
+    const colDefs = columns.map((c, i) => {
+      const mysqlType = pgToMysqlType(c.type);
+      const isLast = i === columns.length - 1;
+      return `  \`${c.name}\` ${mysqlType}${isLast ? "" : ","}`;
+    });
+    lines.push(...colDefs);
+    lines.push(") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+    lines.push("");
+    if (rows.length > 0) {
+      const cols = columns.map((c) => `\`${c.name}\``).join(", ");
+      const chunkSize = 500;
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize);
+        const values = chunk
+          .map((row) => `(${row.map(escapeMysqlValue).join(", ")})`)
+          .join(",\n  ");
+        lines.push(`INSERT INTO \`${table}\` (${cols}) VALUES`);
+        lines.push(`  ${values};`);
+      }
+      lines.push("");
+    }
+  }
+  lines.push("SET FOREIGN_KEY_CHECKS=1;");
+  return lines.join("\n");
+}
+
+async function buildSqlServerDump(): Promise<string> {
+  const tablesData = await getAllTablesData();
+  const lines: string[] = [];
+  lines.push("-- ProcureFlow Database Backup — SQL Server (T-SQL) Format");
+  lines.push(`-- Generated: ${new Date().toISOString()}`);
+  lines.push("-- Source: PostgreSQL (converted to SQL Server T-SQL)");
+  lines.push("");
+  lines.push("USE ProcureFlow;");
+  lines.push("GO");
+  lines.push("");
+
+  for (const [table, { columns, rows }] of Object.entries(tablesData)) {
+    lines.push(`-- Table: [${table}]`);
+    lines.push(`IF OBJECT_ID(N'[dbo].[${table}]', N'U') IS NOT NULL DROP TABLE [dbo].[${table}];`);
+    lines.push(`CREATE TABLE [dbo].[${table}] (`);
+    const colDefs = columns.map((c, i) => {
+      const ssType = pgToSqlServerType(c.type);
+      const isLast = i === columns.length - 1;
+      return `  [${c.name}] ${ssType}${isLast ? "" : ","}`;
+    });
+    lines.push(...colDefs);
+    lines.push(");");
+    lines.push("GO");
+    lines.push("");
+    if (rows.length > 0) {
+      const cols = columns.map((c) => `[${c.name}]`).join(", ");
+      const chunkSize = 500;
+      for (let i = 0; i < rows.length; i += chunkSize) {
+        const chunk = rows.slice(i, i + chunkSize);
+        const values = chunk
+          .map(
+            (row) =>
+              `(${row.map((v, ci) => escapeSqlServerValue(v, columns[ci].type)).join(", ")})`
+          )
+          .join(",\n  ");
+        lines.push(`INSERT INTO [dbo].[${table}] (${cols}) VALUES`);
+        lines.push(`  ${values};`);
+        lines.push("GO");
+      }
+      lines.push("");
+    }
+  }
+  return lines.join("\n");
+}
+
+async function buildPostgresDump(): Promise<Buffer> {
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) throw new Error("DATABASE_URL tidak tersedia");
+  const pgDump = await findPgDump();
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const child = spawn(pgDump, ["--no-password", "--clean", "--if-exists", dbUrl]);
+    child.stdout.on("data", (d: Buffer) => chunks.push(d));
+    child.stderr.on("data", (d: Buffer) => console.error("[backup:pg_dump]", d.toString()));
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code !== 0) return reject(new Error(`pg_dump exited with code ${code}`));
+      resolve(Buffer.concat(chunks));
+    });
+  });
 }
 
 // --- PostgreSQL Backup ---
@@ -292,7 +399,84 @@ router.get("/app/zip", requireAuth, requireRole("admin"), (req, res) => {
   archive.finalize();
 });
 
-// --- GitHub Backup ---
+// --- Database GitHub Backup ---
+
+router.post("/db/github", requireAuth, requireRole("admin"), async (req, res) => {
+  const { format, repoUrl, token, branch = "main" } = req.body;
+  const validFormats = ["postgres", "mysql", "sqlserver"];
+  if (!format || !validFormats.includes(format)) {
+    return res.status(400).json({ error: "Format harus: postgres, mysql, atau sqlserver" });
+  }
+  if (!repoUrl || !token) {
+    return res.status(400).json({ error: "repoUrl dan token wajib diisi" });
+  }
+
+  try {
+    // Ensure backup directory exists
+    if (!fs.existsSync(BACKUP_DIR)) {
+      fs.mkdirSync(BACKUP_DIR, { recursive: true });
+      // Add a README so the folder is tracked by git
+      fs.writeFileSync(
+        path.join(BACKUP_DIR, "README.md"),
+        "# ProcureFlow Database Backups\n\nFolder ini berisi file backup database yang di-push otomatis oleh sistem.\n"
+      );
+    }
+
+    // Generate dump content
+    let content: string | Buffer;
+    let filename: string;
+    if (format === "postgres") {
+      content = await buildPostgresDump();
+      filename = "db_postgres.sql";
+    } else if (format === "mysql") {
+      content = await buildMysqlDump();
+      filename = "db_mysql.sql";
+    } else {
+      content = await buildSqlServerDump();
+      filename = "db_sqlserver.sql";
+    }
+
+    // Write to backup/
+    const filePath = path.join(BACKUP_DIR, filename);
+    fs.writeFileSync(filePath, content as any);
+
+    // Git push
+    const safeUrl = repoUrl.trim().replace(/^https?:\/\//, "");
+    const authUrl = `https://${token.trim()}@${safeUrl}`;
+
+    const gitEnv = {
+      ...process.env,
+      GIT_DIR: `${WORKSPACE_DIR}/.git`,
+      GIT_WORK_TREE: WORKSPACE_DIR,
+    };
+    const runGit = (args: string) =>
+      execAsync(`git ${args}`, { env: gitEnv, cwd: WORKSPACE_DIR });
+
+    await runGit(`config --global safe.directory "${WORKSPACE_DIR}"`);
+    await runGit(`config --global user.email "backup@procureflow.app"`);
+    await runGit(`config --global user.name "ProcureFlow Backup"`);
+    await runGit(`add backup/${filename}`);
+
+    const commitMsg = `DB Backup [${format.toUpperCase()}]: ${new Date().toISOString()}`;
+    try {
+      await runGit(`commit -m "${commitMsg}"`);
+    } catch {
+      // nothing to commit — ok
+    }
+
+    await runGit(`push "${authUrl}" HEAD:${branch} --force`);
+
+    res.json({
+      success: true,
+      message: `Backup database (${format}) berhasil dikirim ke ${repoUrl} (branch: ${branch}) — file: backup/${filename}`,
+    });
+  } catch (e: any) {
+    const errMsg = (e.message || "").replace(/https?:\/\/[^@]+@/g, "https://***@");
+    res.status(500).json({ error: errMsg });
+  }
+});
+
+// --- App GitHub Backup ---
 
 router.post("/app/github", requireAuth, requireRole("admin"), async (req, res) => {
   const { repoUrl, token, branch = "main" } = req.body;
