@@ -349,7 +349,7 @@ function AppBackupSection() {
             <p className="font-semibold text-sm">Backup ke GitHub</p>
           </div>
           <p className="text-xs text-muted-foreground -mt-2">
-            Push seluruh kode aplikasi ke repository GitHub Anda. Buat repo kosong di GitHub terlebih dahulu, lalu masukkan URL dan Personal Access Token (PAT) di bawah.
+            Push seluruh source code aplikasi ke repository GitHub Anda — bekerja dari lingkungan development maupun server produksi. Masukkan URL repository dan Personal Access Token (PAT) di bawah.
           </p>
           <div className="grid grid-cols-1 gap-3">
             <div className="space-y-1.5">

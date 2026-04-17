@@ -3,49 +3,146 @@ import { requireAuth, requireRole } from "../lib/auth.js";
 import { db } from "../lib/db.js";
 import { sql } from "drizzle-orm";
 import archiver from "archiver";
-import { exec, spawn } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 import path from "path";
 import fs from "fs";
 
-const execAsync = promisify(exec);
 const router = Router();
 const WORKSPACE_DIR = "/home/runner/workspace";
-const BACKUP_DIR = path.join(WORKSPACE_DIR, "backup");
-const GIT_DIR = path.join(WORKSPACE_DIR, ".git");
-const GIT_CONFIG_FILE = "/tmp/procureflow-backup.cfg";
 
-function getGitEnv(): NodeJS.ProcessEnv {
-  const cfg = [
-    "[safe]",
-    `\tdirectory = ${WORKSPACE_DIR}`,
-    "[user]",
-    "\temail = backup@procureflow.app",
-    "\tname = ProcureFlow Backup",
-  ].join("\n") + "\n";
-  try { fs.writeFileSync(GIT_CONFIG_FILE, cfg); } catch { /* ignore if /tmp unavailable */ }
+// --- File scanner for App backup ---
 
-  return {
-    ...process.env,
-    GIT_DIR,
-    GIT_WORK_TREE: WORKSPACE_DIR,
-    GIT_CONFIG_GLOBAL: GIT_CONFIG_FILE,
-    GIT_CONFIG_NOSYSTEM: "1",
+const IGNORE_DIR_NAMES = new Set([
+  ".git", "node_modules", ".cache", ".pnpm-store",
+  "dist", "build", ".local", "tmp", ".turbo",
+]);
+const IGNORE_FILE_EXTS = new Set([".log", ".lock"]);
+
+function getAllFilesForBackup(dir: string): { relPath: string; fullPath: string }[] {
+  const results: { relPath: string; fullPath: string }[] = [];
+  function recurse(cur: string) {
+    let items: fs.Dirent[];
+    try { items = fs.readdirSync(cur, { withFileTypes: true }); } catch { return; }
+    for (const item of items) {
+      // Skip known large/irrelevant directories at ANY depth
+      if (item.isDirectory()) {
+        if (!IGNORE_DIR_NAMES.has(item.name)) recurse(path.join(cur, item.name));
+        continue;
+      }
+      if (!item.isFile()) continue;
+      if (IGNORE_FILE_EXTS.has(path.extname(item.name))) continue;
+      const full = path.join(cur, item.name);
+      const rel = path.relative(dir, full);
+      results.push({ relPath: rel, fullPath: full });
+    }
+  }
+  recurse(dir);
+  return results;
+}
+
+// --- GitHub Git Data API — push multiple files in a single commit ---
+
+async function githubApiPushTree(opts: {
+  token: string;
+  repoUrl: string;
+  branch: string;
+  files: { path: string; content: Buffer | string }[];
+  commitMsg: string;
+  onProgress?: (done: number, total: number) => void;
+}) {
+  const { token, repoUrl, branch, files, commitMsg, onProgress } = opts;
+  const match = repoUrl.replace(/\.git$/, "").match(/github\.com[/:]([^/]+)\/([^/]+)$/);
+  if (!match) throw new Error("Format URL GitHub tidak valid. Contoh: https://github.com/username/repo.git");
+  const [, owner, repo] = match;
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token.trim()}`,
+    Accept: "application/vnd.github.v3+json",
+    "Content-Type": "application/json",
+    "User-Agent": "ProcureFlow-Backup/1.0",
   };
-}
+  const apiBase = `https://api.github.com/repos/${owner}/${repo}`;
 
-function cleanGitLocks() {
-  const lockFile = path.join(GIT_DIR, "index.lock");
-  if (fs.existsSync(lockFile)) {
-    try { fs.unlinkSync(lockFile); } catch { /* ignore */ }
+  // 1. Get current branch tip (may not exist yet)
+  let baseCommitSha: string | undefined;
+  let baseTreeSha: string | undefined;
+  const refResp = await fetch(`${apiBase}/git/refs/heads/${branch}`, { headers });
+  if (refResp.ok) {
+    const refData = await refResp.json() as any;
+    baseCommitSha = refData.object?.sha;
+    const cResp = await fetch(`${apiBase}/git/commits/${baseCommitSha}`, { headers });
+    if (cResp.ok) baseTreeSha = ((await cResp.json()) as any).tree?.sha;
   }
-}
 
-function runGit(args: string) {
-  if (!fs.existsSync(GIT_DIR)) {
-    throw new Error("Repositori git tidak ditemukan. Fitur push GitHub hanya tersedia di lingkungan pengembangan (Replit), bukan di server produksi.");
+  // 2. Verify credentials with a quick check before processing all files
+  const testResp = await fetch(`${apiBase}`, { headers });
+  if (testResp.status === 401) throw new Error("Token GitHub tidak valid atau sudah kadaluarsa. Pastikan PAT memiliki scope 'repo'.");
+  if (testResp.status === 404) throw new Error(`Repository tidak ditemukan: ${repoUrl}. Pastikan repo sudah dibuat dan token memiliki akses.`);
+
+  // 3. Create blobs in parallel batches (skip files > 10 MB)
+  const treeItems: any[] = [];
+  const BATCH = 10;
+  const validFiles = files.filter(f => {
+    const buf = Buffer.isBuffer(f.content) ? f.content : Buffer.from(f.content as string, "utf8");
+    return buf.length <= 10 * 1024 * 1024;
+  });
+  let done = 0;
+  for (let i = 0; i < validFiles.length; i += BATCH) {
+    const batch = validFiles.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map(async (file) => {
+        const buf = Buffer.isBuffer(file.content)
+          ? file.content
+          : Buffer.from(file.content as string, "utf8");
+        const b64 = buf.toString("base64");
+        const bResp = await fetch(`${apiBase}/git/blobs`, {
+          method: "POST", headers, body: JSON.stringify({ content: b64, encoding: "base64" }),
+        });
+        if (!bResp.ok) return null;
+        const bData = await bResp.json() as any;
+        return { path: file.path, mode: "100644", type: "blob", sha: bData.sha };
+      })
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) treeItems.push(r.value);
+    }
+    done += batch.length;
+    onProgress?.(done, validFiles.length);
   }
-  return execAsync(`git ${args}`, { env: getGitEnv(), cwd: WORKSPACE_DIR });
+
+  if (treeItems.length === 0) throw new Error("Tidak ada file yang berhasil diupload. Periksa token dan akses repository.");
+
+  // 3. Create tree
+  const treeBody: any = { tree: treeItems };
+  if (baseTreeSha) treeBody.base_tree = baseTreeSha;
+  const tResp = await fetch(`${apiBase}/git/trees`, {
+    method: "POST", headers, body: JSON.stringify(treeBody),
+  });
+  if (!tResp.ok) { const e = await tResp.json() as any; throw new Error(`GitHub trees API: ${e.message}`); }
+  const treeData = await tResp.json() as any;
+
+  // 4. Create commit
+  const commitBody: any = { message: commitMsg, tree: treeData.sha };
+  if (baseCommitSha) commitBody.parents = [baseCommitSha];
+  const cResp = await fetch(`${apiBase}/git/commits`, {
+    method: "POST", headers, body: JSON.stringify(commitBody),
+  });
+  if (!cResp.ok) { const e = await cResp.json() as any; throw new Error(`GitHub commits API: ${e.message}`); }
+  const newCommit = await cResp.json() as any;
+
+  // 5. Update / create branch ref
+  const patchResp = await fetch(`${apiBase}/git/refs/heads/${branch}`, {
+    method: "PATCH", headers, body: JSON.stringify({ sha: newCommit.sha, force: true }),
+  });
+  if (!patchResp.ok) {
+    // Branch may not exist yet — create it
+    const postResp = await fetch(`${apiBase}/git/refs`, {
+      method: "POST", headers,
+      body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: newCommit.sha }),
+    });
+    if (!postResp.ok) { const e = await postResp.json() as any; throw new Error(`GitHub refs API: ${e.message}`); }
+  }
+  return { commit: newCommit.sha, files: treeItems.length };
 }
 
 // --- GitHub API helper (works everywhere, no git required) ---
@@ -534,7 +631,7 @@ router.post("/db/github", requireAuth, requireRole("admin"), async (req, res) =>
   }
 });
 
-// --- App GitHub Backup ---
+// --- App GitHub Backup (via GitHub Git Data API — works in all environments) ---
 
 router.post("/app/github", requireAuth, requireRole("admin"), async (req, res) => {
   const { repoUrl, token, branch = "main" } = req.body;
@@ -543,25 +640,42 @@ router.post("/app/github", requireAuth, requireRole("admin"), async (req, res) =
   }
 
   try {
-    const safeUrl = repoUrl.trim().replace(/^https?:\/\//, "");
-    const authUrl = `https://${token.trim()}@${safeUrl}`;
-
-    cleanGitLocks();
-    await runGit(`add -A`);
-
-    const commitMsg = `ProcureFlow Backup: ${new Date().toISOString()}`;
-    try {
-      await runGit(`commit -m "${commitMsg}"`);
-    } catch {
-      // nothing to commit — ok
+    // Validate GitHub URL early before heavy work
+    if (!repoUrl.match(/^https?:\/\/github\.com\/[^/]+\/[^/]+/)) {
+      return res.status(400).json({ error: "Format URL GitHub tidak valid. Contoh: https://github.com/username/repo.git" });
     }
 
-    await runGit(`push "${authUrl}" HEAD:${branch} --force`);
+    // Scan workspace for files to back up
+    const allFiles = getAllFilesForBackup(WORKSPACE_DIR);
 
-    res.json({ success: true, message: `Backup berhasil dikirim ke ${repoUrl} (branch: ${branch})` });
+    const filesToPush = allFiles
+      .map(({ relPath, fullPath }) => {
+        try {
+          const content = fs.readFileSync(fullPath);
+          return { path: relPath.replace(/\\/g, "/"), content };
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean) as { path: string; content: Buffer }[];
+
+    if (filesToPush.length === 0) {
+      return res.status(400).json({ error: "Tidak ada file yang ditemukan untuk di-backup." });
+    }
+
+    const commitMsg = `ProcureFlow App Backup: ${new Date().toISOString()}`;
+    const result = await githubApiPushTree({
+      token, repoUrl, branch,
+      files: filesToPush,
+      commitMsg,
+    });
+
+    res.json({
+      success: true,
+      message: `Backup aplikasi berhasil: ${result.files} file dikirim ke ${repoUrl} (branch: ${branch}, commit: ${result.commit.slice(0, 7)})`,
+    });
   } catch (e: any) {
-    const errMsg = (e.message || "").replace(/https?:\/\/[^@]+@/g, "https://***@");
-    res.status(500).json({ error: errMsg });
+    res.status(500).json({ error: e.message });
   }
 });
 
